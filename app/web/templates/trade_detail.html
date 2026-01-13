@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+
+{% block title %}Trade #{{ trade.id }} - Brooks Trading Coach{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex items-center space-x-4">
+        <a href="/trades" class="text-gray-500 hover:text-gray-700">← Back to Trades</a>
+    </div>
+
+    <div class="flex justify-between items-start">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900">{{ trade.ticker }}</h1>
+            <p class="text-gray-500">Trade #{{ trade.id }} • {{ trade.trade_date }}</p>
+        </div>
+        <div class="text-right">
+            <div class="text-4xl font-bold font-mono {% if trade.r_multiple and trade.r_multiple >= 0 %}positive{% else %}negative{% endif %}">
+                {% if trade.r_multiple %}{{ "%.2f"|format(trade.r_multiple) }}R{% else %}-{% endif %}
+            </div>
+            {% if trade.pnl_dollars %}
+            <div class="text-gray-500">${{ "%.2f"|format(trade.pnl_dollars) }}</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Trade Details -->
+        <div class="card">
+            <h2 class="text-xl font-bold mb-4">Trade Details</h2>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <div class="text-sm text-gray-500">Direction</div>
+                    <div class="font-medium">
+                        {% if trade.direction.value == 'long' %}
+                            <span class="text-green-600">▲ LONG</span>
+                        {% else %}
+                            <span class="text-red-600">▼ SHORT</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div>
+                    <div class="text-sm text-gray-500">Strategy</div>
+                    <div class="font-medium">{{ trade.strategy.name if trade.strategy else 'Unclassified' }}</div>
+                </div>
+                <div>
+                    <div class="text-sm text-gray-500">Entry</div>
+                    <div class="font-mono font-medium">${{ "%.2f"|format(trade.entry_price) }}</div>
+                </div>
+                <div>
+                    <div class="text-sm text-gray-500">Exit</div>
+                    <div class="font-mono font-medium">${{ "%.2f"|format(trade.exit_price) if trade.exit_price else '-' }}</div>
+                </div>
+                <div>
+                    <div class="text-sm text-gray-500">Stop</div>
+                    <div class="font-mono font-medium">${{ "%.2f"|format(trade.stop_price) if trade.stop_price else '-' }}</div>
+                </div>
+                <div>
+                    <div class="text-sm text-gray-500">Size</div>
+                    <div class="font-medium">{{ trade.size or 1 }} shares</div>
+                </div>
+                {% if trade.mae %}
+                <div>
+                    <div class="text-sm text-gray-500">MAE</div>
+                    <div class="font-mono text-red-600">{{ "%.2f"|format(trade.mae) }}R</div>
+                </div>
+                {% endif %}
+                {% if trade.mfe %}
+                <div>
+                    <div class="text-sm text-gray-500">MFE</div>
+                    <div class="font-mono text-green-600">{{ "%.2f"|format(trade.mfe) }}R</div>
+                </div>
+                {% endif %}
+            </div>
+
+            {% if trade.notes %}
+            <div class="mt-4 pt-4 border-t">
+                <div class="text-sm text-gray-500 mb-1">Notes</div>
+                <div class="text-gray-700">{{ trade.notes }}</div>
+            </div>
+            {% endif %}
+
+            {% if trade.entry_reason %}
+            <div class="mt-4 pt-4 border-t">
+                <div class="text-sm text-gray-500 mb-1">Entry Reason</div>
+                <div class="text-gray-700">{{ trade.entry_reason }}</div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- LLM Review -->
+        <div class="card">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold">🧠 AI Review</h2>
+                {% if review %}
+                <span class="text-3xl font-bold 
+                    {% if review.grade == 'A' %}text-green-600
+                    {% elif review.grade == 'B' %}text-blue-600
+                    {% elif review.grade == 'C' %}text-yellow-600
+                    {% elif review.grade == 'D' %}text-orange-600
+                    {% else %}text-red-600{% endif %}">
+                    {{ review.grade }}
+                </span>
+                {% endif %}
+            </div>
+
+            {% if review %}
+            <div class="space-y-4">
+                <!-- Context -->
+                <div>
+                    <div class="text-sm text-gray-500 mb-1">Context</div>
+                    <div class="flex space-x-2">
+                        <span class="px-2 py-1 bg-blue-100 text-blue-700 rounded text-sm">{{ review.regime }}</span>
+                        <span class="px-2 py-1 bg-purple-100 text-purple-700 rounded text-sm">Always-In: {{ review.always_in }}</span>
+                    </div>
+                    {% if review.context_description %}
+                    <p class="text-gray-600 mt-2 text-sm">{{ review.context_description }}</p>
+                    {% endif %}
+                </div>
+
+                <!-- Setup -->
+                <div>
+                    <div class="text-sm text-gray-500 mb-1">Setup Classification</div>
+                    <span class="px-2 py-1 
+                        {% if review.setup_quality == 'good' %}bg-green-100 text-green-700
+                        {% elif review.setup_quality == 'marginal' %}bg-yellow-100 text-yellow-700
+                        {% else %}bg-red-100 text-red-700{% endif %} rounded text-sm">
+                        {{ review.setup_classification }} ({{ review.setup_quality }})
+                    </span>
+                </div>
+
+                <!-- What was good -->
+                {% if review.what_was_good %}
+                <div>
+                    <div class="text-sm text-gray-500 mb-1">✅ What Was Good</div>
+                    <ul class="space-y-1">
+                        {% for item in review.what_was_good %}
+                        <li class="text-green-700 text-sm">• {{ item }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+
+                <!-- What was flawed -->
+                {% if review.what_was_flawed %}
+                <div>
+                    <div class="text-sm text-gray-500 mb-1">❌ What Was Flawed</div>
+                    <ul class="space-y-1">
+                        {% for item in review.what_was_flawed %}
+                        <li class="text-red-700 text-sm">• {{ item }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+
+                <!-- Errors -->
+                {% if review.errors_detected %}
+                <div>
+                    <div class="text-sm text-gray-500 mb-1">⚠️ Errors Detected</div>
+                    <ul class="space-y-1">
+                        {% for error in review.errors_detected %}
+                        <li class="text-orange-700 text-sm">• {{ error }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+
+                <!-- Rule -->
+                {% if review.rule_for_next_time %}
+                <div class="p-3 bg-blue-50 rounded-lg">
+                    <div class="text-sm text-blue-600 font-medium mb-1">📌 Rule for Next Time</div>
+                    <div class="text-blue-800">{{ review.rule_for_next_time }}</div>
+                </div>
+                {% endif %}
+
+                <!-- Grade explanation -->
+                {% if review.grade_explanation %}
+                <div class="text-sm text-gray-500 italic">
+                    {{ review.grade_explanation }}
+                </div>
+                {% endif %}
+            </div>
+            {% else %}
+            <div class="text-center py-8 text-gray-500">
+                <p>Review not available.</p>
+                <p class="text-sm">Make sure ANTHROPIC_API_KEY is set in .env</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="flex space-x-4">
+        <a href="/trades" class="btn btn-secondary">← Back to Trades</a>
+        <button onclick="deleteTrade({{ trade.id }})" class="btn btn-danger">Delete Trade</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function deleteTrade(id) {
+    if (!confirm('Delete this trade?')) return;
+    
+    const response = await fetch(`/api/trades/${id}`, { method: 'DELETE' });
+    if (response.ok) {
+        window.location.href = '/trades';
+    }
+}
+</script>
+{% endblock %}

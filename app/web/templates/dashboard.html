@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Brooks Trading Coach{% endblock %}
+
+{% block content %}
+<div class="space-y-8">
+    <!-- Header -->
+    <div class="flex justify-between items-center">
+        <h1 class="text-3xl font-bold text-gray-900">Dashboard</h1>
+        <div class="flex space-x-3">
+            <button onclick="generatePremarket()" class="btn btn-primary">
+                📊 Generate Premarket
+            </button>
+            <button onclick="generateEOD()" class="btn btn-secondary">
+                📋 Generate EOD
+            </button>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div class="stat-card">
+            <div class="text-3xl font-bold text-gray-900">{{ total_trades }}</div>
+            <div class="text-gray-600">Total Trades</div>
+        </div>
+        <div class="stat-card">
+            <div class="text-3xl font-bold {% if total_r >= 0 %}positive{% else %}negative{% endif %}">
+                {{ "%.2f"|format(total_r) }}R
+            </div>
+            <div class="text-gray-600">Total R</div>
+        </div>
+        <div class="stat-card">
+            <div class="text-3xl font-bold text-gray-900">{{ "%.1f"|format(win_rate * 100) }}%</div>
+            <div class="text-gray-600">Win Rate</div>
+        </div>
+        <div class="stat-card">
+            <div class="text-3xl font-bold text-green-600">{{ winners }}</div>
+            <div class="text-gray-600">Winners</div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <!-- Recent Trades -->
+        <div class="card">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold">Recent Trades</h2>
+                <a href="/trades" class="text-blue-600 hover:underline">View All →</a>
+            </div>
+            
+            {% if recent_trades %}
+            <div class="overflow-x-auto">
+                <table class="w-full">
+                    <thead>
+                        <tr class="text-left text-gray-500 text-sm border-b">
+                            <th class="pb-2">Date</th>
+                            <th class="pb-2">Ticker</th>
+                            <th class="pb-2">Dir</th>
+                            <th class="pb-2 text-right">R</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for trade in recent_trades %}
+                        <tr class="border-b border-gray-100 hover:bg-gray-50 cursor-pointer" onclick="window.location='/trades/{{ trade.id }}'">
+                            <td class="py-2 text-sm">{{ trade.trade_date }}</td>
+                            <td class="py-2 font-medium">{{ trade.ticker }}</td>
+                            <td class="py-2">
+                                {% if trade.direction.value == 'long' %}
+                                    <span class="text-green-600">▲</span>
+                                {% else %}
+                                    <span class="text-red-600">▼</span>
+                                {% endif %}
+                            </td>
+                            <td class="py-2 text-right font-mono {% if trade.r_multiple and trade.r_multiple >= 0 %}positive{% else %}negative{% endif %}">
+                                {% if trade.r_multiple %}{{ "%.2f"|format(trade.r_multiple) }}{% else %}-{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-8 text-gray-500">
+                <p>No trades yet.</p>
+                <a href="/add-trade" class="text-blue-600 hover:underline">Add your first trade →</a>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Strategy Performance -->
+        <div class="card">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold">Top Strategies</h2>
+                <a href="/stats" class="text-blue-600 hover:underline">Full Stats →</a>
+            </div>
+            
+            {% if strategy_stats %}
+            <div class="space-y-3">
+                {% for stat in strategy_stats %}
+                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div>
+                        <div class="font-medium">{{ stat.strategy_name }}</div>
+                        <div class="text-sm text-gray-500">{{ stat.trade_count }} trades • {{ "%.0f"|format(stat.win_rate * 100) }}% win</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="font-mono font-bold {% if stat.expectancy >= 0 %}positive{% else %}negative{% endif %}">
+                            {{ "%.2f"|format(stat.expectancy) }}R
+                        </div>
+                        <div class="text-xs text-gray-500">expectancy</div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="text-center py-8 text-gray-500">
+                <p>No strategy data yet.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="card">
+        <h2 class="text-xl font-bold mb-4">Quick Actions</h2>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <a href="/add-trade" class="p-4 bg-blue-50 rounded-lg text-center hover:bg-blue-100 transition">
+                <div class="text-2xl mb-2">➕</div>
+                <div class="font-medium">Add Trade</div>
+            </a>
+            <a href="/import" class="p-4 bg-green-50 rounded-lg text-center hover:bg-green-100 transition">
+                <div class="text-2xl mb-2">📥</div>
+                <div class="font-medium">Import CSV</div>
+            </a>
+            <a href="/tickers" class="p-4 bg-purple-50 rounded-lg text-center hover:bg-purple-100 transition">
+                <div class="text-2xl mb-2">📈</div>
+                <div class="font-medium">Manage Tickers</div>
+            </a>
+            <a href="/reports" class="p-4 bg-orange-50 rounded-lg text-center hover:bg-orange-100 transition">
+                <div class="text-2xl mb-2">📊</div>
+                <div class="font-medium">View Reports</div>
+            </a>
+        </div>
+    </div>
+
+    <!-- Watchlist -->
+    <div class="card">
+        <h2 class="text-xl font-bold mb-4">Watchlist</h2>
+        <div class="flex flex-wrap gap-2">
+            {% for ticker in tickers %}
+            <span class="px-3 py-1 bg-gray-100 rounded-full text-sm font-medium">{{ ticker }}</span>
+            {% endfor %}
+            <a href="/tickers" class="px-3 py-1 bg-blue-100 text-blue-600 rounded-full text-sm font-medium hover:bg-blue-200">
+                + Edit
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Toast notification -->
+<div id="toast" class="fixed bottom-4 right-4 bg-gray-900 text-white px-6 py-3 rounded-lg shadow-lg hidden">
+    <span id="toast-message"></span>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showToast(message) {
+    const toast = document.getElementById('toast');
+    document.getElementById('toast-message').textContent = message;
+    toast.classList.remove('hidden');
+    setTimeout(() => toast.classList.add('hidden'), 3000);
+}
+
+async function generatePremarket() {
+    showToast('Generating premarket reports...');
+    const response = await fetch('/api/generate-premarket', { method: 'POST' });
+    const data = await response.json();
+    showToast(data.message);
+}
+
+async function generateEOD() {
+    showToast('Generating EOD report...');
+    const response = await fetch('/api/generate-eod', { method: 'POST' });
+    const data = await response.json();
+    showToast(data.message);
+}
+</script>
+{% endblock %}

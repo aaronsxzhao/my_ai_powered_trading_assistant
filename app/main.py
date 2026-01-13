@@ -16,7 +16,10 @@ from rich.panel import Panel
 from rich.markdown import Markdown
 from rich import print as rprint
 
-from app.config import settings, save_config, load_config
+from app.config import (
+    settings, save_config, load_config, 
+    TICKERS_FILE, IMPORTS_DIR, load_tickers_from_file
+)
 from app.journal.models import init_db
 
 # Initialize CLI app
@@ -154,6 +157,82 @@ def trade_import(
     except Exception as e:
         console.print(f"[red]Import failed: {e}[/red]")
         raise typer.Exit(1)
+
+
+@trade_app.command("bulk-import")
+def trade_bulk_import():
+    """Import all CSV files from the imports/ folder."""
+    init()
+
+    from app.journal.ingest import TradeIngester
+
+    ingester = TradeIngester()
+    imports_path = ingester.get_imports_folder_path()
+
+    console.print(f"[cyan]Scanning {imports_path} for CSV files...[/cyan]\n")
+
+    try:
+        imported, errors, messages = ingester.bulk_import_from_folder()
+
+        if imported == 0 and errors == 0:
+            console.print(
+                Panel(
+                    f"[bold]No files to import[/bold]\n\n"
+                    f"📁 Drop CSV files in: [cyan]{imports_path}[/cyan]\n"
+                    f"📖 See imports/README.md for format instructions",
+                    title="Bulk Import",
+                    border_style="yellow",
+                )
+            )
+        else:
+            console.print(
+                Panel(
+                    f"[bold]Bulk Import Complete[/bold]\n\n"
+                    f"✅ Imported: {imported} trades\n"
+                    f"❌ Errors: {errors}\n"
+                    f"📁 Processed files moved to: imports/processed/",
+                    title="Bulk Import",
+                    border_style="green" if errors == 0 else "yellow",
+                )
+            )
+
+        if messages:
+            console.print("\n[dim]Details:[/dim]")
+            for msg in messages[:15]:
+                console.print(f"  - {msg}")
+
+    except Exception as e:
+        console.print(f"[red]Bulk import failed: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@trade_app.command("reclassify")
+def trade_reclassify():
+    """Use LLM to reclassify all unclassified trades."""
+    init()
+
+    from app.journal.ingest import TradeIngester
+    from app.llm.analyzer import get_analyzer
+
+    analyzer = get_analyzer()
+    if not analyzer.is_available:
+        console.print("[red]LLM not available. Set OPENAI_API_KEY in .env[/red]")
+        raise typer.Exit(1)
+
+    ingester = TradeIngester()
+
+    with console.status("[bold green]Reclassifying trades with LLM..."):
+        reclassified, failed = ingester.reclassify_all_trades()
+
+    console.print(
+        Panel(
+            f"[bold]Reclassification Complete[/bold]\n\n"
+            f"✅ Reclassified: {reclassified} trades\n"
+            f"⏭️  Skipped/Failed: {failed} trades",
+            title="LLM Classification",
+            border_style="green" if reclassified > 0 else "yellow",
+        )
+    )
 
 
 @trade_app.command("review")
@@ -481,9 +560,10 @@ def config_tickers(
 
     if action == "list":
         tickers = settings.tickers
-        console.print("[bold]Favorite Tickers:[/bold]")
+        console.print(f"[bold]Favorite Tickers[/bold] (from [cyan]{TICKERS_FILE}[/cyan]):\n")
         for t in tickers:
-            console.print(f"  - {t}")
+            console.print(f"  • {t}")
+        console.print(f"\n[dim]💡 Edit {TICKERS_FILE} directly to modify tickers[/dim]")
 
     elif action == "add":
         if not ticker:
@@ -491,7 +571,7 @@ def config_tickers(
             raise typer.Exit(1)
 
         settings.add_ticker(ticker)
-        console.print(f"[green]Added {ticker.upper()} to favorites[/green]")
+        console.print(f"[green]Added {ticker.upper()} to {TICKERS_FILE}[/green]")
 
     elif action == "remove":
         if not ticker:
@@ -499,7 +579,7 @@ def config_tickers(
             raise typer.Exit(1)
 
         if settings.remove_ticker(ticker):
-            console.print(f"[green]Removed {ticker.upper()} from favorites[/green]")
+            console.print(f"[green]Removed {ticker.upper()} from {TICKERS_FILE}[/green]")
         else:
             console.print(f"[yellow]{ticker.upper()} not in favorites[/yellow]")
 
@@ -509,20 +589,38 @@ def config_tickers(
 
 @config_app.command("show")
 def config_show():
-    """Show current configuration."""
+    """Show current configuration and file locations."""
     config = load_config()
+    tickers = load_tickers_from_file()
 
-    console.print(Panel("[bold]Current Configuration[/bold]", border_style="blue"))
+    console.print(Panel("[bold]Configuration & File Locations[/bold]", border_style="blue"))
 
-    console.print(f"\n[cyan]Tickers:[/cyan] {', '.join(config.get('tickers', []))}")
-    console.print(f"[cyan]Timezone:[/cyan] {config.get('timezone', 'America/New_York')}")
-    console.print(f"[cyan]Data Provider:[/cyan] {config.get('data', {}).get('provider', 'yfinance')}")
-    console.print(f"[cyan]LLM Enabled:[/cyan] {config.get('llm', {}).get('enabled', False)}")
+    console.print("\n[bold cyan]📁 Key File Locations:[/bold cyan]")
+    console.print(f"  Tickers:     [green]{TICKERS_FILE}[/green]")
+    console.print(f"  Imports:     [green]{IMPORTS_DIR}/[/green]")
+    console.print(f"  Config:      config.yaml")
+    console.print(f"  Env vars:    .env")
+
+    console.print(f"\n[bold cyan]📈 Tickers ({len(tickers)}):[/bold cyan]")
+    console.print(f"  {', '.join(tickers)}")
+
+    console.print(f"\n[bold cyan]⚙️  Settings:[/bold cyan]")
+    console.print(f"  Timezone:      {config.get('timezone', 'America/New_York')}")
+    console.print(f"  Data Provider: {config.get('data', {}).get('provider', 'yfinance')}")
+    
+    # Check LLM availability
+    from app.config import get_openai_api_key
+    has_api_key = get_openai_api_key() is not None
+    llm_status = "[green]✓ Available[/green]" if has_api_key else "[red]✗ Set OPENAI_API_KEY[/red]"
+    console.print(f"  LLM Status:    {llm_status}")
 
     risk = config.get("risk", {})
-    console.print(f"\n[yellow]Risk Controls:[/yellow]")
-    console.print(f"  Max Daily Loss: {risk.get('max_daily_loss_r', 3.0)}R")
+    console.print(f"\n[bold cyan]🛡️  Risk Controls:[/bold cyan]")
+    console.print(f"  Max Daily Loss:   {risk.get('max_daily_loss_r', 3.0)}R")
     console.print(f"  Max Losing Streak: {risk.get('max_losing_streak', 3)}")
+
+    console.print("\n[dim]💡 To edit tickers: open tickers.txt in any text editor[/dim]")
+    console.print("[dim]💡 To import trades: drop CSV files in imports/ folder[/dim]")
 
 
 @config_app.command("init")
@@ -532,6 +630,31 @@ def config_init():
     console.print("[green]✅ Database initialized[/green]")
     console.print("[green]✅ Configuration ready[/green]")
     console.print(f"\n[dim]Database: {settings.get('database_url', 'sqlite:///data/trades.db')}[/dim]")
+
+
+# ==================== WEB SERVER ====================
+
+
+@app.command("web")
+def run_web(
+    host: str = typer.Option("127.0.0.1", "--host", "-h", help="Host to bind to"),
+    port: int = typer.Option(8000, "--port", "-p", help="Port to bind to"),
+):
+    """Start the web interface."""
+    init()
+    
+    console.print(
+        Panel(
+            f"[bold]🚀 Brooks Trading Coach Web UI[/bold]\n\n"
+            f"Open your browser to: [cyan]http://{host}:{port}[/cyan]\n\n"
+            f"Press Ctrl+C to stop the server",
+            title="Web Server",
+            border_style="green",
+        )
+    )
+    
+    from app.web.server import run_server
+    run_server(host=host, port=port)
 
 
 # ==================== MAIN ====================
@@ -546,6 +669,11 @@ def main():
     Al Brooks price action concepts.
 
     ⚠️  This is an ADVISORY ONLY system. It does NOT place trades.
+    
+    QUICK START:
+    
+    1. Start web interface: brooks web
+    2. Or use CLI commands: brooks --help
     """
     pass
 

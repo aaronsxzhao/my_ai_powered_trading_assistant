@@ -17,14 +17,17 @@ load_dotenv()
 # Project paths
 PROJECT_ROOT = Path(__file__).parent.parent
 CONFIG_FILE = PROJECT_ROOT / "config.yaml"
+TICKERS_FILE = PROJECT_ROOT / "tickers.txt"
 DATA_DIR = PROJECT_ROOT / "data"
 CACHE_DIR = DATA_DIR / "cache"
 OUTPUTS_DIR = PROJECT_ROOT / "outputs"
+IMPORTS_DIR = PROJECT_ROOT / "imports"
 
 # Ensure directories exist
 DATA_DIR.mkdir(exist_ok=True)
 CACHE_DIR.mkdir(exist_ok=True)
 OUTPUTS_DIR.mkdir(exist_ok=True)
+IMPORTS_DIR.mkdir(exist_ok=True)
 
 
 def load_config() -> dict[str, Any]:
@@ -73,8 +76,8 @@ def get_default_config() -> dict[str, Any]:
             "chart_style": "classic",
         },
         "llm": {
-            "enabled": False,
-            "model": "gpt-4o",
+            "enabled": True,
+            "model": "claude-sonnet-4-20250514",
             "max_tokens": 1500,
             "temperature": 0.3,
         },
@@ -85,6 +88,64 @@ def save_config(config: dict[str, Any]) -> None:
     """Save configuration to YAML file."""
     with open(CONFIG_FILE, "w") as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
+
+def load_tickers_from_file() -> list[str]:
+    """
+    Load tickers from tickers.txt file.
+    
+    Returns:
+        List of ticker symbols
+    """
+    if not TICKERS_FILE.exists():
+        return ["SPY", "QQQ"]
+    
+    tickers = []
+    with open(TICKERS_FILE, "r") as f:
+        for line in f:
+            line = line.strip()
+            # Skip empty lines and comments
+            if line and not line.startswith("#"):
+                tickers.append(line.upper())
+    
+    return tickers if tickers else ["SPY", "QQQ"]
+
+
+def save_tickers_to_file(tickers: list[str]) -> None:
+    """
+    Save tickers to tickers.txt file.
+    
+    Args:
+        tickers: List of ticker symbols
+    """
+    with open(TICKERS_FILE, "w") as f:
+        f.write("# Brooks Trading Coach - Favorite Tickers\n")
+        f.write("# =========================================\n")
+        f.write("# Add one ticker per line. Lines starting with # are comments.\n")
+        f.write("# Edit this file directly to add/remove tickers.\n")
+        f.write("#\n\n")
+        for ticker in tickers:
+            f.write(f"{ticker.upper()}\n")
+
+
+def add_ticker_to_file(ticker: str) -> None:
+    """Add a ticker to tickers.txt."""
+    tickers = load_tickers_from_file()
+    ticker = ticker.upper()
+    if ticker not in tickers:
+        tickers.append(ticker)
+        save_tickers_to_file(tickers)
+
+
+def remove_ticker_from_file(ticker: str) -> bool:
+    """Remove a ticker from tickers.txt. Returns True if removed."""
+    tickers = load_tickers_from_file()
+    ticker = ticker.upper()
+    if ticker in tickers:
+        tickers.remove(ticker)
+        save_tickers_to_file(tickers)
+        return True
+    return False
 
 
 class Settings:
@@ -105,7 +166,8 @@ class Settings:
 
     @property
     def tickers(self) -> list[str]:
-        return self._config.get("tickers", ["SPY", "QQQ"])
+        """Load tickers from tickers.txt file (not config.yaml)."""
+        return load_tickers_from_file()
 
     @property
     def timezone(self) -> str:
@@ -167,20 +229,12 @@ class Settings:
         return value if value is not None else default
 
     def add_ticker(self, ticker: str) -> None:
-        """Add a ticker to favorites."""
-        ticker = ticker.upper()
-        if ticker not in self._config["tickers"]:
-            self._config["tickers"].append(ticker)
-            save_config(self._config)
+        """Add a ticker to tickers.txt."""
+        add_ticker_to_file(ticker)
 
     def remove_ticker(self, ticker: str) -> bool:
-        """Remove a ticker from favorites."""
-        ticker = ticker.upper()
-        if ticker in self._config["tickers"]:
-            self._config["tickers"].remove(ticker)
-            save_config(self._config)
-            return True
-        return False
+        """Remove a ticker from tickers.txt."""
+        return remove_ticker_from_file(ticker)
 
 
 # Global settings instance
@@ -193,14 +247,15 @@ def get_env(key: str, default: str = "") -> str:
     return os.getenv(key, default)
 
 
+def get_anthropic_api_key() -> str | None:
+    """Get Anthropic API key from environment."""
+    return os.getenv("ANTHROPIC_API_KEY")
+
+
+# Backwards compatibility aliases
 def get_openai_api_key() -> str | None:
-    """Get OpenAI API key from environment."""
-    return os.getenv("OPENAI_API_KEY")
-
-
-def get_openai_base_url() -> str:
-    """Get OpenAI base URL from environment."""
-    return os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    """Get API key - checks Anthropic first, then OpenAI for backwards compat."""
+    return get_anthropic_api_key() or os.getenv("OPENAI_API_KEY")
 
 
 def get_database_url() -> str:

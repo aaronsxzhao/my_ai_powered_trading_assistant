@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+
+{% block title %}Add Trade - Brooks Trading Coach{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <h1 class="text-3xl font-bold text-gray-900 mb-6">Add Trade</h1>
+
+    <form action="/api/trades" method="POST" class="card space-y-6">
+        <div class="grid grid-cols-2 gap-4">
+            <!-- Ticker -->
+            <div>
+                <label class="label">Ticker *</label>
+                <input type="text" name="ticker" required 
+                    class="input" placeholder="SPY" list="ticker-list">
+                <datalist id="ticker-list">
+                    {% for ticker in tickers %}
+                    <option value="{{ ticker }}">
+                    {% endfor %}
+                </datalist>
+            </div>
+
+            <!-- Date -->
+            <div>
+                <label class="label">Trade Date</label>
+                <input type="date" name="trade_date" 
+                    class="input" value="{{ today if today else '' }}">
+            </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+            <!-- Direction -->
+            <div>
+                <label class="label">Direction *</label>
+                <select name="direction" required class="input">
+                    <option value="long">🟢 Long</option>
+                    <option value="short">🔴 Short</option>
+                </select>
+            </div>
+
+            <!-- Size -->
+            <div>
+                <label class="label">Size (shares)</label>
+                <input type="number" name="size" 
+                    class="input" placeholder="100" value="1" step="any">
+            </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-4">
+            <!-- Entry -->
+            <div>
+                <label class="label">Entry Price *</label>
+                <input type="number" name="entry_price" required 
+                    class="input" placeholder="100.00" step="0.01">
+            </div>
+
+            <!-- Exit -->
+            <div>
+                <label class="label">Exit Price *</label>
+                <input type="number" name="exit_price" required 
+                    class="input" placeholder="102.00" step="0.01">
+            </div>
+
+            <!-- Stop -->
+            <div>
+                <label class="label">Stop Price *</label>
+                <input type="number" name="stop_price" required 
+                    class="input" placeholder="98.00" step="0.01">
+            </div>
+        </div>
+
+        <!-- Strategy (optional - LLM will classify if not set) -->
+        <div>
+            <label class="label">Strategy (optional - AI will classify if empty)</label>
+            <select name="strategy" class="input">
+                <option value="">-- Let AI classify --</option>
+                <optgroup label="With Trend">
+                    {% for s in strategies if s.category == 'with_trend' %}
+                    <option value="{{ s.name }}">{{ s.name }}</option>
+                    {% endfor %}
+                </optgroup>
+                <optgroup label="Countertrend">
+                    {% for s in strategies if s.category == 'countertrend' %}
+                    <option value="{{ s.name }}">{{ s.name }}</option>
+                    {% endfor %}
+                </optgroup>
+                <optgroup label="Trading Range">
+                    {% for s in strategies if s.category == 'trading_range' %}
+                    <option value="{{ s.name }}">{{ s.name }}</option>
+                    {% endfor %}
+                </optgroup>
+                <optgroup label="Special">
+                    {% for s in strategies if s.category == 'special' %}
+                    <option value="{{ s.name }}">{{ s.name }}</option>
+                    {% endfor %}
+                </optgroup>
+            </select>
+        </div>
+
+        <!-- Entry Reason -->
+        <div>
+            <label class="label">Entry Reason</label>
+            <textarea name="entry_reason" class="input" rows="2" 
+                placeholder="Why did you enter this trade?"></textarea>
+        </div>
+
+        <!-- Notes -->
+        <div>
+            <label class="label">Notes</label>
+            <textarea name="notes" class="input" rows="3" 
+                placeholder="Additional notes about the trade..."></textarea>
+        </div>
+
+        <!-- Submit -->
+        <div class="flex justify-end space-x-4">
+            <a href="/trades" class="btn btn-secondary">Cancel</a>
+            <button type="submit" class="btn btn-primary">Add Trade</button>
+        </div>
+    </form>
+
+    <!-- R Calculator -->
+    <div class="card mt-6">
+        <h3 class="font-bold mb-3">📊 R-Multiple Calculator</h3>
+        <p class="text-gray-500 text-sm mb-4">Enter your prices above to see the R-multiple.</p>
+        <div id="r-preview" class="text-2xl font-mono font-bold text-gray-400">--</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Auto-calculate R-multiple
+const entryInput = document.querySelector('input[name="entry_price"]');
+const exitInput = document.querySelector('input[name="exit_price"]');
+const stopInput = document.querySelector('input[name="stop_price"]');
+const directionSelect = document.querySelector('select[name="direction"]');
+const rPreview = document.getElementById('r-preview');
+
+function calculateR() {
+    const entry = parseFloat(entryInput.value);
+    const exit = parseFloat(exitInput.value);
+    const stop = parseFloat(stopInput.value);
+    const direction = directionSelect.value;
+    
+    if (!entry || !exit || !stop) {
+        rPreview.textContent = '--';
+        rPreview.className = 'text-2xl font-mono font-bold text-gray-400';
+        return;
+    }
+    
+    let r;
+    if (direction === 'long') {
+        const risk = entry - stop;
+        if (risk <= 0) {
+            rPreview.textContent = 'Invalid stop';
+            return;
+        }
+        r = (exit - entry) / risk;
+    } else {
+        const risk = stop - entry;
+        if (risk <= 0) {
+            rPreview.textContent = 'Invalid stop';
+            return;
+        }
+        r = (entry - exit) / risk;
+    }
+    
+    rPreview.textContent = r.toFixed(2) + 'R';
+    rPreview.className = 'text-2xl font-mono font-bold ' + (r >= 0 ? 'text-green-600' : 'text-red-600');
+}
+
+entryInput.addEventListener('input', calculateR);
+exitInput.addEventListener('input', calculateR);
+stopInput.addEventListener('input', calculateR);
+directionSelect.addEventListener('change', calculateR);
+
+// Set today's date
+document.querySelector('input[name="trade_date"]').valueAsDate = new Date();
+</script>
+{% endblock %}

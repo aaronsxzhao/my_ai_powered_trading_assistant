@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+
+{% block title %}Import Trades - Brooks Trading Coach{% endblock %}
+
+{% block content %}
+<div class="space-y-8">
+    <h1 class="text-3xl font-bold text-gray-900">Import Trades</h1>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <!-- Upload Form -->
+        <div class="card">
+            <h2 class="text-xl font-bold mb-4">📤 Upload CSV</h2>
+            
+            <form id="upload-form" class="space-y-4">
+                <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-500 transition cursor-pointer"
+                     onclick="document.getElementById('file-input').click()">
+                    <input type="file" id="file-input" accept=".csv" class="hidden" onchange="handleFileSelect(this)">
+                    <div class="text-4xl mb-2">📁</div>
+                    <div class="text-gray-600">Click to select CSV file</div>
+                    <div class="text-sm text-gray-400">or drag and drop</div>
+                </div>
+                
+                <div id="file-name" class="text-center text-gray-600 hidden"></div>
+                
+                <button type="submit" id="upload-btn" class="btn btn-primary w-full" disabled>
+                    Upload & Import
+                </button>
+            </form>
+
+            <div class="mt-6 pt-6 border-t">
+                <h3 class="font-medium mb-2">Or import from folder:</h3>
+                <p class="text-sm text-gray-600 mb-3">
+                    Drop CSV files in: <code class="bg-gray-100 px-2 py-1 rounded">{{ imports_path }}</code>
+                </p>
+                <button onclick="bulkImport()" class="btn btn-secondary w-full">
+                    📥 Import All from Folder
+                </button>
+            </div>
+        </div>
+
+        <!-- Instructions -->
+        <div class="card">
+            <h2 class="text-xl font-bold mb-4">📋 CSV Format</h2>
+            
+            <div class="bg-gray-50 rounded-lg p-4 font-mono text-sm overflow-x-auto">
+                <div class="text-gray-500">ticker,direction,entry_price,exit_price,stop_price,size,trade_date,notes</div>
+                <div>SPY,long,475.50,478.00,474.00,100,2024-01-15,Strong pullback</div>
+                <div>AAPL,short,185.00,182.50,187.00,50,2024-01-15,Failed breakout</div>
+            </div>
+
+            <div class="mt-4 space-y-2 text-sm">
+                <div class="flex">
+                    <span class="font-medium w-32">ticker</span>
+                    <span class="text-gray-600">Required - Stock symbol</span>
+                </div>
+                <div class="flex">
+                    <span class="font-medium w-32">entry_price</span>
+                    <span class="text-gray-600">Required - Entry price</span>
+                </div>
+                <div class="flex">
+                    <span class="font-medium w-32">exit_price</span>
+                    <span class="text-gray-600">Required - Exit price</span>
+                </div>
+                <div class="flex">
+                    <span class="font-medium w-32">stop_price</span>
+                    <span class="text-gray-600">Recommended - Stop loss</span>
+                </div>
+                <div class="flex">
+                    <span class="font-medium w-32">direction</span>
+                    <span class="text-gray-600">Optional - long/short (default: long)</span>
+                </div>
+                <div class="flex">
+                    <span class="font-medium w-32">strategy</span>
+                    <span class="text-gray-600">Optional - AI classifies if empty</span>
+                </div>
+            </div>
+
+            <div class="mt-6 p-4 bg-blue-50 rounded-lg">
+                <div class="font-medium text-blue-800 mb-1">🧠 AI Classification</div>
+                <p class="text-sm text-blue-700">
+                    If you don't specify a strategy, the AI will automatically classify each trade 
+                    into Brooks-style setups like "second_entry_buy" or "breakout_pullback_long".
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Files in Import Folder -->
+    {% if import_files %}
+    <div class="card">
+        <h2 class="text-xl font-bold mb-4">📂 Files Ready to Import</h2>
+        <div class="space-y-2">
+            {% for f in import_files %}
+            <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <span class="font-mono">{{ f.name }}</span>
+                <span class="text-gray-500 text-sm">{{ f.stat().st_size // 1024 }} KB</span>
+            </div>
+            {% endfor %}
+        </div>
+        <button onclick="bulkImport()" class="btn btn-primary mt-4">
+            Import All ({{ import_files|length }} files)
+        </button>
+    </div>
+    {% endif %}
+
+    <!-- Recently Processed -->
+    {% if processed_files %}
+    <div class="card">
+        <h2 class="text-xl font-bold mb-4">✅ Recently Processed</h2>
+        <div class="space-y-2">
+            {% for f in processed_files[:5] %}
+            <div class="flex items-center justify-between p-3 bg-green-50 rounded-lg">
+                <span class="font-mono text-green-700">{{ f.name }}</span>
+                <span class="text-green-600 text-sm">✓ Imported</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Toast -->
+<div id="toast" class="fixed bottom-4 right-4 bg-gray-900 text-white px-6 py-3 rounded-lg shadow-lg hidden">
+    <span id="toast-message"></span>
+</div>
+
+<!-- Loading overlay -->
+<div id="loading" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+    <div class="bg-white rounded-lg p-8 text-center">
+        <div class="animate-spin text-4xl mb-4">⏳</div>
+        <div class="text-xl font-medium">Importing trades...</div>
+        <div class="text-gray-500">AI is classifying each trade</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const fileInput = document.getElementById('file-input');
+const fileName = document.getElementById('file-name');
+const uploadBtn = document.getElementById('upload-btn');
+const uploadForm = document.getElementById('upload-form');
+
+function showToast(message) {
+    const toast = document.getElementById('toast');
+    document.getElementById('toast-message').textContent = message;
+    toast.classList.remove('hidden');
+    setTimeout(() => toast.classList.add('hidden'), 3000);
+}
+
+function showLoading(show) {
+    document.getElementById('loading').classList.toggle('hidden', !show);
+}
+
+function handleFileSelect(input) {
+    if (input.files.length > 0) {
+        fileName.textContent = input.files[0].name;
+        fileName.classList.remove('hidden');
+        uploadBtn.disabled = false;
+    }
+}
+
+uploadForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    if (!fileInput.files.length) return;
+    
+    showLoading(true);
+    
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    
+    try {
+        // Upload file
+        const uploadResponse = await fetch('/api/upload-csv', {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (!uploadResponse.ok) throw new Error('Upload failed');
+        
+        // Import
+        const importResponse = await fetch('/api/bulk-import', { method: 'POST' });
+        const data = await importResponse.json();
+        
+        showLoading(false);
+        showToast(`Imported ${data.imported} trades`);
+        
+        setTimeout(() => window.location.reload(), 1500);
+    } catch (err) {
+        showLoading(false);
+        showToast('Import failed: ' + err.message);
+    }
+});
+
+async function bulkImport() {
+    showLoading(true);
+    
+    try {
+        const response = await fetch('/api/bulk-import', { method: 'POST' });
+        const data = await response.json();
+        
+        showLoading(false);
+        showToast(`Imported ${data.imported} trades, ${data.errors} errors`);
+        
+        setTimeout(() => window.location.reload(), 1500);
+    } catch (err) {
+        showLoading(false);
+        showToast('Import failed');
+    }
+}
+
+// Drag and drop
+const dropZone = document.querySelector('.border-dashed');
+
+dropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropZone.classList.add('border-blue-500', 'bg-blue-50');
+});
+
+dropZone.addEventListener('dragleave', () => {
+    dropZone.classList.remove('border-blue-500', 'bg-blue-50');
+});
+
+dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('border-blue-500', 'bg-blue-50');
+    
+    const files = e.dataTransfer.files;
+    if (files.length > 0 && files[0].name.endsWith('.csv')) {
+        fileInput.files = files;
+        handleFileSelect(fileInput);
+    }
+});
+</script>
+{% endblock %}

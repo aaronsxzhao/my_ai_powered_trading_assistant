@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block title %}Trades - Brooks Trading Coach{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex justify-between items-center">
+        <h1 class="text-3xl font-bold text-gray-900">Trades</h1>
+        <div class="flex space-x-3">
+            <a href="/add-trade" class="btn btn-primary">+ Add Trade</a>
+            <button onclick="reclassifyTrades()" class="btn btn-secondary">🧠 Reclassify with LLM</button>
+        </div>
+    </div>
+
+    <div class="card">
+        {% if trades %}
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead>
+                    <tr class="text-left text-gray-500 text-sm border-b">
+                        <th class="pb-3">ID</th>
+                        <th class="pb-3">Date</th>
+                        <th class="pb-3">Ticker</th>
+                        <th class="pb-3">Direction</th>
+                        <th class="pb-3">Entry</th>
+                        <th class="pb-3">Exit</th>
+                        <th class="pb-3">R-Multiple</th>
+                        <th class="pb-3">Strategy</th>
+                        <th class="pb-3">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for trade in trades %}
+                    <tr class="border-b border-gray-100 hover:bg-gray-50">
+                        <td class="py-3 text-gray-500">#{{ trade.id }}</td>
+                        <td class="py-3">{{ trade.trade_date }}</td>
+                        <td class="py-3 font-bold">{{ trade.ticker }}</td>
+                        <td class="py-3">
+                            {% if trade.direction.value == 'long' %}
+                                <span class="px-2 py-1 bg-green-100 text-green-700 rounded text-sm">LONG</span>
+                            {% else %}
+                                <span class="px-2 py-1 bg-red-100 text-red-700 rounded text-sm">SHORT</span>
+                            {% endif %}
+                        </td>
+                        <td class="py-3 font-mono">${{ "%.2f"|format(trade.entry_price) }}</td>
+                        <td class="py-3 font-mono">${{ "%.2f"|format(trade.exit_price) if trade.exit_price else '-' }}</td>
+                        <td class="py-3 font-mono font-bold {% if trade.r_multiple and trade.r_multiple >= 0 %}positive{% else %}negative{% endif %}">
+                            {% if trade.r_multiple %}{{ "%.2f"|format(trade.r_multiple) }}R{% else %}-{% endif %}
+                        </td>
+                        <td class="py-3">
+                            <span class="px-2 py-1 bg-gray-100 rounded text-sm">
+                                {{ trade.strategy.name if trade.strategy else 'unclassified' }}
+                            </span>
+                        </td>
+                        <td class="py-3">
+                            <a href="/trades/{{ trade.id }}" class="text-blue-600 hover:underline mr-3">Review</a>
+                            <button onclick="deleteTrade({{ trade.id }})" class="text-red-600 hover:underline">Delete</button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-12 text-gray-500">
+            <div class="text-4xl mb-4">📭</div>
+            <p class="text-xl mb-4">No trades yet</p>
+            <div class="space-x-4">
+                <a href="/add-trade" class="btn btn-primary">Add Trade</a>
+                <a href="/import" class="btn btn-secondary">Import CSV</a>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div id="toast" class="fixed bottom-4 right-4 bg-gray-900 text-white px-6 py-3 rounded-lg shadow-lg hidden">
+    <span id="toast-message"></span>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showToast(message) {
+    const toast = document.getElementById('toast');
+    document.getElementById('toast-message').textContent = message;
+    toast.classList.remove('hidden');
+    setTimeout(() => toast.classList.add('hidden'), 3000);
+}
+
+async function deleteTrade(id) {
+    if (!confirm('Delete this trade?')) return;
+    
+    const response = await fetch(`/api/trades/${id}`, { method: 'DELETE' });
+    if (response.ok) {
+        window.location.reload();
+    } else {
+        showToast('Failed to delete trade');
+    }
+}
+
+async function reclassifyTrades() {
+    showToast('Reclassifying trades with LLM...');
+    const response = await fetch('/api/reclassify', { method: 'POST' });
+    const data = await response.json();
+    showToast(`Reclassified ${data.reclassified} trades`);
+    setTimeout(() => window.location.reload(), 1500);
+}
+</script>
+{% endblock %}

@@ -1,7 +1,7 @@
 """
 Premarket / Before-Session Report Generator.
 
-Generates structured analysis for favorite tickers using Brooks principles:
+Uses LLM for intelligent market analysis:
 - Daily chart: regime, key levels, magnets
 - 2-hour chart: current leg, strength
 - 5-minute (past 3 days): opening context, day type
@@ -74,17 +74,26 @@ class PremarketReport:
     """
     Generate premarket analysis reports.
 
-    Analyzes daily, 2-hour, and 5-minute charts to provide
-    Brooks-style context and trading plans.
+    Uses LLM for intelligent analysis of daily, 2-hour, and 5-minute charts
+    to provide Brooks-style context and trading plans.
     """
 
     def __init__(self):
         """Initialize report generator."""
         self.ny_tz = pytz.timezone("America/New_York")
+        self._llm_analyzer = None
+
+    @property
+    def llm_analyzer(self):
+        """Lazy load LLM analyzer."""
+        if self._llm_analyzer is None:
+            from app.llm.analyzer import get_analyzer
+            self._llm_analyzer = get_analyzer()
+        return self._llm_analyzer
 
     def generate_ticker_report(self, ticker: str, report_date: Optional[date] = None) -> TickerReport:
         """
-        Generate premarket report for a single ticker.
+        Generate premarket report for a single ticker using LLM analysis.
 
         Args:
             ticker: Stock symbol
@@ -103,15 +112,21 @@ class PremarketReport:
         two_hour_df = self._fetch_2h_data(ticker, report_date)
         five_min_df = self._fetch_5m_data(ticker, report_date)
 
-        # Analyze each timeframe
-        daily_analysis = self._analyze_timeframe(daily_df, "daily")
-        two_hour_analysis = self._analyze_timeframe(two_hour_df, "2h") if not two_hour_df.empty else None
-        five_min_analysis = self._analyze_timeframe(five_min_df, "5m") if not five_min_df.empty else None
-
         # Get current price
         current_price = None
         if not daily_df.empty:
             current_price = float(daily_df.iloc[-1]["close"])
+
+        # Try LLM analysis first
+        if self.llm_analyzer.is_available and not daily_df.empty:
+            llm_result = self._generate_llm_report(ticker, daily_df, two_hour_df)
+            if llm_result:
+                return llm_result
+
+        # Fallback to rule-based analysis
+        daily_analysis = self._analyze_timeframe(daily_df, "daily")
+        two_hour_analysis = self._analyze_timeframe(two_hour_df, "2h") if not two_hour_df.empty else None
+        five_min_analysis = self._analyze_timeframe(five_min_df, "5m") if not five_min_df.empty else None
 
         # Get magnets
         magnets_above, magnets_below, measured_moves = self._get_magnets(
@@ -149,6 +164,98 @@ class PremarketReport:
             overall_bias=overall_bias,
             bias_confidence=bias_confidence,
         )
+
+    def _generate_llm_report(self, ticker: str, daily_df, two_hour_df) -> Optional[TickerReport]:
+        """Generate report using LLM analysis."""
+        try:
+            # Format OHLCV data for LLM
+            daily_str = self._format_ohlcv_for_llm(daily_df.tail(20))
+            two_hour_str = self._format_ohlcv_for_llm(two_hour_df.tail(20)) if not two_hour_df.empty else None
+
+            llm_analysis = self.llm_analyzer.analyze_market_context(
+                ticker=ticker,
+                daily_ohlcv=daily_str,
+                intraday_ohlcv=two_hour_str,
+            )
+
+            if "error" in llm_analysis:
+                return None
+
+            current_price = float(daily_df.iloc[-1]["close"])
+            report_date = date.today()
+
+            # Extract key levels from LLM
+            key_levels = llm_analysis.get("key_levels", {})
+            resistance = key_levels.get("resistance", [])
+            support = key_levels.get("support", [])
+
+            # Build TimeframeAnalysis from LLM
+            daily_analysis = TimeframeAnalysis(
+                timeframe="daily",
+                regime=llm_analysis.get("regime", "unknown"),
+                always_in=llm_analysis.get("always_in", "neutral"),
+                confidence=llm_analysis.get("regime_confidence", "medium"),
+                description=llm_analysis.get("summary", ""),
+                key_levels=[{"price": r.get("price"), "type": "resistance", "description": r.get("description", "")} for r in resistance] +
+                           [{"price": s.get("price"), "type": "support", "description": s.get("description", "")} for s in support],
+                patterns=[],
+                strength={"strength": llm_analysis.get("strength", "unknown"), "reasoning": llm_analysis.get("strength_reasoning", "")},
+            )
+
+            # Extract plan A/B from LLM
+            plan_a_data = llm_analysis.get("plan_a", {})
+            plan_b_data = llm_analysis.get("plan_b", {})
+
+            plan_a = {
+                "scenario": plan_a_data.get("scenario", ""),
+                "bias": plan_a_data.get("bias", "NEUTRAL"),
+                "setups": plan_a_data.get("setups", []),
+                "entry_zones": plan_a_data.get("entry_zones", ""),
+                "targets": plan_a_data.get("targets", ""),
+            }
+
+            plan_b = {
+                "scenario": "Alternative scenario",
+                "trigger": plan_b_data.get("trigger", ""),
+                "bias": plan_b_data.get("new_bias", "NEUTRAL"),
+                "action": plan_b_data.get("action", ""),
+            }
+
+            # Format magnets from LLM analysis
+            magnets_above = [{"price": r.get("price"), "type": "resistance", "description": r.get("description", "")} for r in resistance]
+            magnets_below = [{"price": s.get("price"), "type": "support", "description": s.get("description", "")} for s in support]
+
+            return TickerReport(
+                ticker=ticker,
+                report_date=report_date,
+                current_price=current_price,
+                daily_analysis=daily_analysis,
+                two_hour_analysis=None,
+                five_min_analysis=None,
+                magnets_above=magnets_above,
+                magnets_below=magnets_below,
+                measured_moves=[],
+                plan_a=plan_a,
+                plan_b=plan_b,
+                avoid_conditions=llm_analysis.get("avoid", []),
+                overall_bias=plan_a.get("bias", "NEUTRAL"),
+                bias_confidence=llm_analysis.get("regime_confidence", "medium"),
+            )
+
+        except Exception as e:
+            logger.warning(f"LLM report generation failed: {e}")
+            return None
+
+    def _format_ohlcv_for_llm(self, df) -> str:
+        """Format OHLCV DataFrame as string for LLM."""
+        if df.empty:
+            return "No data"
+
+        lines = ["Date | Open | High | Low | Close | Volume"]
+        for _, row in df.iterrows():
+            dt = row["datetime"].strftime("%Y-%m-%d") if hasattr(row["datetime"], "strftime") else str(row["datetime"])[:10]
+            lines.append(f"{dt} | {row['open']:.2f} | {row['high']:.2f} | {row['low']:.2f} | {row['close']:.2f} | {int(row['volume'])}")
+        return "\n".join(lines)
 
     def _fetch_daily_data(self, ticker: str, report_date: date) -> 'pd.DataFrame':
         """Fetch daily OHLCV data."""

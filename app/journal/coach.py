@@ -1,8 +1,8 @@
 """
 Brooks-style Trade Coach for post-trade review.
 
-Provides rule-based critique of trades using Brooks price action principles.
-Optionally enhanced by LLM for narrative coaching.
+Uses LLM (Claude/OpenAI) for intelligent trade analysis and coaching.
+Falls back to rule-based analysis if LLM is unavailable.
 """
 
 from dataclasses import dataclass
@@ -10,10 +10,10 @@ from datetime import datetime, timedelta
 from typing import Optional, Literal
 import logging
 
+import pandas as pd
+
 from app.journal.models import Trade, TradeDirection, TradeOutcome, get_session
 from app.journal.analytics import TradeAnalytics
-from app.features.ohlc_features import OHLCFeatures
-from app.features.brooks_patterns import BrooksPatternDetector, Regime, AlwaysIn
 from app.data.cache import get_cached_ohlcv
 from app.config import settings
 
@@ -61,21 +61,27 @@ class TradeReview:
 class TradeCoach:
     """
     Review trades using Brooks price action principles.
-
-    Provides structured feedback on:
-    - Context (trend vs range, always-in)
-    - Setup quality
-    - Common errors
-    - Actionable improvements
+    
+    Uses LLM for intelligent analysis - no hardcoded pattern matching.
+    Falls back to basic rule-based analysis if LLM unavailable.
     """
 
     def __init__(self):
         """Initialize coach."""
         self.analytics = TradeAnalytics()
+        self._llm_analyzer = None
+
+    @property
+    def llm_analyzer(self):
+        """Lazy load LLM analyzer."""
+        if self._llm_analyzer is None:
+            from app.llm.analyzer import get_analyzer
+            self._llm_analyzer = get_analyzer()
+        return self._llm_analyzer
 
     def review_trade(self, trade_id: int) -> Optional[TradeReview]:
         """
-        Perform comprehensive review of a trade.
+        Perform comprehensive review of a trade using LLM analysis.
 
         Args:
             trade_id: Trade ID to review
@@ -90,50 +96,132 @@ class TradeCoach:
                 logger.warning(f"Trade {trade_id} not found")
                 return None
 
-            # Get market data for context
-            context = self._analyze_context(trade)
+            # Get market context data
+            ohlcv_context = self._get_ohlcv_context_string(trade)
 
-            # Classify setup
-            setup_class, setup_quality = self._classify_setup(trade, context)
+            # Use LLM for comprehensive analysis
+            if self.llm_analyzer.is_available:
+                llm_analysis = self.llm_analyzer.analyze_trade(
+                    ticker=trade.ticker,
+                    direction=trade.direction.value,
+                    entry_price=trade.entry_price,
+                    exit_price=trade.exit_price,
+                    stop_price=trade.stop_price,
+                    target_price=trade.target_price,
+                    entry_reason=trade.entry_reason,
+                    notes=trade.notes,
+                    ohlcv_context=ohlcv_context,
+                    mae=trade.mae,
+                    mfe=trade.mfe,
+                )
 
-            # Assess trader's equation
-            rr_assessment = self._assess_risk_reward(trade)
-            prob_assessment = self._assess_probability(trade, context)
+                if "error" not in llm_analysis and "raw_analysis" not in llm_analysis:
+                    return TradeReview(
+                        trade_id=trade.id,
+                        ticker=trade.ticker,
+                        regime=llm_analysis.get("regime", "unknown"),
+                        always_in=llm_analysis.get("always_in", "neutral"),
+                        context_description=llm_analysis.get("overall_coaching", ""),
+                        setup_classification=llm_analysis.get("setup_classification", "unclassified"),
+                        setup_quality=llm_analysis.get("setup_quality", "marginal"),
+                        risk_reward_assessment=llm_analysis.get("risk_reward_assessment", ""),
+                        probability_assessment=llm_analysis.get("probability_assessment", ""),
+                        errors_detected=llm_analysis.get("errors", []),
+                        what_was_good=llm_analysis.get("what_was_good", []),
+                        what_was_flawed=llm_analysis.get("what_was_flawed", []),
+                        rule_for_next_time=llm_analysis.get("rule_for_next_time", ""),
+                        r_multiple=trade.r_multiple or 0,
+                        mae=trade.mae,
+                        mfe=trade.mfe,
+                        grade=llm_analysis.get("grade", "C"),
+                        grade_explanation=llm_analysis.get("grade_explanation", ""),
+                    )
 
-            # Detect errors
-            errors = self._detect_errors(trade, context)
-
-            # Generate coaching
-            goods = self._find_what_was_good(trade, context)
-            flaws = self._find_what_was_flawed(trade, context, errors)
-            rule = self._generate_rule(trade, errors, flaws)
-
-            # Grade the trade
-            grade, grade_explanation = self._grade_trade(trade, context, errors)
-
-            return TradeReview(
-                trade_id=trade.id,
-                ticker=trade.ticker,
-                regime=context.get("regime", "unknown"),
-                always_in=context.get("always_in", "neutral"),
-                context_description=context.get("description", ""),
-                setup_classification=setup_class,
-                setup_quality=setup_quality,
-                risk_reward_assessment=rr_assessment,
-                probability_assessment=prob_assessment,
-                errors_detected=errors,
-                what_was_good=goods,
-                what_was_flawed=flaws,
-                rule_for_next_time=rule,
-                r_multiple=trade.r_multiple or 0,
-                mae=trade.mae,
-                mfe=trade.mfe,
-                grade=grade,
-                grade_explanation=grade_explanation,
-            )
+            # Fallback to basic rule-based analysis
+            return self._fallback_review(trade, ohlcv_context)
 
         finally:
             session.close()
+
+    def _get_ohlcv_context_string(self, trade: Trade) -> str:
+        """Get OHLCV data as a string for LLM context."""
+        try:
+            end_date = datetime.combine(trade.trade_date, datetime.min.time())
+            start_date = end_date - timedelta(days=30)
+
+            df = get_cached_ohlcv(trade.ticker, "1d", start_date, end_date)
+
+            if df.empty:
+                return "No market data available"
+
+            # Format last 10 bars for context
+            recent = df.tail(10)
+            lines = ["Date | Open | High | Low | Close | Volume"]
+            for _, row in recent.iterrows():
+                dt = row["datetime"].strftime("%Y-%m-%d") if hasattr(row["datetime"], "strftime") else str(row["datetime"])[:10]
+                lines.append(f"{dt} | {row['open']:.2f} | {row['high']:.2f} | {row['low']:.2f} | {row['close']:.2f} | {int(row['volume'])}")
+
+            return "\n".join(lines)
+        except Exception as e:
+            logger.warning(f"Failed to get OHLCV context: {e}")
+            return "Market data unavailable"
+
+    def _fallback_review(self, trade: Trade, ohlcv_context: str) -> TradeReview:
+        """Basic rule-based review when LLM is unavailable."""
+        # Simple analysis based on R-multiple
+        r = trade.r_multiple or 0
+        
+        if r > 1:
+            grade = "B"
+            grade_exp = "Profitable trade"
+        elif r > 0:
+            grade = "C"
+            grade_exp = "Small winner"
+        elif r > -1:
+            grade = "C"
+            grade_exp = "Controlled loss"
+        else:
+            grade = "D"
+            grade_exp = "Large loss - review stop management"
+
+        errors = []
+        if r < -1.5:
+            errors.append("Loss exceeded 1.5R - consider tighter stops")
+        if not trade.entry_reason:
+            errors.append("No entry reason documented")
+
+        goods = []
+        if r > 0:
+            goods.append(f"Profitable trade: +{r:.2f}R")
+        if trade.entry_reason:
+            goods.append("Entry reason documented")
+
+        flaws = []
+        if r < 0:
+            flaws.append(f"Loss: {r:.2f}R")
+        if not trade.stop_price:
+            flaws.append("No stop defined")
+
+        return TradeReview(
+            trade_id=trade.id,
+            ticker=trade.ticker,
+            regime="unknown",
+            always_in="neutral",
+            context_description="LLM unavailable - basic analysis only. Set OPENAI_API_KEY for full analysis.",
+            setup_classification=trade.strategy.name if trade.strategy else "unclassified",
+            setup_quality="marginal",
+            risk_reward_assessment="Unable to assess without LLM",
+            probability_assessment="Unable to assess without LLM",
+            errors_detected=errors,
+            what_was_good=goods if goods else ["Trade was logged"],
+            what_was_flawed=flaws if flaws else [],
+            rule_for_next_time="Set OPENAI_API_KEY for detailed coaching",
+            r_multiple=r,
+            mae=trade.mae,
+            mfe=trade.mfe,
+            grade=grade,
+            grade_explanation=grade_exp,
+        )
 
     def _analyze_context(self, trade: Trade) -> dict:
         """Analyze market context at time of trade."""

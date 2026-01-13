@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Brooks Trading Coach{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <style>
+        .nav-link { @apply px-4 py-2 rounded-lg hover:bg-gray-700 transition; }
+        .nav-link.active { @apply bg-blue-600; }
+        .card { @apply bg-white rounded-xl shadow-md p-6; }
+        .btn { @apply px-4 py-2 rounded-lg font-medium transition; }
+        .btn-primary { @apply bg-blue-600 text-white hover:bg-blue-700; }
+        .btn-secondary { @apply bg-gray-200 text-gray-800 hover:bg-gray-300; }
+        .btn-success { @apply bg-green-600 text-white hover:bg-green-700; }
+        .btn-danger { @apply bg-red-600 text-white hover:bg-red-700; }
+        .input { @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent; }
+        .label { @apply block text-sm font-medium text-gray-700 mb-1; }
+        .stat-card { @apply bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-4 text-center; }
+        .positive { @apply text-green-600; }
+        .negative { @apply text-red-600; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <!-- Navigation -->
+    <nav class="bg-gray-900 text-white shadow-lg">
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center space-x-8">
+                    <a href="/" class="text-xl font-bold">📈 Brooks Coach</a>
+                    <div class="flex space-x-2">
+                        <a href="/" class="nav-link {% if request.url.path == '/' %}active{% endif %}">Dashboard</a>
+                        <a href="/trades" class="nav-link {% if '/trades' in request.url.path %}active{% endif %}">Trades</a>
+                        <a href="/add-trade" class="nav-link {% if request.url.path == '/add-trade' %}active{% endif %}">+ Add Trade</a>
+                        <a href="/import" class="nav-link {% if request.url.path == '/import' %}active{% endif %}">Import</a>
+                        <a href="/tickers" class="nav-link {% if request.url.path == '/tickers' %}active{% endif %}">Tickers</a>
+                        <a href="/reports" class="nav-link {% if request.url.path == '/reports' %}active{% endif %}">Reports</a>
+                        <a href="/stats" class="nav-link {% if request.url.path == '/stats' %}active{% endif %}">Stats</a>
+                    </div>
+                </div>
+                <div class="text-sm text-gray-400">
+                    {% if llm_available is defined %}
+                        {% if llm_available %}
+                            <span class="text-green-400">🧠 Claude Active</span>
+                        {% else %}
+                            <span class="text-yellow-400">⚠️ Set ANTHROPIC_API_KEY</span>
+                        {% endif %}
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 py-8">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-gray-900 text-gray-400 py-4 mt-8">
+        <div class="max-w-7xl mx-auto px-4 text-center text-sm">
+            Brooks Price Action Trading Coach • Advisory Only • Not Financial Advice
+        </div>
+    </footer>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

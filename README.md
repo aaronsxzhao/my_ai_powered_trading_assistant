@@ -4,20 +4,82 @@ A decision-support, journaling, analytics, and premarket briefing system for dis
 
 ⚠️ **ADVISORY ONLY**: This system does NOT auto-trade. It is read-only market data + analysis by default.
 
+## 🚀 Quick Start
+
+```bash
+# 1. Install dependencies
+pip install -r requirements.txt
+
+# 2. Set up your Anthropic API key (for Claude AI analysis)
+# Get your key from: https://console.anthropic.com/
+echo "ANTHROPIC_API_KEY=your_key_here" > .env
+
+# 3. Start the web interface
+python -m app.main web
+
+# 4. Open http://localhost:8000 in your browser
+```
+
+That's it! The web interface lets you:
+- Add and review trades
+- Upload CSV files  
+- Manage tickers
+- Generate reports
+- View statistics
+
+## 🌐 Web Interface
+
+Start the web UI:
+```bash
+brooks web
+# Or with custom port:
+brooks web --port 3000
+```
+
+Open http://localhost:8000 in your browser.
+
+![Dashboard](docs/screenshot-dashboard.png)
+
+**Features:**
+- 📊 Dashboard with stats and recent trades
+- ➕ Add trades with auto R-multiple calculation
+- 📥 Drag & drop CSV import
+- 📈 Ticker management
+- 📋 Report generation
+- 🧠 AI-powered trade review
+
+## 📁 Key File Locations
+
+| File/Folder | Purpose |
+|-------------|---------|
+| `tickers.txt` | **Edit this** to add/remove your favorite tickers |
+| `imports/` | **Drop CSV files here** for bulk trade import |
+| `.env` | Your API keys (OPENAI_API_KEY required) |
+| `config.yaml` | Other settings |
+| `outputs/` | Generated reports by date |
+
 ## Features
 
+### 🤖 LLM-Powered Analysis (Not Hardcoded!)
+
+All analysis is done by Claude/GPT - no rigid pattern matching:
+- **Setup Classification**: LLM analyzes your trades and classifies them into Brooks-style setups
+- **Trade Review**: Intelligent coaching based on context, not templates
+- **Market Analysis**: Dynamic premarket reports based on actual price action
+- **Strategy Suggestions**: AI recommends strategies for your trading style
+
 ### 1. Trade Journal + Post-Trade Coach (Brooks-style)
-- Manual trade entry or CSV import from brokers
+- Manual trade entry or **bulk CSV import** from `imports/` folder
 - Automatic computation of:
   - R-multiple (PnL / initial risk)
   - MAE/MFE (Maximum Adverse/Favorable Excursion)
   - Hold time, slippage, win/loss, expectancy
-- Brooks-style trade review:
+- **LLM-powered** Brooks-style trade review:
   - Context analysis (trend vs trading range, always-in direction)
-  - Setup classification (breakout pullback, 2nd entry, wedge, failed breakout, etc.)
+  - **AI classifies** your setup (breakout pullback, 2nd entry, wedge, etc.)
   - Trader's equation evaluation (probability × reward vs risk)
-  - Error detection (countertrend without reversal, poor scalp math, etc.)
-  - Actionable coaching: what was good, what was flawed, rule for next time
+  - Error detection and personalized coaching
+  - Actionable rule for next time
 
 ### 2. Strategy Tracking + Edge Discovery
 - Strategy taxonomy (with-trend, countertrend, trading range, special)
@@ -50,35 +112,76 @@ A decision-support, journaling, analytics, and premarket briefing system for dis
 
 ### Prerequisites
 - Python 3.11 or higher
-- pip or pipenv
+- OpenAI API key (for intelligent analysis)
 
 ### Setup
 
-1. Clone the repository:
 ```bash
+# 1. Create virtual environment
 cd my_ai_powered_trading_assistant
-```
-
-2. Create a virtual environment:
-```bash
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
 
-3. Install dependencies:
-```bash
+# 2. Install dependencies
 pip install -r requirements.txt
-```
 
-4. Copy and configure environment variables:
-```bash
+# 3. Configure API key (REQUIRED for LLM analysis)
 cp env.example .env
-# Edit .env with your API keys (optional)
+# Edit .env and add: OPENAI_API_KEY=your_key_here
+
+# 4. Initialize the system
+python -m app.main config init
 ```
 
-5. Initialize the database:
+## 📈 Managing Your Tickers
+
+Edit `tickers.txt` directly in any text editor:
+
+```txt
+# My favorite tickers
+SPY
+QQQ
+AAPL
+NVDA
+TSLA
+```
+
+Or use CLI:
 ```bash
-python -m app.main config init
+brooks config tickers list
+brooks config tickers add AMZN
+brooks config tickers remove TSLA
+```
+
+## 📥 Bulk Importing Trades
+
+### Option 1: Drop CSVs in imports/ folder
+```bash
+# 1. Copy your CSV files to imports/
+cp my_trades.csv imports/
+
+# 2. Run bulk import (LLM will classify each trade!)
+brooks trade bulk-import
+```
+
+### Option 2: Import single file
+```bash
+brooks trade import path/to/trades.csv
+```
+
+### CSV Format
+```csv
+ticker,direction,entry_price,exit_price,stop_price,size,trade_date,notes
+SPY,long,475.50,478.00,474.00,100,2024-01-15,Strong pullback to EMA
+AAPL,short,185.00,182.50,187.00,50,2024-01-15,Failed breakout
+```
+
+See `imports/README.md` for detailed format instructions.
+
+### Reclassify Existing Trades
+```bash
+# Use LLM to reclassify all unclassified trades
+brooks trade reclassify
 ```
 
 ## Usage
@@ -95,14 +198,19 @@ brooks trade add \
   --entry 150.00 \
   --exit 152.00 \
   --stop 148.50 \
-  --size 100 \
-  --strategy second_entry_buy
+  --size 100
 
-# Import trades from CSV
-brooks trade import trades.csv --broker generic
+# Bulk import from imports/ folder (recommended!)
+brooks trade bulk-import
 
-# Review a trade with coaching
+# Import single CSV file
+brooks trade import trades.csv
+
+# Review a trade with LLM coaching
 brooks trade review 1
+
+# Use LLM to reclassify unclassified trades
+brooks trade reclassify
 
 # List recent trades
 brooks trade list --limit 20
@@ -246,35 +354,39 @@ The CSV should have these columns (case-insensitive):
 
 ```
 my_ai_powered_trading_assistant/
+├── tickers.txt              # ⭐ EDIT THIS - Your favorite tickers
+├── imports/                 # ⭐ DROP CSVs HERE - Bulk trade import
+│   └── README.md            # Import format instructions
+├── .env                     # Your API keys (OPENAI_API_KEY)
+├── config.yaml              # Other settings
 ├── app/
 │   ├── main.py              # CLI entry point (Typer)
 │   ├── config.py            # Configuration management
 │   ├── data/
-│   │   ├── providers.py     # Market data providers (yfinance, etc.)
+│   │   ├── providers.py     # Market data (yfinance/Polygon/Alpaca)
 │   │   └── cache.py         # Local OHLCV caching
 │   ├── features/
 │   │   ├── ohlc_features.py # Technical indicators
-│   │   ├── brooks_patterns.py # Brooks pattern detection
+│   │   ├── brooks_patterns.py # Fallback pattern detection
 │   │   └── magnets.py       # Key level detection
 │   ├── journal/
 │   │   ├── models.py        # SQLAlchemy models
-│   │   ├── ingest.py        # Trade import/entry
+│   │   ├── ingest.py        # Trade import + bulk import
 │   │   ├── analytics.py     # R-multiple, expectancy, stats
-│   │   └── coach.py         # Brooks-style trade review
+│   │   └── coach.py         # LLM-powered trade review
 │   ├── reports/
-│   │   ├── premarket.py     # Premarket report generator
+│   │   ├── premarket.py     # LLM-powered premarket reports
 │   │   ├── eod.py           # End-of-day report
 │   │   ├── weekly.py        # Weekly summary
 │   │   └── render.py        # Markdown/chart rendering
 │   └── llm/
+│       ├── analyzer.py      # 🧠 LLM analysis engine
 │       ├── client.py        # OpenAI-compatible client
-│       └── prompts.py       # LLM prompt templates
+│       └── prompts.py       # Prompt templates
 ├── tests/                   # Pytest tests
 ├── outputs/                 # Generated reports (by date)
 ├── data/                    # SQLite database + cache
-├── config.yaml              # User configuration
-├── requirements.txt         # Dependencies
-└── README.md
+└── docs/                    # Additional documentation
 ```
 
 ## Running Tests
