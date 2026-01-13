@@ -1,0 +1,2 @@
+# This directory stores the SQLite database and OHLCV cache
+# Files in this directory are not tracked by git

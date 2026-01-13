@@ -1,0 +1,341 @@
+"""
+Market data providers for OHLCV data.
+
+Supports yfinance (default), with placeholders for Polygon and Alpaca.
+"""
+
+from abc import ABC, abstractmethod
+from datetime import datetime, timedelta
+from typing import Literal
+import logging
+
+import pandas as pd
+import pytz
+
+from app.config import settings, get_env
+
+logger = logging.getLogger(__name__)
+
+# Standard column names for OHLCV data
+OHLCV_COLUMNS = ["datetime", "open", "high", "low", "close", "volume"]
+
+Timeframe = Literal["1d", "2h", "1h", "30m", "15m", "5m", "1m"]
+
+
+class DataProvider(ABC):
+    """Abstract base class for market data providers."""
+
+    @abstractmethod
+    def get_ohlcv(
+        self,
+        ticker: str,
+        timeframe: Timeframe,
+        start: datetime,
+        end: datetime,
+    ) -> pd.DataFrame:
+        """
+        Fetch OHLCV data for a ticker.
+
+        Args:
+            ticker: Stock symbol (e.g., 'SPY', 'AAPL')
+            timeframe: Candle timeframe ('1d', '2h', '5m', etc.)
+            start: Start datetime
+            end: End datetime
+
+        Returns:
+            DataFrame with columns: datetime, open, high, low, close, volume
+            Index is datetime in America/New_York timezone.
+        """
+        pass
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Provider name."""
+        pass
+
+    def _normalize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Normalize DataFrame to standard format."""
+        # Ensure column names are lowercase
+        df.columns = df.columns.str.lower()
+
+        # Rename common variations
+        column_map = {
+            "date": "datetime",
+            "time": "datetime",
+            "timestamp": "datetime",
+            "vol": "volume",
+        }
+        df = df.rename(columns=column_map)
+
+        # Ensure datetime column exists
+        if "datetime" not in df.columns:
+            if df.index.name in ["datetime", "date", "Date", "Datetime"]:
+                df = df.reset_index()
+                df = df.rename(columns={df.columns[0]: "datetime"})
+            elif isinstance(df.index, pd.DatetimeIndex):
+                df = df.reset_index()
+                df = df.rename(columns={df.columns[0]: "datetime"})
+
+        # Convert to NYC timezone
+        ny_tz = pytz.timezone("America/New_York")
+        if df["datetime"].dt.tz is None:
+            df["datetime"] = df["datetime"].dt.tz_localize("UTC").dt.tz_convert(ny_tz)
+        else:
+            df["datetime"] = df["datetime"].dt.tz_convert(ny_tz)
+
+        # Select only OHLCV columns
+        available_cols = [c for c in OHLCV_COLUMNS if c in df.columns]
+        df = df[available_cols].copy()
+
+        # Sort by datetime
+        df = df.sort_values("datetime").reset_index(drop=True)
+
+        return df
+
+
+class YFinanceProvider(DataProvider):
+    """Yahoo Finance data provider using yfinance library."""
+
+    @property
+    def name(self) -> str:
+        return "yfinance"
+
+    def get_ohlcv(
+        self,
+        ticker: str,
+        timeframe: Timeframe,
+        start: datetime,
+        end: datetime,
+    ) -> pd.DataFrame:
+        """Fetch OHLCV data from Yahoo Finance."""
+        import yfinance as yf
+
+        # Map timeframe to yfinance interval
+        interval_map = {
+            "1d": "1d",
+            "2h": "2h",
+            "1h": "1h",
+            "30m": "30m",
+            "15m": "15m",
+            "5m": "5m",
+            "1m": "1m",
+        }
+        interval = interval_map.get(timeframe, "1d")
+
+        # yfinance has limitations on intraday data lookback
+        # 1m: 7 days, 5m/15m/30m: 60 days, 1h: 730 days
+        try:
+            ticker_obj = yf.Ticker(ticker)
+            df = ticker_obj.history(
+                start=start.strftime("%Y-%m-%d"),
+                end=end.strftime("%Y-%m-%d"),
+                interval=interval,
+                actions=False,
+            )
+
+            if df.empty:
+                logger.warning(f"No data returned for {ticker} ({timeframe})")
+                return pd.DataFrame(columns=OHLCV_COLUMNS)
+
+            # Reset index to get datetime as column
+            df = df.reset_index()
+            df = df.rename(columns={"Date": "datetime", "Datetime": "datetime"})
+
+            return self._normalize_dataframe(df)
+
+        except Exception as e:
+            logger.error(f"Error fetching {ticker} from yfinance: {e}")
+            return pd.DataFrame(columns=OHLCV_COLUMNS)
+
+
+class PolygonProvider(DataProvider):
+    """Polygon.io data provider (placeholder - requires API key)."""
+
+    def __init__(self):
+        self.api_key = get_env("POLYGON_API_KEY")
+        if not self.api_key:
+            logger.warning("POLYGON_API_KEY not set. Polygon provider will not work.")
+
+    @property
+    def name(self) -> str:
+        return "polygon"
+
+    def get_ohlcv(
+        self,
+        ticker: str,
+        timeframe: Timeframe,
+        start: datetime,
+        end: datetime,
+    ) -> pd.DataFrame:
+        """Fetch OHLCV data from Polygon.io."""
+        if not self.api_key:
+            raise ValueError("POLYGON_API_KEY is required for Polygon provider")
+
+        # Placeholder implementation
+        # In production, use: https://polygon.io/docs/stocks/get_v2_aggs_ticker__stocksticker__range__multiplier___timespan___from___to
+        import httpx
+
+        # Map timeframe to Polygon format
+        timespan_map = {
+            "1d": ("1", "day"),
+            "2h": ("2", "hour"),
+            "1h": ("1", "hour"),
+            "30m": ("30", "minute"),
+            "15m": ("15", "minute"),
+            "5m": ("5", "minute"),
+            "1m": ("1", "minute"),
+        }
+        multiplier, timespan = timespan_map.get(timeframe, ("1", "day"))
+
+        url = (
+            f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/"
+            f"{multiplier}/{timespan}/{start.strftime('%Y-%m-%d')}/{end.strftime('%Y-%m-%d')}"
+        )
+        params = {"apiKey": self.api_key, "adjusted": "true", "sort": "asc", "limit": 50000}
+
+        try:
+            response = httpx.get(url, params=params, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+
+            if data.get("resultsCount", 0) == 0:
+                return pd.DataFrame(columns=OHLCV_COLUMNS)
+
+            df = pd.DataFrame(data["results"])
+            df = df.rename(
+                columns={
+                    "t": "datetime",
+                    "o": "open",
+                    "h": "high",
+                    "l": "low",
+                    "c": "close",
+                    "v": "volume",
+                }
+            )
+            df["datetime"] = pd.to_datetime(df["datetime"], unit="ms")
+
+            return self._normalize_dataframe(df)
+
+        except Exception as e:
+            logger.error(f"Error fetching {ticker} from Polygon: {e}")
+            return pd.DataFrame(columns=OHLCV_COLUMNS)
+
+
+class AlpacaProvider(DataProvider):
+    """Alpaca Markets data provider (placeholder - requires API key)."""
+
+    def __init__(self):
+        self.api_key = get_env("ALPACA_API_KEY")
+        self.secret_key = get_env("ALPACA_SECRET_KEY")
+        if not self.api_key:
+            logger.warning("ALPACA_API_KEY not set. Alpaca provider will not work.")
+
+    @property
+    def name(self) -> str:
+        return "alpaca"
+
+    def get_ohlcv(
+        self,
+        ticker: str,
+        timeframe: Timeframe,
+        start: datetime,
+        end: datetime,
+    ) -> pd.DataFrame:
+        """Fetch OHLCV data from Alpaca Markets."""
+        if not self.api_key:
+            raise ValueError("ALPACA_API_KEY is required for Alpaca provider")
+
+        # Placeholder implementation
+        import httpx
+
+        # Map timeframe to Alpaca format
+        tf_map = {
+            "1d": "1Day",
+            "2h": "2Hour",
+            "1h": "1Hour",
+            "30m": "30Min",
+            "15m": "15Min",
+            "5m": "5Min",
+            "1m": "1Min",
+        }
+        alpaca_tf = tf_map.get(timeframe, "1Day")
+
+        url = f"https://data.alpaca.markets/v2/stocks/{ticker}/bars"
+        headers = {"APCA-API-KEY-ID": self.api_key, "APCA-API-SECRET-KEY": self.secret_key}
+        params = {
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "timeframe": alpaca_tf,
+            "adjustment": "split",
+            "limit": 10000,
+        }
+
+        try:
+            response = httpx.get(url, headers=headers, params=params, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+
+            if not data.get("bars"):
+                return pd.DataFrame(columns=OHLCV_COLUMNS)
+
+            df = pd.DataFrame(data["bars"])
+            df = df.rename(
+                columns={
+                    "t": "datetime",
+                    "o": "open",
+                    "h": "high",
+                    "l": "low",
+                    "c": "close",
+                    "v": "volume",
+                }
+            )
+            df["datetime"] = pd.to_datetime(df["datetime"])
+
+            return self._normalize_dataframe(df)
+
+        except Exception as e:
+            logger.error(f"Error fetching {ticker} from Alpaca: {e}")
+            return pd.DataFrame(columns=OHLCV_COLUMNS)
+
+
+def get_provider(name: str | None = None) -> DataProvider:
+    """
+    Get a data provider instance.
+
+    Args:
+        name: Provider name ('yfinance', 'polygon', 'alpaca').
+              Defaults to config setting.
+
+    Returns:
+        DataProvider instance
+    """
+    provider_name = name or settings.data_provider
+
+    providers = {
+        "yfinance": YFinanceProvider,
+        "polygon": PolygonProvider,
+        "alpaca": AlpacaProvider,
+    }
+
+    if provider_name not in providers:
+        logger.warning(f"Unknown provider '{provider_name}', using yfinance")
+        provider_name = "yfinance"
+
+    return providers[provider_name]()
+
+
+def get_daily_data(ticker: str, days: int = 252) -> pd.DataFrame:
+    """Convenience function to get daily OHLCV data."""
+    provider = get_provider()
+    end = datetime.now()
+    start = end - timedelta(days=days * 1.5)  # Account for weekends/holidays
+    return provider.get_ohlcv(ticker, "1d", start, end)
+
+
+def get_intraday_data(ticker: str, timeframe: Timeframe = "5m", days: int = 5) -> pd.DataFrame:
+    """Convenience function to get intraday OHLCV data."""
+    provider = get_provider()
+    end = datetime.now()
+    start = end - timedelta(days=days)
+    return provider.get_ohlcv(ticker, timeframe, start, end)

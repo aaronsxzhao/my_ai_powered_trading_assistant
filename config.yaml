@@ -1,0 +1,108 @@
+# Brooks Trading Coach Configuration
+
+# Favorite tickers for premarket reports
+tickers:
+  - SPY
+  - QQQ
+  - AAPL
+  - MSFT
+  - NVDA
+  - TSLA
+  - AMD
+  - META
+  - GOOGL
+  - AMZN
+
+# Timezone for all reports and analysis
+timezone: America/New_York
+
+# Data provider settings
+data:
+  provider: yfinance  # Options: yfinance, polygon, alpaca
+  cache_enabled: true
+  cache_ttl_minutes: 15
+  
+# Timeframe settings for analysis
+timeframes:
+  daily:
+    lookback_days: 252  # ~1 year of trading days
+  intraday_2h:
+    lookback_days: 60   # ~3 months
+  intraday_5m:
+    lookback_days: 5    # Last 5 trading days
+
+# Technical analysis parameters
+analysis:
+  # Moving averages
+  ema_period: 20
+  sma_periods: [10, 20, 50, 200]
+  
+  # ATR for volatility
+  atr_period: 14
+  
+  # Swing detection
+  swing_lookback: 5
+  
+  # Trend detection thresholds
+  trend_ema_slope_threshold: 0.001
+  trend_closes_above_ema_pct: 0.6
+  overlap_ratio_range_threshold: 0.5
+
+# Risk controls (soft guardrails)
+risk:
+  max_daily_loss_r: 3.0
+  max_losing_streak: 3
+  default_risk_per_trade_pct: 1.0
+  warn_after_consecutive_losses: 2
+  no_trade_after_daily_loss_r: 4.0
+
+# Strategy taxonomy (user can edit/extend)
+strategies:
+  with_trend:
+    - breakout_pullback_long
+    - breakout_pullback_short
+    - second_entry_buy
+    - second_entry_sell
+    - trend_resumption_long
+    - trend_resumption_short
+    - measured_move_long
+    - measured_move_short
+    
+  countertrend:
+    - failed_breakout_long
+    - failed_breakout_short
+    - wedge_reversal_long
+    - wedge_reversal_short
+    - double_top_short
+    - double_bottom_long
+    - climax_reversal_long
+    - climax_reversal_short
+    
+  trading_range:
+    - range_scalp_long
+    - range_scalp_short
+    - range_fade_high
+    - range_fade_low
+    - breakout_failure_fade
+    
+  special:
+    - trend_from_open_long
+    - trend_from_open_short
+    - opening_reversal_long
+    - opening_reversal_short
+    - gap_fill_long
+    - gap_fill_short
+
+# Report settings
+reports:
+  output_dir: outputs
+  format: markdown  # markdown, html
+  include_charts: true
+  chart_style: classic  # classic, dark
+
+# LLM settings
+llm:
+  enabled: false  # Set to true to enable LLM narrative enhancement
+  model: gpt-4o
+  max_tokens: 1500
+  temperature: 0.3
