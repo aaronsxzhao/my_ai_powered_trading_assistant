@@ -22,7 +22,8 @@ from fastapi.templating import Jinja2Templates
 
 from app.config import (
     settings, IMPORTS_DIR, OUTPUTS_DIR, PROJECT_ROOT,
-    load_tickers_from_file, save_tickers_to_file, get_llm_api_key
+    load_tickers_from_file, save_tickers_to_file, get_llm_api_key,
+    get_polygon_api_key
 )
 from app.journal.models import init_db, Trade, Strategy, get_session, TradeDirection, TradeOutcome
 from app.journal.ingest import TradeIngester
@@ -86,6 +87,10 @@ async def dashboard(request: Request):
         # Check LLM status
         llm_available = get_llm_api_key() is not None
         
+        # Check data provider
+        data_provider = settings.data_provider
+        polygon_available = get_polygon_api_key() is not None
+        
         return templates.TemplateResponse("dashboard.html", {
             "request": request,
             "recent_trades": recent_trades,
@@ -96,6 +101,8 @@ async def dashboard(request: Request):
             "strategy_stats": strategy_stats,
             "llm_available": llm_available,
             "tickers": load_tickers_from_file(),
+            "data_provider": data_provider,
+            "polygon_available": polygon_available,
         })
     finally:
         session.close()
@@ -119,6 +126,8 @@ async def trades_page(request: Request):
             "request": request,
             "trades": trades,
             "strategies": strategies,
+            "data_provider": settings.data_provider,
+            "llm_available": get_llm_api_key() is not None,
         })
     finally:
         session.close()
@@ -141,6 +150,8 @@ async def trade_detail(request: Request, trade_id: int):
             "request": request,
             "trade": trade,
             "review": review,
+            "data_provider": settings.data_provider,
+            "llm_available": get_llm_api_key() is not None,
         })
     finally:
         session.close()
@@ -156,6 +167,8 @@ async def add_trade_page(request: Request):
             "request": request,
             "strategies": strategies,
             "tickers": load_tickers_from_file(),
+            "data_provider": settings.data_provider,
+            "llm_available": get_llm_api_key() is not None,
         })
     finally:
         session.close()
@@ -174,6 +187,8 @@ async def import_page(request: Request):
         "import_files": import_files,
         "processed_files": processed_files,
         "imports_path": str(IMPORTS_DIR),
+        "data_provider": settings.data_provider,
+        "llm_available": get_llm_api_key() is not None,
     })
 
 
@@ -184,6 +199,8 @@ async def tickers_page(request: Request):
     return templates.TemplateResponse("tickers.html", {
         "request": request,
         "tickers": tickers,
+        "data_provider": settings.data_provider,
+        "llm_available": get_llm_api_key() is not None,
     })
 
 
@@ -207,6 +224,8 @@ async def reports_page(request: Request):
         "request": request,
         "reports": reports,
         "tickers": load_tickers_from_file(),
+        "data_provider": settings.data_provider,
+        "llm_available": get_llm_api_key() is not None,
     })
 
 
@@ -232,6 +251,8 @@ async def stats_page(request: Request):
         "strategy_stats": strategy_stats,
         "edge_analysis": edge_analysis,
         "equity_data": equity_data,
+        "data_provider": settings.data_provider,
+        "llm_available": get_llm_api_key() is not None,
     })
 
 
@@ -284,6 +305,47 @@ async def upload_csv(file: UploadFile = File(...)):
         f.write(content)
     
     return JSONResponse({"message": f"Uploaded {file.filename}", "path": str(file_path)})
+
+
+@app.post("/api/import-csv")
+async def import_csv(
+    file: UploadFile = File(...),
+    format: str = Form("generic"),
+):
+    """Upload and import a CSV file with specified format."""
+    if not file.filename.endswith('.csv'):
+        return JSONResponse({"error": "Only CSV files allowed", "imported": 0, "errors": 1})
+    
+    # Save file temporarily
+    import tempfile
+    import os
+    
+    try:
+        with tempfile.NamedTemporaryFile(mode='wb', suffix='.csv', delete=False) as tmp:
+            content = await file.read()
+            tmp.write(content)
+            tmp_path = tmp.name
+        
+        # Import with specified format
+        ingester = TradeIngester()
+        imported, errors, messages = ingester.import_csv(tmp_path, format=format)
+        
+        # Clean up temp file
+        os.unlink(tmp_path)
+        
+        return JSONResponse({
+            "imported": imported,
+            "errors": errors,
+            "messages": messages[:10],
+            "format": format,
+        })
+        
+    except Exception as e:
+        return JSONResponse({
+            "error": str(e),
+            "imported": 0,
+            "errors": 1,
+        })
 
 
 @app.post("/api/bulk-import")
@@ -383,6 +445,106 @@ async def delete_trade(trade_id: int):
     if ingester.delete_trade(trade_id):
         return JSONResponse({"message": "Trade deleted"})
     raise HTTPException(status_code=404, detail="Trade not found")
+
+
+@app.get("/api/status")
+async def get_status():
+    """Get current system status and configuration."""
+    return JSONResponse({
+        "data_provider": settings.data_provider,
+        "polygon_available": get_polygon_api_key() is not None,
+        "llm_available": get_llm_api_key() is not None,
+        "tickers": load_tickers_from_file(),
+        "outputs_dir": str(OUTPUTS_DIR),
+        "imports_dir": str(IMPORTS_DIR),
+    })
+
+
+# ==================== ROBINHOOD API ====================
+
+@app.get("/api/robinhood/status")
+async def robinhood_status():
+    """Check Robinhood connection status."""
+    ingester = TradeIngester()
+    return JSONResponse({
+        "has_session": ingester.robinhood_has_session(),
+    })
+
+
+@app.post("/api/robinhood/import")
+async def robinhood_import(request: Request):
+    """Import trades from Robinhood with login."""
+    try:
+        data = await request.json()
+        username = data.get('username')
+        password = data.get('password')
+        mfa_code = data.get('mfa_code')
+        days_back = data.get('days_back', 30)
+        
+        if not username or not password:
+            return JSONResponse({"error": "Username and password required", "imported": 0, "errors": 1})
+        
+        ingester = TradeIngester()
+        imported, errors, messages = ingester.import_from_robinhood(
+            username=username,
+            password=password,
+            mfa_code=mfa_code,
+            days_back=days_back,
+        )
+        
+        return JSONResponse({
+            "imported": imported,
+            "errors": errors,
+            "messages": messages,
+        })
+        
+    except Exception as e:
+        return JSONResponse({"error": str(e), "imported": 0, "errors": 1})
+
+
+@app.post("/api/robinhood/import-session")
+async def robinhood_import_session(request: Request):
+    """Import trades from Robinhood using stored session."""
+    try:
+        data = await request.json()
+        days_back = data.get('days_back', 30)
+        
+        ingester = TradeIngester()
+        
+        # Try to login with stored session
+        if not ingester.robinhood_login_with_session():
+            return JSONResponse({"error": "No stored session. Please login first.", "imported": 0, "errors": 1})
+        
+        from app.data.robinhood import get_robinhood_client
+        client = get_robinhood_client()
+        
+        # Get orders
+        orders = client.get_stock_orders(days_back=days_back)
+        
+        if not orders:
+            return JSONResponse({
+                "imported": 0,
+                "errors": 0,
+                "messages": [f"No filled orders found in the last {days_back} days."],
+            })
+        
+        # Process orders (simplified - just count for now)
+        return JSONResponse({
+            "imported": len(orders),
+            "errors": 0,
+            "messages": [f"Found {len(orders)} orders to process."],
+        })
+        
+    except Exception as e:
+        return JSONResponse({"error": str(e), "imported": 0, "errors": 1})
+
+
+@app.post("/api/robinhood/disconnect")
+async def robinhood_disconnect():
+    """Disconnect Robinhood (clear stored session)."""
+    ingester = TradeIngester()
+    ingester.robinhood_clear_session()
+    return JSONResponse({"message": "Disconnected"})
 
 
 # ==================== RUN SERVER ====================

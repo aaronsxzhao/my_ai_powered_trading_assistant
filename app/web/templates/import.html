@@ -6,12 +6,76 @@
 <div class="space-y-8">
     <h1 class="text-3xl font-bold text-gray-900">Import Trades</h1>
 
+    <!-- Robinhood Auto-Import -->
+    <div class="card border-2 border-green-200 bg-green-50">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-xl font-bold text-green-800">🤖 Robinhood Auto-Import</h2>
+            <span id="rh-status" class="text-sm px-3 py-1 rounded-full bg-gray-200 text-gray-600">Not Connected</span>
+        </div>
+        
+        <div id="rh-login-form">
+            <p class="text-sm text-green-700 mb-4">
+                Connect your Robinhood account to automatically import your trade history.
+            </p>
+            <div class="space-y-3">
+                <input type="email" id="rh-username" placeholder="Robinhood Email" 
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg">
+                <input type="password" id="rh-password" placeholder="Password" 
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg">
+                <input type="text" id="rh-mfa" placeholder="MFA Code (if 2FA enabled)" 
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg">
+                <div class="flex items-center space-x-3">
+                    <select id="rh-days" class="px-4 py-2 border border-gray-300 rounded-lg">
+                        <option value="7">Last 7 days</option>
+                        <option value="30" selected>Last 30 days</option>
+                        <option value="90">Last 90 days</option>
+                        <option value="365">Last year</option>
+                    </select>
+                    <button onclick="importFromRobinhood()" class="btn btn-success flex-1">
+                        🔗 Connect & Import
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div id="rh-connected" class="hidden">
+            <div class="flex items-center justify-between">
+                <span class="text-green-700">✓ Connected to Robinhood</span>
+                <div class="space-x-2">
+                    <button onclick="importFromRobinhoodSession()" class="btn btn-primary">
+                        📥 Import New Trades
+                    </button>
+                    <button onclick="disconnectRobinhood()" class="btn btn-secondary">
+                        Disconnect
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <!-- Upload Form -->
         <div class="card">
             <h2 class="text-xl font-bold mb-4">📤 Upload CSV</h2>
             
             <form id="upload-form" class="space-y-4">
+                <!-- Format Selector -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Import Format</label>
+                    <select id="format-select" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        <option value="generic">📄 Generic CSV</option>
+                        <optgroup label="TradingView">
+                            <option value="tv_order_history">📊 TradingView - Order History</option>
+                            <option value="tv_orders" disabled>📋 TradingView - Orders (coming soon)</option>
+                        </optgroup>
+                        <optgroup label="Brokers">
+                            <option value="thinkorswim">💹 TD Ameritrade ThinkOrSwim</option>
+                            <option value="tradovate">📈 Tradovate</option>
+                            <option value="interactive_brokers">🏦 Interactive Brokers</option>
+                        </optgroup>
+                    </select>
+                </div>
+                
                 <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-500 transition cursor-pointer"
                      onclick="document.getElementById('file-input').click()">
                     <input type="file" id="file-input" accept=".csv" class="hidden" onchange="handleFileSelect(this)">
@@ -40,46 +104,78 @@
 
         <!-- Instructions -->
         <div class="card">
-            <h2 class="text-xl font-bold mb-4">📋 CSV Format</h2>
+            <h2 class="text-xl font-bold mb-4">📋 Format Instructions</h2>
             
-            <div class="bg-gray-50 rounded-lg p-4 font-mono text-sm overflow-x-auto">
-                <div class="text-gray-500">ticker,direction,entry_price,exit_price,stop_price,size,trade_date,notes</div>
-                <div>SPY,long,475.50,478.00,474.00,100,2024-01-15,Strong pullback</div>
-                <div>AAPL,short,185.00,182.50,187.00,50,2024-01-15,Failed breakout</div>
+            <!-- Generic Format -->
+            <div id="format-info-generic" class="format-info">
+                <h3 class="font-medium text-gray-800 mb-2">Generic CSV Format</h3>
+                <div class="bg-gray-50 rounded-lg p-4 font-mono text-sm overflow-x-auto">
+                    <div class="text-gray-500">ticker,direction,entry_price,exit_price,stop_price,size,trade_date,notes</div>
+                    <div>SPY,long,475.50,478.00,474.00,100,2024-01-15,Strong pullback</div>
+                    <div>AAPL,short,185.00,182.50,187.00,50,2024-01-15,Failed breakout</div>
+                </div>
+                <div class="mt-3 text-sm text-gray-600">
+                    Required: ticker, entry_price, exit_price. Optional: stop_price, direction, size, strategy, notes.
+                </div>
             </div>
 
-            <div class="mt-4 space-y-2 text-sm">
-                <div class="flex">
-                    <span class="font-medium w-32">ticker</span>
-                    <span class="text-gray-600">Required - Stock symbol</span>
+            <!-- TradingView Order History Format -->
+            <div id="format-info-tv_order_history" class="format-info hidden">
+                <h3 class="font-medium text-gray-800 mb-2">TradingView - Order History</h3>
+                <div class="bg-gray-50 rounded-lg p-4 text-sm">
+                    <p class="mb-2"><strong>How to export:</strong></p>
+                    <ol class="list-decimal list-inside space-y-1 text-gray-600">
+                        <li>Open TradingView Paper Trading panel</li>
+                        <li>Go to <strong>"Order History"</strong> tab</li>
+                        <li>Click the download/export button (↓)</li>
+                        <li>Save the CSV file</li>
+                    </ol>
                 </div>
-                <div class="flex">
-                    <span class="font-medium w-32">entry_price</span>
-                    <span class="text-gray-600">Required - Entry price</span>
+                <div class="mt-3 p-3 bg-yellow-50 rounded-lg text-sm text-yellow-800">
+                    ⚠️ Order History exports individual orders. We'll automatically match Buy/Sell orders to create complete trades.
                 </div>
-                <div class="flex">
-                    <span class="font-medium w-32">exit_price</span>
-                    <span class="text-gray-600">Required - Exit price</span>
+                <div class="mt-2 font-mono text-xs bg-gray-100 p-2 rounded overflow-x-auto">
+                    Columns: Symbol, Side, Type, Qty, Limit Price, Stop Price, Fill Price, Status, Closing Time...
                 </div>
-                <div class="flex">
-                    <span class="font-medium w-32">stop_price</span>
-                    <span class="text-gray-600">Recommended - Stop loss</span>
+            </div>
+
+            <!-- TradingView Orders Format (placeholder) -->
+            <div id="format-info-tv_orders" class="format-info hidden">
+                <h3 class="font-medium text-gray-800 mb-2">TradingView - Orders</h3>
+                <div class="bg-gray-50 rounded-lg p-4 text-sm text-gray-600">
+                    <p>This format is coming soon. Please provide a sample file.</p>
                 </div>
-                <div class="flex">
-                    <span class="font-medium w-32">direction</span>
-                    <span class="text-gray-600">Optional - long/short (default: long)</span>
+            </div>
+
+            <!-- ThinkOrSwim Format -->
+            <div id="format-info-thinkorswim" class="format-info hidden">
+                <h3 class="font-medium text-gray-800 mb-2">TD Ameritrade ThinkOrSwim</h3>
+                <div class="bg-gray-50 rounded-lg p-4 text-sm text-gray-600">
+                    Export from: Monitor → Account Statement → Trades → Export
                 </div>
-                <div class="flex">
-                    <span class="font-medium w-32">strategy</span>
-                    <span class="text-gray-600">Optional - AI classifies if empty</span>
+            </div>
+
+            <!-- Tradovate Format -->
+            <div id="format-info-tradovate" class="format-info hidden">
+                <h3 class="font-medium text-gray-800 mb-2">Tradovate</h3>
+                <div class="bg-gray-50 rounded-lg p-4 text-sm text-gray-600">
+                    Export from: Performance → Trade History → Download CSV
+                </div>
+            </div>
+
+            <!-- Interactive Brokers Format -->
+            <div id="format-info-interactive_brokers" class="format-info hidden">
+                <h3 class="font-medium text-gray-800 mb-2">Interactive Brokers</h3>
+                <div class="bg-gray-50 rounded-lg p-4 text-sm text-gray-600">
+                    Export from: Reports → Flex Queries → Trade Confirmations
                 </div>
             </div>
 
             <div class="mt-6 p-4 bg-blue-50 rounded-lg">
                 <div class="font-medium text-blue-800 mb-1">🧠 AI Classification</div>
                 <p class="text-sm text-blue-700">
-                    If you don't specify a strategy, the AI will automatically classify each trade 
-                    into Brooks-style setups like "second_entry_buy" or "breakout_pullback_long".
+                    The AI will automatically classify each trade into Brooks-style setups 
+                    like "second_entry_buy" or "breakout_pullback_long".
                 </p>
             </div>
         </div>
@@ -140,6 +236,109 @@ const fileInput = document.getElementById('file-input');
 const fileName = document.getElementById('file-name');
 const uploadBtn = document.getElementById('upload-btn');
 const uploadForm = document.getElementById('upload-form');
+const formatSelect = document.getElementById('format-select');
+
+// Check Robinhood session on load
+checkRobinhoodSession();
+
+async function checkRobinhoodSession() {
+    try {
+        const response = await fetch('/api/robinhood/status');
+        const data = await response.json();
+        
+        if (data.has_session) {
+            document.getElementById('rh-status').textContent = 'Session Stored';
+            document.getElementById('rh-status').className = 'text-sm px-3 py-1 rounded-full bg-yellow-200 text-yellow-800';
+        }
+    } catch (e) {}
+}
+
+async function importFromRobinhood() {
+    const username = document.getElementById('rh-username').value;
+    const password = document.getElementById('rh-password').value;
+    const mfa = document.getElementById('rh-mfa').value;
+    const days = document.getElementById('rh-days').value;
+    
+    if (!username || !password) {
+        showToast('Please enter username and password');
+        return;
+    }
+    
+    showLoading(true);
+    
+    try {
+        const response = await fetch('/api/robinhood/import', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                username: username,
+                password: password,
+                mfa_code: mfa || null,
+                days_back: parseInt(days)
+            })
+        });
+        
+        const data = await response.json();
+        showLoading(false);
+        
+        if (data.error) {
+            showToast('Error: ' + data.error);
+        } else {
+            showToast(data.messages[0] || `Imported ${data.imported} trades`);
+            
+            // Update UI
+            document.getElementById('rh-status').textContent = 'Connected';
+            document.getElementById('rh-status').className = 'text-sm px-3 py-1 rounded-full bg-green-200 text-green-800';
+            
+            // Clear password field
+            document.getElementById('rh-password').value = '';
+            document.getElementById('rh-mfa').value = '';
+            
+            setTimeout(() => window.location.reload(), 2000);
+        }
+    } catch (err) {
+        showLoading(false);
+        showToast('Connection failed: ' + err.message);
+    }
+}
+
+async function importFromRobinhoodSession() {
+    const days = document.getElementById('rh-days').value;
+    
+    showLoading(true);
+    
+    try {
+        const response = await fetch('/api/robinhood/import-session', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({days_back: parseInt(days)})
+        });
+        
+        const data = await response.json();
+        showLoading(false);
+        
+        if (data.error) {
+            showToast('Error: ' + data.error);
+        } else {
+            showToast(data.messages[0] || `Imported ${data.imported} trades`);
+            setTimeout(() => window.location.reload(), 2000);
+        }
+    } catch (err) {
+        showLoading(false);
+        showToast('Import failed: ' + err.message);
+    }
+}
+
+async function disconnectRobinhood() {
+    try {
+        await fetch('/api/robinhood/disconnect', {method: 'POST'});
+        document.getElementById('rh-status').textContent = 'Not Connected';
+        document.getElementById('rh-status').className = 'text-sm px-3 py-1 rounded-full bg-gray-200 text-gray-600';
+        showToast('Disconnected from Robinhood');
+    } catch (err) {
+        showToast('Error disconnecting');
+    }
+}
 
 function showToast(message) {
     const toast = document.getElementById('toast');
@@ -157,8 +356,26 @@ function handleFileSelect(input) {
         fileName.textContent = input.files[0].name;
         fileName.classList.remove('hidden');
         uploadBtn.disabled = false;
+        
+        // Auto-detect TradingView format
+        const name = input.files[0].name.toLowerCase();
+        if (name.includes('order-history') || name.includes('paper-trading')) {
+            formatSelect.value = 'tv_order_history';
+            updateFormatInfo();
+        }
     }
 }
+
+// Show/hide format info based on selection
+function updateFormatInfo() {
+    document.querySelectorAll('.format-info').forEach(el => el.classList.add('hidden'));
+    const selected = formatSelect.value;
+    const infoEl = document.getElementById('format-info-' + selected);
+    if (infoEl) infoEl.classList.remove('hidden');
+}
+
+formatSelect.addEventListener('change', updateFormatInfo);
+updateFormatInfo(); // Initialize
 
 uploadForm.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -169,24 +386,25 @@ uploadForm.addEventListener('submit', async (e) => {
     
     const formData = new FormData();
     formData.append('file', fileInput.files[0]);
+    formData.append('format', formatSelect.value);
     
     try {
-        // Upload file
-        const uploadResponse = await fetch('/api/upload-csv', {
+        // Upload and import in one step
+        const response = await fetch('/api/import-csv', {
             method: 'POST',
             body: formData
         });
         
-        if (!uploadResponse.ok) throw new Error('Upload failed');
-        
-        // Import
-        const importResponse = await fetch('/api/bulk-import', { method: 'POST' });
-        const data = await importResponse.json();
+        const data = await response.json();
         
         showLoading(false);
-        showToast(`Imported ${data.imported} trades`);
         
-        setTimeout(() => window.location.reload(), 1500);
+        if (data.error) {
+            showToast('Error: ' + data.error);
+        } else {
+            showToast(`Imported ${data.imported} trades, ${data.errors} errors`);
+            setTimeout(() => window.location.reload(), 1500);
+        }
     } catch (err) {
         showLoading(false);
         showToast('Import failed: ' + err.message);

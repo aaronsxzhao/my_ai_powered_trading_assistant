@@ -14,7 +14,7 @@ import threading
 import pandas as pd
 import pytz
 
-from app.config import settings, get_env
+from app.config import settings, get_env, get_polygon_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -210,12 +210,12 @@ class YFinanceProvider(DataProvider):
 
 
 class PolygonProvider(DataProvider):
-    """Polygon.io data provider (placeholder - requires API key)."""
+    """Polygon.io data provider - fast and reliable market data."""
 
     def __init__(self):
-        self.api_key = get_env("POLYGON_API_KEY")
+        self.api_key = get_polygon_api_key()
         if not self.api_key:
-            logger.warning("POLYGON_API_KEY not set. Polygon provider will not work.")
+            logger.warning("POLYGON_API_KEY not set. Add it to .env file.")
 
     @property
     def name(self) -> str:

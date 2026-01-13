@@ -175,6 +175,10 @@ class Settings:
 
     @property
     def data_provider(self) -> str:
+        # Check environment first, then config file
+        env_provider = os.getenv("DATA_PROVIDER")
+        if env_provider:
+            return env_provider.lower()
         return self._config.get("data", {}).get("provider", "yfinance")
 
     @property
@@ -278,3 +282,8 @@ def get_database_url() -> str:
     """Get database URL from environment or default."""
     default_db = f"sqlite:///{DATA_DIR}/trades.db"
     return os.getenv("DATABASE_URL", default_db)
+
+
+def get_polygon_api_key() -> str | None:
+    """Get Polygon.io API key from environment."""
+    return os.getenv("POLYGON_API_KEY")

@@ -39,12 +39,17 @@
                         <a href="/stats" class="nav-link {% if request.url.path == '/stats' %}active{% endif %}">Stats</a>
                     </div>
                 </div>
-                <div class="text-sm text-gray-400">
+                <div class="text-sm text-gray-400 flex items-center space-x-4">
+                    {% if data_provider is defined %}
+                        <span class="{% if data_provider == 'polygon' %}text-green-400{% else %}text-gray-400{% endif %}">
+                            📊 {{ data_provider | upper }}
+                        </span>
+                    {% endif %}
                     {% if llm_available is defined %}
                         {% if llm_available %}
                             <span class="text-green-400">🧠 AI Active</span>
                         {% else %}
-                            <span class="text-yellow-400">⚠️ LLM Not Configured</span>
+                            <span class="text-yellow-400">⚠️ No LLM</span>
                         {% endif %}
                     {% endif %}
                 </div>

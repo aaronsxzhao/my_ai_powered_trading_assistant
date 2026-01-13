@@ -3,7 +3,7 @@ Trade ingestion for Brooks Trading Coach.
 
 Supports:
 - Manual trade entry
-- CSV import from brokers
+- CSV import from multiple formats (Generic, TradingView, ThinkOrSwim, etc.)
 - Bulk import from imports/ folder
 - LLM-powered strategy classification
 """
@@ -12,6 +12,7 @@ from datetime import datetime, date
 from pathlib import Path
 from typing import Optional, Literal
 import logging
+import re
 
 import pandas as pd
 
@@ -29,6 +30,17 @@ logger = logging.getLogger(__name__)
 
 # Imports folder for bulk uploads
 IMPORTS_DIR = PROJECT_ROOT / "imports"
+
+# Supported import formats
+IMPORT_FORMATS = {
+    "generic": "Generic CSV (ticker, direction, entry_price, exit_price, stop_price)",
+    "tv_order_history": "TradingView - Order History Export",
+    "tv_orders": "TradingView - Orders Export (coming soon)",
+    "robinhood": "Robinhood - Auto Import (requires login)",
+    "thinkorswim": "TD Ameritrade ThinkOrSwim",
+    "tradovate": "Tradovate",
+    "interactive_brokers": "Interactive Brokers",
+}
 
 
 class TradeIngester:
@@ -152,7 +164,7 @@ class TradeIngester:
     def import_csv(
         self,
         file_path: str | Path,
-        broker: str = "generic",
+        format: str = "generic",
         skip_errors: bool = True,
     ) -> tuple[int, int, list[str]]:
         """
@@ -160,7 +172,7 @@ class TradeIngester:
 
         Args:
             file_path: Path to CSV file
-            broker: Broker format ('generic', 'thinkorswim', 'tradovate', etc.)
+            format: Import format ('generic', 'tradingview', 'thinkorswim', etc.)
             skip_errors: Whether to skip rows with errors
 
         Returns:
@@ -170,11 +182,16 @@ class TradeIngester:
         if not file_path.exists():
             raise FileNotFoundError(f"CSV file not found: {file_path}")
 
+        # Use format-specific parser
+        if format == "tv_order_history":
+            return self._import_tv_order_history(file_path, skip_errors)
+        
+        # Generic/other formats use column mapping
         df = pd.read_csv(file_path)
         df.columns = df.columns.str.lower().str.strip()
 
-        # Map columns based on broker format
-        column_map = self._get_column_map(broker)
+        # Map columns based on format
+        column_map = self._get_column_map(format)
         df = df.rename(columns=column_map)
 
         imported = 0
@@ -196,6 +213,286 @@ class TradeIngester:
 
         logger.info(f"Imported {imported} trades, {errors} errors")
         return imported, errors, error_messages
+
+    def _import_tv_order_history(
+        self,
+        file_path: Path,
+        skip_errors: bool = True,
+    ) -> tuple[int, int, list[str]]:
+        """
+        Import trades from TradingView Paper Trading ORDER HISTORY export.
+        
+        Columns: Symbol, Side, Type, Qty, Limit Price, Stop Price, Fill Price, 
+                 Status, Closing Time, Level ID, Leverage, Margin
+        
+        TradingView exports individual orders (Buy/Sell), so we need to
+        match them to create complete trades.
+        
+        Args:
+            file_path: Path to CSV file
+            skip_errors: Whether to skip errors
+            
+        Returns:
+            Tuple of (imported_count, error_count, error_messages)
+        """
+        df = pd.read_csv(file_path)
+        
+        total_orders = len(df)
+        
+        # Count orders by status
+        status_counts = df['Status'].value_counts().to_dict()
+        rejected_count = status_counts.get('Rejected', 0)
+        cancelled_count = status_counts.get('Cancelled', 0)
+        filled_count = status_counts.get('Filled', 0)
+        
+        logger.info(f"TradingView Order History: {total_orders} total orders")
+        logger.info(f"  - Filled: {filled_count} (processing)")
+        logger.info(f"  - Rejected: {rejected_count} (discarding)")
+        logger.info(f"  - Cancelled: {cancelled_count} (discarding)")
+
+        # ONLY process Filled orders - discard Rejected and Cancelled immediately
+        df = df[df['Status'] == 'Filled'].copy()
+
+        if df.empty:
+            return 0, 0, [f"No filled orders found. Discarded {rejected_count} rejected, {cancelled_count} cancelled."]
+
+        # Parse the data
+        df['parsed_ticker'] = df['Symbol'].apply(lambda x: x.split(':')[1] if ':' in str(x) else x)
+        df['parsed_datetime'] = pd.to_datetime(df['Closing Time'])
+        df['parsed_price'] = df['Fill Price'].astype(float)
+        df['parsed_qty'] = df['Qty'].astype(float)
+        df['parsed_side'] = df['Side'].str.lower()
+        df['stop_price_raw'] = pd.to_numeric(df['Stop Price'], errors='coerce')
+        
+        # Sort by datetime
+        df = df.sort_values('parsed_datetime').reset_index(drop=True)
+        
+        # Group by ticker and match Buy/Sell orders
+        trades_data = []
+        
+        for ticker in df['parsed_ticker'].unique():
+            ticker_orders = df[df['parsed_ticker'] == ticker].copy()
+            
+            # Track open positions
+            open_positions = []  # List of (entry_time, entry_price, qty, stop_price)
+            
+            for _, order in ticker_orders.iterrows():
+                side = order['parsed_side']
+                qty = order['parsed_qty']
+                price = order['parsed_price']
+                order_time = order['parsed_datetime']
+                stop = order['stop_price_raw'] if pd.notna(order['stop_price_raw']) else None
+                order_type = order['Type']
+                
+                if side == 'buy':
+                    # Opening a long position
+                    open_positions.append({
+                        'entry_time': order_time,
+                        'entry_price': price,
+                        'qty': qty,
+                        'stop_price': stop,
+                        'direction': 'long',
+                    })
+                    
+                elif side == 'sell':
+                    # Could be closing a long or opening a short
+                    # Look for matching open long position
+                    matched = False
+                    for i, pos in enumerate(open_positions):
+                        if pos['direction'] == 'long' and pos['qty'] == qty:
+                            # Close the long position
+                            trades_data.append({
+                                'ticker': ticker,
+                                'direction': 'long',
+                                'entry_price': pos['entry_price'],
+                                'exit_price': price,
+                                'stop_price': pos['stop_price'] or stop,
+                                'size': qty,
+                                'entry_time': pos['entry_time'],
+                                'exit_time': order_time,
+                            })
+                            open_positions.pop(i)
+                            matched = True
+                            break
+                    
+                    if not matched:
+                        # Opening a short position
+                        open_positions.append({
+                            'entry_time': order_time,
+                            'entry_price': price,
+                            'qty': qty,
+                            'stop_price': stop,
+                            'direction': 'short',
+                        })
+            
+            # Check for any unmatched short positions that might have been closed by buys
+            # (This handles the case where sells came before buys in data)
+        
+        # Import the matched trades
+        imported = 0
+        errors = 0
+        error_messages = []
+        
+        for trade_data in trades_data:
+            try:
+                # Estimate stop if not available
+                stop = trade_data.get('stop_price')
+                if stop is None or pd.isna(stop):
+                    entry = trade_data['entry_price']
+                    if trade_data['direction'] == 'long':
+                        stop = entry * 0.98  # 2% stop
+                    else:
+                        stop = entry * 1.02
+                
+                trade = self.add_trade_manual(
+                    ticker=trade_data['ticker'],
+                    trade_date=trade_data['exit_time'].date() if trade_data.get('exit_time') else date.today(),
+                    direction=trade_data['direction'],
+                    entry_price=trade_data['entry_price'],
+                    exit_price=trade_data['exit_price'],
+                    stop_price=float(stop),
+                    size=trade_data['size'],
+                    entry_time=trade_data.get('entry_time'),
+                    exit_time=trade_data.get('exit_time'),
+                    notes=f"Imported from TradingView Order History",
+                )
+                imported += 1
+                
+            except Exception as e:
+                errors += 1
+                error_messages.append(f"Trade {trade_data.get('ticker')}: {str(e)}")
+                logger.warning(f"Failed to import TradingView trade: {e}")
+                if not skip_errors:
+                    raise
+        
+        logger.info(f"TradingView import: {imported} trades created, {errors} errors")
+        
+        # Add summary message
+        summary = f"Processed {filled_count} filled orders → {imported} trades. Discarded: {rejected_count} rejected, {cancelled_count} cancelled."
+        error_messages.insert(0, summary)
+        
+        return imported, errors, error_messages
+
+    def import_from_robinhood(
+        self,
+        username: str,
+        password: str,
+        mfa_code: Optional[str] = None,
+        days_back: int = 30,
+    ) -> tuple[int, int, list[str]]:
+        """
+        Auto-import trades from Robinhood.
+        
+        Fetches filled orders from the last N days and creates trades.
+        Note: Robinhood orders are individual buy/sell, not round trips,
+        so each order becomes a separate trade entry.
+        
+        Args:
+            username: Robinhood email/username
+            password: Robinhood password
+            mfa_code: Optional MFA code if 2FA is enabled
+            days_back: Number of days to look back (default 30)
+            
+        Returns:
+            Tuple of (imported_count, error_count, error_messages)
+        """
+        from app.data.robinhood import get_robinhood_client
+        
+        client = get_robinhood_client()
+        messages = []
+        
+        # Login
+        if not client.login(username, password, mfa_code):
+            return 0, 1, ["Failed to login to Robinhood. Check credentials or MFA code."]
+        
+        try:
+            # Get stock orders
+            orders = client.get_stock_orders(days_back=days_back)
+            
+            if not orders:
+                return 0, 0, [f"No filled orders found in the last {days_back} days."]
+            
+            messages.append(f"Found {len(orders)} filled orders from Robinhood")
+            
+            imported = 0
+            errors = 0
+            
+            # Group orders by ticker to match buy/sell pairs
+            orders_by_ticker = {}
+            for order in orders:
+                parsed = client.parse_stock_order_to_trade(order)
+                if parsed:
+                    ticker = parsed['ticker']
+                    if ticker not in orders_by_ticker:
+                        orders_by_ticker[ticker] = []
+                    orders_by_ticker[ticker].append(parsed)
+            
+            # Match buy/sell orders to create trades
+            for ticker, ticker_orders in orders_by_ticker.items():
+                # Sort by time
+                ticker_orders.sort(key=lambda x: x['entry_time'])
+                
+                # Track open positions
+                open_buys = []
+                
+                for order in ticker_orders:
+                    if order['direction'] == 'long':  # Buy
+                        open_buys.append(order)
+                    else:  # Sell
+                        # Try to match with a buy
+                        if open_buys:
+                            buy_order = open_buys.pop(0)
+                            
+                            # Create a trade from matched buy/sell
+                            try:
+                                # Estimate stop as 2% from entry
+                                stop = buy_order['entry_price'] * 0.98
+                                
+                                trade = self.add_trade_manual(
+                                    ticker=ticker,
+                                    trade_date=order['exit_time'].date(),
+                                    direction='long',
+                                    entry_price=buy_order['entry_price'],
+                                    exit_price=order['entry_price'],  # Sell price
+                                    stop_price=stop,
+                                    size=min(buy_order['size'], order['size']),
+                                    entry_time=buy_order['entry_time'],
+                                    exit_time=order['exit_time'],
+                                    notes=f"Imported from Robinhood",
+                                )
+                                imported += 1
+                            except Exception as e:
+                                errors += 1
+                                messages.append(f"{ticker}: {str(e)}")
+            
+            messages.insert(0, f"Imported {imported} trades from Robinhood ({errors} errors)")
+            
+            return imported, errors, messages
+            
+        finally:
+            # Logout but keep session stored
+            pass
+
+    def robinhood_login_with_session(self) -> bool:
+        """
+        Try to login to Robinhood using stored session.
+        
+        Returns:
+            True if successful
+        """
+        from app.data.robinhood import get_robinhood_client
+        client = get_robinhood_client()
+        return client.login_with_stored_session()
+
+    def robinhood_has_session(self) -> bool:
+        """Check if Robinhood has a stored session."""
+        from app.data.robinhood import get_robinhood_client
+        return get_robinhood_client().has_stored_session()
+
+    def robinhood_clear_session(self):
+        """Clear stored Robinhood session."""
+        from app.data.robinhood import get_robinhood_client
+        get_robinhood_client().clear_stored_session()
 
     def _get_column_map(self, broker: str) -> dict[str, str]:
         """Get column mapping for broker format."""
