@@ -1,21 +1,21 @@
 """
 LLM client for narrative enhancement.
 
-Uses Claude (Anthropic) API to enhance rule-based analysis with
-natural language coaching.
+Uses Claude via LiteLLM proxy (OpenAI-compatible API) to enhance 
+rule-based analysis with natural language coaching.
 """
 
 import logging
 from typing import Optional
 
-from app.config import settings, get_anthropic_api_key
+from app.config import settings, get_llm_api_key, get_llm_base_url, get_llm_model
 
 logger = logging.getLogger(__name__)
 
 
 class LLMClient:
     """
-    Claude LLM client for narrative coaching.
+    LLM client for narrative coaching via LiteLLM proxy.
 
     The LLM only:
     - Converts computed findings into Brooks-style narrative
@@ -25,8 +25,9 @@ class LLMClient:
 
     def __init__(self):
         """Initialize LLM client."""
-        self.api_key = get_anthropic_api_key()
-        self.model = settings.llm_model
+        self.api_key = get_llm_api_key()
+        self.base_url = get_llm_base_url()
+        self.model = get_llm_model()
         self._client = None
 
     @property
@@ -35,16 +36,19 @@ class LLMClient:
         return settings.llm_enabled and self.api_key is not None
 
     def _get_client(self):
-        """Get or create Anthropic client."""
+        """Get or create OpenAI-compatible client for LiteLLM proxy."""
         if self._client is None:
             try:
-                import anthropic
-                self._client = anthropic.Anthropic(api_key=self.api_key)
+                from openai import OpenAI
+                self._client = OpenAI(
+                    api_key=self.api_key,
+                    base_url=self.base_url,
+                )
             except ImportError:
-                logger.warning("Anthropic package not installed. LLM features disabled.")
+                logger.warning("OpenAI package not installed. LLM features disabled.")
                 return None
             except Exception as e:
-                logger.error(f"Failed to initialize Anthropic client: {e}")
+                logger.error(f"Failed to initialize LLM client: {e}")
                 return None
 
         return self._client
@@ -78,16 +82,17 @@ class LLMClient:
             # Build user message from context
             user_message = self._format_context_for_llm(context)
 
-            response = client.messages.create(
+            response = client.chat.completions.create(
                 model=self.model,
-                max_tokens=max_tokens,
-                system=system_prompt,
                 messages=[
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_message},
                 ],
+                max_tokens=max_tokens,
+                temperature=0.3,
             )
 
-            return response.content[0].text
+            return response.choices[0].message.content
 
         except Exception as e:
             logger.error(f"LLM generation failed: {e}")

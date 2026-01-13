@@ -1,20 +1,8 @@
 # Brooks Trading Coach - Favorite Tickers
 # =========================================
 # Add one ticker per line. Lines starting with # are comments.
-# These tickers will be used for premarket reports.
-#
 # Edit this file directly to add/remove tickers.
-# Changes take effect immediately on next report generation.
 #
-# Example tickers:
 
 SPY
 QQQ
-AAPL
-MSFT
-NVDA
-TSLA
-AMD
-META
-GOOGL
-AMZN

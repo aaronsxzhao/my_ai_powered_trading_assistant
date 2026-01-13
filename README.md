@@ -10,9 +10,11 @@ A decision-support, journaling, analytics, and premarket briefing system for dis
 # 1. Install dependencies
 pip install -r requirements.txt
 
-# 2. Set up your Anthropic API key (for Claude AI analysis)
-# Get your key from: https://console.anthropic.com/
-echo "ANTHROPIC_API_KEY=your_key_here" > .env
+# 2. LLM is pre-configured with default API (no setup needed!)
+# Or optionally customize in .env:
+# LLM_API_KEY=your_key
+# LLM_BASE_URL=https://your-proxy.com/v1
+# LLM_MODEL=claude-sonnet-4.5
 
 # 3. Start the web interface
 python -m app.main web

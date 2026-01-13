@@ -11,8 +11,8 @@ Magnets are price levels that attract price:
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
-from typing import Literal
+from datetime import datetime as dt, timedelta
+from typing import Literal, Optional
 
 import numpy as np
 import pandas as pd
@@ -29,7 +29,7 @@ class Magnet:
     type: str
     description: str
     strength: Literal["weak", "moderate", "strong"]
-    datetime: datetime | None = None
+    timestamp: Optional[dt] = None
 
 
 @dataclass
@@ -51,7 +51,7 @@ class MagnetDetector:
     where reactions often occur.
     """
 
-    def __init__(self, daily_df: pd.DataFrame, intraday_df: pd.DataFrame | None = None):
+    def __init__(self, daily_df: pd.DataFrame, intraday_df: Optional[pd.DataFrame] = None):
         """
         Initialize with OHLCV data.
 
@@ -87,7 +87,7 @@ class MagnetDetector:
                 type="prior_day_high",
                 description="Prior Day High",
                 strength="strong",
-                datetime=prior_day.get("datetime"),
+                timestamp=prior_day.get("datetime"),
             )
         )
 
@@ -97,7 +97,7 @@ class MagnetDetector:
                 type="prior_day_low",
                 description="Prior Day Low",
                 strength="strong",
-                datetime=prior_day.get("datetime"),
+                timestamp=prior_day.get("datetime"),
             )
         )
 
@@ -107,7 +107,7 @@ class MagnetDetector:
                 type="prior_day_close",
                 description="Prior Day Close",
                 strength="moderate",
-                datetime=prior_day.get("datetime"),
+                timestamp=prior_day.get("datetime"),
             )
         )
 
@@ -149,7 +149,7 @@ class MagnetDetector:
                             type="gap_up_bottom",
                             description=f"Gap Up Bottom (unfilled)",
                             strength="strong",
-                            datetime=current.get("datetime"),
+                            timestamp=current.get("datetime"),
                         )
                     )
 
@@ -166,7 +166,7 @@ class MagnetDetector:
                             type="gap_down_top",
                             description=f"Gap Down Top (unfilled)",
                             strength="strong",
-                            datetime=current.get("datetime"),
+                            timestamp=current.get("datetime"),
                         )
                     )
 
@@ -199,7 +199,7 @@ class MagnetDetector:
                         type="swing_high",
                         description=f"Swing High",
                         strength="moderate",
-                        datetime=swing.datetime,
+                        timestamp=swing.datetime,
                     )
                 )
 
@@ -211,7 +211,7 @@ class MagnetDetector:
                         type="swing_low",
                         description=f"Swing Low",
                         strength="moderate",
-                        datetime=swing.datetime,
+                        timestamp=swing.datetime,
                     )
                 )
 
@@ -401,7 +401,7 @@ class MagnetDetector:
 
     def get_all_magnets(
         self,
-        current_price: float | None = None,
+        current_price: Optional[float] = None,
         include_round_numbers: bool = True,
     ) -> list[Magnet]:
         """

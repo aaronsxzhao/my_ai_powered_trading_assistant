@@ -77,7 +77,7 @@ def get_default_config() -> dict[str, Any]:
         },
         "llm": {
             "enabled": True,
-            "model": "claude-sonnet-4-20250514",
+            "model": "claude-sonnet-4.5",
             "max_tokens": 1500,
             "temperature": 0.3,
         },
@@ -247,15 +247,31 @@ def get_env(key: str, default: str = "") -> str:
     return os.getenv(key, default)
 
 
-def get_anthropic_api_key() -> str | None:
-    """Get Anthropic API key from environment."""
-    return os.getenv("ANTHROPIC_API_KEY")
+# LLM API Configuration (LiteLLM Proxy - OpenAI compatible)
+def get_llm_api_key() -> str:
+    """Get LLM API key."""
+    return os.getenv("LLM_API_KEY", "sk-6Of0ucpvQGsCCGZuRA6GNA")
+
+
+def get_llm_base_url() -> str:
+    """Get LLM base URL."""
+    return os.getenv("LLM_BASE_URL", "https://duet-litellm-api.winktech.net/v1")
+
+
+def get_llm_model() -> str:
+    """Get LLM model name."""
+    return os.getenv("LLM_MODEL", "claude-sonnet-4.5")
 
 
 # Backwards compatibility aliases
+def get_anthropic_api_key() -> str | None:
+    """Alias for get_llm_api_key."""
+    return get_llm_api_key()
+
+
 def get_openai_api_key() -> str | None:
-    """Get API key - checks Anthropic first, then OpenAI for backwards compat."""
-    return get_anthropic_api_key() or os.getenv("OPENAI_API_KEY")
+    """Alias for get_llm_api_key."""
+    return get_llm_api_key()
 
 
 def get_database_url() -> str:

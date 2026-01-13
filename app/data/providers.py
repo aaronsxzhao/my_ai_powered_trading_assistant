@@ -8,6 +8,8 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
 from typing import Literal
 import logging
+import time
+import threading
 
 import pandas as pd
 import pytz
@@ -15,6 +17,35 @@ import pytz
 from app.config import settings, get_env
 
 logger = logging.getLogger(__name__)
+
+
+class RateLimiter:
+    """Simple rate limiter with per-second limits."""
+    
+    def __init__(self, calls_per_second: float = 0.5):
+        """
+        Initialize rate limiter.
+        
+        Args:
+            calls_per_second: Maximum calls per second (default 0.5 = 1 call per 2 seconds)
+        """
+        self.min_interval = 1.0 / calls_per_second
+        self.last_call = 0.0
+        self._lock = threading.Lock()
+    
+    def wait(self):
+        """Wait if necessary to respect rate limit."""
+        with self._lock:
+            now = time.time()
+            elapsed = now - self.last_call
+            if elapsed < self.min_interval:
+                sleep_time = self.min_interval - elapsed
+                time.sleep(sleep_time)
+            self.last_call = time.time()
+
+
+# Global rate limiter for yfinance (1 call per 2 seconds to be safe)
+_yfinance_rate_limiter = RateLimiter(calls_per_second=0.5)
 
 # Standard column names for OHLCV data
 OHLCV_COLUMNS = ["datetime", "open", "high", "low", "close", "volume"]
@@ -97,6 +128,12 @@ class DataProvider(ABC):
 class YFinanceProvider(DataProvider):
     """Yahoo Finance data provider using yfinance library."""
 
+    def __init__(self):
+        """Initialize with rate limiter."""
+        self.rate_limiter = _yfinance_rate_limiter
+        self.max_retries = 3
+        self.base_delay = 5.0  # Base delay for exponential backoff
+
     @property
     def name(self) -> str:
         return "yfinance"
@@ -108,7 +145,7 @@ class YFinanceProvider(DataProvider):
         start: datetime,
         end: datetime,
     ) -> pd.DataFrame:
-        """Fetch OHLCV data from Yahoo Finance."""
+        """Fetch OHLCV data from Yahoo Finance with rate limiting and retry."""
         import yfinance as yf
 
         # Map timeframe to yfinance interval
@@ -125,28 +162,51 @@ class YFinanceProvider(DataProvider):
 
         # yfinance has limitations on intraday data lookback
         # 1m: 7 days, 5m/15m/30m: 60 days, 1h: 730 days
-        try:
-            ticker_obj = yf.Ticker(ticker)
-            df = ticker_obj.history(
-                start=start.strftime("%Y-%m-%d"),
-                end=end.strftime("%Y-%m-%d"),
-                interval=interval,
-                actions=False,
-            )
+        
+        last_error = None
+        for attempt in range(self.max_retries):
+            try:
+                # Wait for rate limiter
+                self.rate_limiter.wait()
+                
+                ticker_obj = yf.Ticker(ticker)
+                df = ticker_obj.history(
+                    start=start.strftime("%Y-%m-%d"),
+                    end=end.strftime("%Y-%m-%d"),
+                    interval=interval,
+                    actions=False,
+                )
 
-            if df.empty:
-                logger.warning(f"No data returned for {ticker} ({timeframe})")
-                return pd.DataFrame(columns=OHLCV_COLUMNS)
+                if df.empty:
+                    logger.warning(f"No data returned for {ticker} ({timeframe})")
+                    return pd.DataFrame(columns=OHLCV_COLUMNS)
 
-            # Reset index to get datetime as column
-            df = df.reset_index()
-            df = df.rename(columns={"Date": "datetime", "Datetime": "datetime"})
+                # Reset index to get datetime as column
+                df = df.reset_index()
+                df = df.rename(columns={"Date": "datetime", "Datetime": "datetime"})
 
-            return self._normalize_dataframe(df)
+                return self._normalize_dataframe(df)
 
-        except Exception as e:
-            logger.error(f"Error fetching {ticker} from yfinance: {e}")
-            return pd.DataFrame(columns=OHLCV_COLUMNS)
+            except Exception as e:
+                last_error = e
+                error_str = str(e).lower()
+                
+                # Check if rate limited
+                if "rate" in error_str or "too many" in error_str or "429" in error_str:
+                    delay = self.base_delay * (2 ** attempt)  # Exponential backoff
+                    logger.warning(
+                        f"Rate limited for {ticker}, attempt {attempt + 1}/{self.max_retries}. "
+                        f"Waiting {delay:.1f}s..."
+                    )
+                    time.sleep(delay)
+                else:
+                    # Non-rate-limit error, don't retry
+                    logger.error(f"Error fetching {ticker} from yfinance: {e}")
+                    return pd.DataFrame(columns=OHLCV_COLUMNS)
+        
+        # All retries exhausted
+        logger.error(f"Failed to fetch {ticker} after {self.max_retries} retries: {last_error}")
+        return pd.DataFrame(columns=OHLCV_COLUMNS)
 
 
 class PolygonProvider(DataProvider):

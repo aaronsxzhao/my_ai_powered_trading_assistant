@@ -1,7 +1,7 @@
 """
 LLM-powered trade and market analysis.
 
-Uses Claude (Anthropic) to perform intelligent analysis instead of hardcoded rules:
+Uses Claude via LiteLLM proxy (OpenAI-compatible API) to perform intelligent analysis:
 - Setup/strategy classification
 - Trade review and coaching
 - Market regime analysis
@@ -13,7 +13,7 @@ import logging
 from datetime import datetime
 from typing import Optional, Literal
 
-from app.config import settings, get_anthropic_api_key
+from app.config import settings, get_llm_api_key, get_llm_base_url, get_llm_model
 
 logger = logging.getLogger(__name__)
 
@@ -22,13 +22,14 @@ class LLMAnalyzer:
     """
     LLM-powered analyzer for trades and market context.
     
-    Uses Claude API for all analysis - no hardcoded pattern matching.
+    Uses Claude via LiteLLM proxy - no hardcoded pattern matching.
     """
 
     def __init__(self):
         """Initialize LLM analyzer."""
-        self.api_key = get_anthropic_api_key()
-        self.model = settings.llm_model
+        self.api_key = get_llm_api_key()
+        self.base_url = get_llm_base_url()
+        self.model = get_llm_model()
         self._client = None
 
     @property
@@ -37,16 +38,19 @@ class LLMAnalyzer:
         return self.api_key is not None
 
     def _get_client(self):
-        """Get or create Anthropic client."""
+        """Get or create OpenAI-compatible client for LiteLLM proxy."""
         if self._client is None:
             try:
-                import anthropic
-                self._client = anthropic.Anthropic(api_key=self.api_key)
+                from openai import OpenAI
+                self._client = OpenAI(
+                    api_key=self.api_key,
+                    base_url=self.base_url,
+                )
             except ImportError:
-                logger.error("Anthropic package not installed. Run: pip install anthropic")
+                logger.error("OpenAI package not installed. Run: pip install openai")
                 return None
             except Exception as e:
-                logger.error(f"Failed to initialize Anthropic client: {e}")
+                logger.error(f"Failed to initialize LLM client: {e}")
                 return None
         return self._client
 
@@ -57,9 +61,9 @@ class LLMAnalyzer:
         max_tokens: int = 2000,
         temperature: float = 0.2,
     ) -> Optional[str]:
-        """Make a Claude API call."""
+        """Make an LLM API call via LiteLLM proxy."""
         if not self.is_available:
-            logger.error("LLM not available - set ANTHROPIC_API_KEY in .env")
+            logger.error("LLM not available - check API key")
             return None
 
         client = self._get_client()
@@ -67,15 +71,16 @@ class LLMAnalyzer:
             return None
 
         try:
-            response = client.messages.create(
+            response = client.chat.completions.create(
                 model=self.model,
-                max_tokens=max_tokens,
-                system=system_prompt,
                 messages=[
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
+                max_tokens=max_tokens,
+                temperature=temperature,
             )
-            return response.content[0].text
+            return response.choices[0].message.content
         except Exception as e:
             logger.error(f"LLM call failed: {e}")
             return None

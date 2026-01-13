@@ -561,23 +561,31 @@ class PremarketReport:
 
         return bias, confidence
 
-    def generate_all_reports(self, report_date: Optional[date] = None) -> list[TickerReport]:
+    def generate_all_reports(self, report_date: Optional[date] = None, delay_between: float = 3.0) -> list[TickerReport]:
         """
         Generate reports for all favorite tickers.
 
         Args:
             report_date: Date for reports
+            delay_between: Seconds to wait between tickers (default 3s to avoid rate limiting)
 
         Returns:
             List of TickerReport objects
         """
+        import time
+        
         tickers = settings.tickers
         reports = []
 
-        for ticker in tickers:
+        for i, ticker in enumerate(tickers):
             try:
                 report = self.generate_ticker_report(ticker, report_date)
                 reports.append(report)
+                
+                # Delay between tickers to avoid rate limiting (skip after last)
+                if i < len(tickers) - 1:
+                    time.sleep(delay_between)
+                    
             except Exception as e:
                 logger.error(f"Failed to generate report for {ticker}: {e}")
 

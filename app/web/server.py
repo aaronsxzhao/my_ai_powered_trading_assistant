@@ -22,7 +22,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.config import (
     settings, IMPORTS_DIR, OUTPUTS_DIR, PROJECT_ROOT,
-    load_tickers_from_file, save_tickers_to_file, get_anthropic_api_key
+    load_tickers_from_file, save_tickers_to_file, get_llm_api_key
 )
 from app.journal.models import init_db, Trade, Strategy, get_session, TradeDirection, TradeOutcome
 from app.journal.ingest import TradeIngester
@@ -84,7 +84,7 @@ async def dashboard(request: Request):
         strategy_stats = analytics.get_all_strategy_stats()[:5]
         
         # Check LLM status
-        llm_available = get_anthropic_api_key() is not None
+        llm_available = get_llm_api_key() is not None
         
         return templates.TemplateResponse("dashboard.html", {
             "request": request,
