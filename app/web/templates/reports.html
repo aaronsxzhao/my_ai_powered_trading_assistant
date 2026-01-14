@@ -4,9 +4,14 @@
 
 {% block content %}
 <div class="space-y-8">
-    <div class="flex justify-between items-center">
-        <h1 class="text-3xl font-bold text-gray-900">Reports</h1>
-        <div class="flex space-x-3">
+    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+            <h1 class="text-3xl font-bold bg-gradient-to-r from-white to-dark-300 bg-clip-text text-transparent">
+                Reports
+            </h1>
+            <p class="text-dark-400 text-sm mt-1">Generate premarket and end-of-day reports</p>
+        </div>
+        <div class="flex flex-wrap gap-3">
             <button onclick="generatePremarket()" class="btn btn-primary">📊 Generate Premarket</button>
             <button onclick="generateEOD()" class="btn btn-secondary">📋 Generate EOD</button>
         </div>
@@ -14,9 +19,9 @@
 
     <!-- Generate for Ticker -->
     <div class="card">
-        <h2 class="text-xl font-bold mb-4">Generate Premarket Report</h2>
-        <div class="flex space-x-3">
-            <select id="ticker-select" class="input flex-1">
+        <h2 class="text-xl font-bold mb-4 text-white">Generate Premarket Report</h2>
+        <div class="flex flex-col sm:flex-row gap-3">
+            <select id="ticker-select" class="select flex-1">
                 <option value="">All watchlist tickers</option>
                 {% for ticker in tickers %}
                 <option value="{{ ticker }}">{{ ticker }}</option>
@@ -28,33 +33,33 @@
 
     <!-- Report History -->
     <div class="card">
-        <h2 class="text-xl font-bold mb-4">Report History</h2>
+        <h2 class="text-xl font-bold mb-4 text-white">Report History</h2>
         
         {% if reports %}
         <div class="space-y-3">
             {% for report in reports %}
-            <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition">
+            <div class="flex items-center justify-between p-4 bg-dark-900/50 border border-dark-700 rounded-xl hover:border-dark-600 transition">
                 <div>
-                    <div class="font-bold">{{ report.date }}</div>
-                    <div class="text-sm text-gray-500">
+                    <div class="font-bold text-white">{{ report.date }}</div>
+                    <div class="text-sm">
                         {% if report.has_premarket %}
-                            <span class="text-green-600">✓ Premarket</span>
+                            <span class="text-success-400">✓ Premarket</span>
                         {% endif %}
                         {% if report.has_eod %}
-                            <span class="text-blue-600 ml-2">✓ EOD</span>
+                            <span class="text-accent-400 ml-2">✓ EOD</span>
                         {% endif %}
                     </div>
                 </div>
-                <div class="text-sm text-gray-500">
+                <div class="text-sm text-dark-500 font-mono">
                     {{ report.path }}
                 </div>
             </div>
             {% endfor %}
         </div>
         {% else %}
-        <div class="text-center py-12 text-gray-500">
+        <div class="text-center py-12">
             <div class="text-4xl mb-4">📄</div>
-            <p class="text-xl mb-4">No reports yet</p>
+            <p class="text-xl mb-4 text-dark-400">No reports yet</p>
             <button onclick="generatePremarket()" class="btn btn-primary">
                 Generate First Report
             </button>
@@ -63,58 +68,33 @@
     </div>
 
     <!-- Output Folder -->
-    <div class="card bg-gray-50">
-        <h3 class="font-medium mb-2">📁 Output Location</h3>
-        <p class="text-sm text-gray-600">
-            Reports are saved to <code class="bg-white px-2 py-1 rounded">outputs/YYYY-MM-DD/</code>
+    <div class="card bg-dark-900/50 border border-dark-700">
+        <h3 class="font-medium mb-2 text-white">📁 Output Location</h3>
+        <p class="text-sm text-dark-400">
+            Reports are saved to <code class="bg-dark-800 px-2 py-1 rounded text-accent-400">outputs/YYYY-MM-DD/</code>
             as Markdown files. You can open them in any text editor or Markdown viewer.
         </p>
-    </div>
-</div>
-
-<div id="toast" class="fixed bottom-4 right-4 bg-gray-900 text-white px-6 py-3 rounded-lg shadow-lg hidden">
-    <span id="toast-message"></span>
-</div>
-
-<div id="loading" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
-    <div class="bg-white rounded-lg p-8 text-center">
-        <div class="animate-spin text-4xl mb-4">⏳</div>
-        <div class="text-xl font-medium">Generating report...</div>
-        <div class="text-gray-500">AI is analyzing market data</div>
     </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-function showToast(message) {
-    const toast = document.getElementById('toast');
-    document.getElementById('toast-message').textContent = message;
-    toast.classList.remove('hidden');
-    setTimeout(() => toast.classList.add('hidden'), 3000);
-}
-
-function showLoading(show) {
-    document.getElementById('loading').classList.toggle('hidden', !show);
-}
-
 async function generatePremarket() {
-    showLoading(true);
+    showStartToast('Generating premarket report');
     try {
         const response = await fetch('/api/generate-premarket', { method: 'POST' });
         const data = await response.json();
-        showLoading(false);
-        showToast(data.message);
+        showFinishToast('Premarket report', data.message || 'Generated');
         setTimeout(() => window.location.reload(), 1500);
     } catch (err) {
-        showLoading(false);
-        showToast('Failed to generate report');
+        showToast('Failed to generate report', 'error');
     }
 }
 
 async function generatePremarketForTicker() {
     const ticker = document.getElementById('ticker-select').value;
-    showLoading(true);
+    showStartToast('Generating report');
     
     const formData = new FormData();
     if (ticker) formData.append('ticker', ticker);
@@ -125,26 +105,22 @@ async function generatePremarketForTicker() {
             body: formData
         });
         const data = await response.json();
-        showLoading(false);
-        showToast(data.message);
+        showFinishToast('Report', data.message || 'Generated');
         setTimeout(() => window.location.reload(), 1500);
     } catch (err) {
-        showLoading(false);
-        showToast('Failed to generate report');
+        showToast('Failed to generate report', 'error');
     }
 }
 
 async function generateEOD() {
-    showLoading(true);
+    showStartToast('Generating EOD report');
     try {
         const response = await fetch('/api/generate-eod', { method: 'POST' });
         const data = await response.json();
-        showLoading(false);
-        showToast(data.message);
+        showFinishToast('EOD report', data.message || 'Generated');
         setTimeout(() => window.location.reload(), 1500);
     } catch (err) {
-        showLoading(false);
-        showToast('Failed to generate report');
+        showToast('Failed to generate report', 'error');
     }
 }
 </script>

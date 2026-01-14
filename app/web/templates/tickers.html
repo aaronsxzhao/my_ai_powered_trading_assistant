@@ -4,11 +4,16 @@
 
 {% block content %}
 <div class="max-w-2xl mx-auto space-y-8">
-    <h1 class="text-3xl font-bold text-gray-900">Manage Tickers</h1>
+    <div>
+        <h1 class="text-3xl font-bold bg-gradient-to-r from-white to-dark-300 bg-clip-text text-transparent">
+            Manage Tickers
+        </h1>
+        <p class="text-dark-400 text-sm mt-1">Configure your watchlist for analysis</p>
+    </div>
 
     <!-- Add Ticker -->
     <div class="card">
-        <h2 class="text-xl font-bold mb-4">➕ Add Ticker</h2>
+        <h2 class="text-xl font-bold mb-4 text-white">➕ Add Ticker</h2>
         <form action="/api/tickers/add" method="POST" class="flex space-x-3">
             <input type="text" name="ticker" required 
                 class="input flex-1" placeholder="AAPL" 
@@ -19,21 +24,21 @@
 
     <!-- Current Tickers -->
     <div class="card">
-        <h2 class="text-xl font-bold mb-4">📈 Your Watchlist ({{ tickers|length }} tickers)</h2>
+        <h2 class="text-xl font-bold mb-4 text-white">📈 Your Watchlist ({{ tickers|length }} tickers)</h2>
         
         <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
             {% for ticker in tickers %}
-            <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg group">
-                <span class="font-bold text-lg">{{ ticker }}</span>
+            <div class="flex items-center justify-between p-3 bg-dark-900/50 border border-dark-700 rounded-xl group">
+                <span class="font-bold text-lg text-white">{{ ticker }}</span>
                 <form action="/api/tickers/remove/{{ ticker }}" method="POST" class="opacity-0 group-hover:opacity-100 transition">
-                    <button type="submit" class="text-red-500 hover:text-red-700 text-sm">✕</button>
+                    <button type="submit" class="text-danger-400 hover:text-danger-500 text-sm">✕</button>
                 </form>
             </div>
             {% endfor %}
         </div>
 
         {% if not tickers %}
-        <div class="text-center py-8 text-gray-500">
+        <div class="text-center py-8 text-dark-500">
             <p>No tickers yet. Add some above!</p>
         </div>
         {% endif %}
@@ -41,8 +46,8 @@
 
     <!-- Bulk Edit -->
     <div class="card">
-        <h2 class="text-xl font-bold mb-4">📝 Bulk Edit</h2>
-        <p class="text-gray-600 mb-4">Edit all tickers at once (one per line):</p>
+        <h2 class="text-xl font-bold mb-4 text-white">📝 Bulk Edit</h2>
+        <p class="text-dark-400 mb-4">Edit all tickers at once (one per line):</p>
         
         <form action="/api/tickers" method="POST" class="space-y-4">
             <textarea name="tickers" class="input font-mono" rows="10">{% for ticker in tickers %}{{ ticker }}
@@ -55,8 +60,8 @@
 
     <!-- Popular Tickers -->
     <div class="card">
-        <h2 class="text-xl font-bold mb-4">🔥 Popular Tickers</h2>
-        <p class="text-gray-600 mb-4">Click to add:</p>
+        <h2 class="text-xl font-bold mb-4 text-white">🔥 Popular Tickers</h2>
+        <p class="text-dark-400 mb-4">Click to add:</p>
         
         <div class="flex flex-wrap gap-2">
             {% set popular = ['SPY', 'QQQ', 'AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMD', 'META', 'GOOGL', 'AMZN', 'NFLX', 'BA', 'JPM', 'V', 'DIS'] %}
@@ -64,12 +69,12 @@
                 {% if t not in tickers %}
                 <form action="/api/tickers/add" method="POST" class="inline">
                     <input type="hidden" name="ticker" value="{{ t }}">
-                    <button type="submit" class="px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-sm hover:bg-blue-100 transition">
+                    <button type="submit" class="px-3 py-1 bg-accent-500/10 text-accent-400 border border-accent-500/30 rounded-full text-sm hover:bg-accent-500/20 transition">
                         + {{ t }}
                     </button>
                 </form>
                 {% else %}
-                <span class="px-3 py-1 bg-gray-100 text-gray-400 rounded-full text-sm">
+                <span class="px-3 py-1 bg-dark-700 text-dark-400 rounded-full text-sm">
                     ✓ {{ t }}
                 </span>
                 {% endif %}
@@ -78,10 +83,10 @@
     </div>
 
     <!-- File Location -->
-    <div class="card bg-gray-50">
-        <h3 class="font-medium mb-2">💡 Tip: Edit tickers.txt directly</h3>
-        <p class="text-sm text-gray-600">
-            You can also edit the <code class="bg-white px-2 py-1 rounded">tickers.txt</code> file 
+    <div class="card bg-dark-900/50 border border-dark-700">
+        <h3 class="font-medium mb-2 text-white">💡 Tip: Edit tickers.txt directly</h3>
+        <p class="text-sm text-dark-400">
+            You can also edit the <code class="bg-dark-800 px-2 py-1 rounded text-accent-400">tickers.txt</code> file 
             directly in any text editor. Changes take effect immediately.
         </p>
     </div>

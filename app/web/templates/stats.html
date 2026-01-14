@@ -4,35 +4,40 @@
 
 {% block content %}
 <div class="space-y-8">
-    <h1 class="text-3xl font-bold text-gray-900">Statistics & Edge Analysis</h1>
+    <div>
+        <h1 class="text-3xl font-bold bg-gradient-to-r from-white to-dark-300 bg-clip-text text-transparent">
+            Statistics & Edge Analysis
+        </h1>
+        <p class="text-dark-400 text-sm mt-1">Analyze your trading performance and edge</p>
+    </div>
 
     <!-- Edge Analysis -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Strengths -->
         <div class="card">
-            <h2 class="text-xl font-bold mb-4 text-green-600">💪 Your Strengths</h2>
+            <h2 class="text-xl font-bold mb-4 text-success-400">💪 Your Strengths</h2>
             {% if edge_analysis.strengths %}
             <ul class="space-y-2">
                 {% for s in edge_analysis.strengths %}
-                <li class="p-3 bg-green-50 rounded-lg text-green-800">✓ {{ s }}</li>
+                <li class="p-3 bg-success-500/10 border border-success-500/30 rounded-xl text-success-300">✓ {{ s }}</li>
                 {% endfor %}
             </ul>
             {% else %}
-            <p class="text-gray-500">Add more trades to discover your strengths.</p>
+            <p class="text-dark-500">Add more trades to discover your strengths.</p>
             {% endif %}
         </div>
 
         <!-- Weaknesses -->
         <div class="card">
-            <h2 class="text-xl font-bold mb-4 text-red-600">📉 Your Weaknesses</h2>
+            <h2 class="text-xl font-bold mb-4 text-danger-400">📉 Your Weaknesses</h2>
             {% if edge_analysis.weaknesses %}
             <ul class="space-y-2">
                 {% for w in edge_analysis.weaknesses %}
-                <li class="p-3 bg-red-50 rounded-lg text-red-800">✗ {{ w }}</li>
+                <li class="p-3 bg-danger-500/10 border border-danger-500/30 rounded-xl text-danger-300">✗ {{ w }}</li>
                 {% endfor %}
             </ul>
             {% else %}
-            <p class="text-gray-500">No major weaknesses identified yet.</p>
+            <p class="text-dark-500">No major weaknesses identified yet.</p>
             {% endif %}
         </div>
     </div>
@@ -40,41 +45,41 @@
     <!-- Coaching -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Stop Doing -->
-        <div class="card border-l-4 border-red-500">
-            <h2 class="text-xl font-bold mb-4">🛑 Stop Doing</h2>
+        <div class="card border-l-4 border-danger-500">
+            <h2 class="text-xl font-bold mb-4 text-white">🛑 Stop Doing</h2>
             {% if edge_analysis.stop_doing %}
             <ul class="space-y-2">
                 {% for item in edge_analysis.stop_doing %}
-                <li class="text-gray-700">• {{ item }}</li>
+                <li class="text-dark-300">• {{ item }}</li>
                 {% endfor %}
             </ul>
             {% else %}
-            <p class="text-gray-500">Keep trading to get recommendations.</p>
+            <p class="text-dark-500">Keep trading to get recommendations.</p>
             {% endif %}
         </div>
 
         <!-- Double Down -->
-        <div class="card border-l-4 border-green-500">
-            <h2 class="text-xl font-bold mb-4">✅ Double Down On</h2>
+        <div class="card border-l-4 border-success-500">
+            <h2 class="text-xl font-bold mb-4 text-white">✅ Double Down On</h2>
             {% if edge_analysis.double_down %}
             <ul class="space-y-2">
                 {% for item in edge_analysis.double_down %}
-                <li class="text-gray-700">• {{ item }}</li>
+                <li class="text-dark-300">• {{ item }}</li>
                 {% endfor %}
             </ul>
             {% else %}
-            <p class="text-gray-500">Keep trading to get recommendations.</p>
+            <p class="text-dark-500">Keep trading to get recommendations.</p>
             {% endif %}
         </div>
     </div>
 
     <!-- Coaching Focus -->
     {% if edge_analysis.coaching_focus %}
-    <div class="card bg-blue-50 border border-blue-200">
-        <h2 class="text-xl font-bold mb-4 text-blue-800">🎯 Coaching Focus</h2>
+    <div class="card bg-accent-500/10 border border-accent-500/30">
+        <h2 class="text-xl font-bold mb-4 text-accent-400">🎯 Coaching Focus</h2>
         <ul class="space-y-2">
             {% for item in edge_analysis.coaching_focus %}
-            <li class="text-blue-700 text-lg">📌 {{ item }}</li>
+            <li class="text-accent-300 text-lg">📌 {{ item }}</li>
             {% endfor %}
         </ul>
     </div>
@@ -82,53 +87,53 @@
 
     <!-- Strategy Leaderboard -->
     <div class="card">
-        <h2 class="text-xl font-bold mb-4">📊 Strategy Leaderboard</h2>
+        <h2 class="text-xl font-bold mb-4 text-white">📊 Strategy Leaderboard</h2>
         
         {% if strategy_stats %}
         <div class="overflow-x-auto">
-            <table class="w-full">
+            <table class="table-modern">
                 <thead>
-                    <tr class="text-left text-gray-500 text-sm border-b">
-                        <th class="pb-3">Rank</th>
-                        <th class="pb-3">Strategy</th>
-                        <th class="pb-3">Category</th>
-                        <th class="pb-3 text-right">Trades</th>
-                        <th class="pb-3 text-right">Win Rate</th>
-                        <th class="pb-3 text-right">Avg R</th>
-                        <th class="pb-3 text-right">Expectancy</th>
-                        <th class="pb-3 text-right">PF</th>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Strategy</th>
+                        <th>Category</th>
+                        <th class="text-right">Trades</th>
+                        <th class="text-right">Win Rate</th>
+                        <th class="text-right">Avg R</th>
+                        <th class="text-right">Expectancy</th>
+                        <th class="text-right">PF</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for stat in strategy_stats %}
-                    <tr class="border-b border-gray-100">
-                        <td class="py-3 text-gray-500">#{{ loop.index }}</td>
-                        <td class="py-3 font-medium">{{ stat.strategy_name }}</td>
-                        <td class="py-3">
-                            <span class="px-2 py-1 rounded text-xs
-                                {% if stat.category == 'with_trend' %}bg-green-100 text-green-700
-                                {% elif stat.category == 'countertrend' %}bg-red-100 text-red-700
-                                {% elif stat.category == 'trading_range' %}bg-yellow-100 text-yellow-700
-                                {% else %}bg-gray-100 text-gray-700{% endif %}">
+                    <tr>
+                        <td class="text-dark-500">#{{ loop.index }}</td>
+                        <td class="font-medium text-white">{{ stat.strategy_name }}</td>
+                        <td>
+                            <span class="badge
+                                {% if stat.category == 'with_trend' %}badge-success
+                                {% elif stat.category == 'countertrend' %}bg-danger-500/20 text-danger-400 border border-danger-500/30
+                                {% elif stat.category == 'trading_range' %}badge-warning
+                                {% else %}bg-dark-700 text-dark-300 border-dark-600{% endif %}">
                                 {{ stat.category }}
                             </span>
                         </td>
-                        <td class="py-3 text-right">{{ stat.trade_count }}</td>
-                        <td class="py-3 text-right">{{ "%.0f"|format(stat.win_rate * 100) }}%</td>
-                        <td class="py-3 text-right font-mono {% if stat.avg_r >= 0 %}positive{% else %}negative{% endif %}">
+                        <td class="text-right text-dark-200">{{ stat.trade_count }}</td>
+                        <td class="text-right text-dark-200">{{ "%.0f"|format(stat.win_rate * 100) }}%</td>
+                        <td class="text-right font-mono {% if stat.avg_r >= 0 %}positive{% else %}negative{% endif %}">
                             {{ "%.2f"|format(stat.avg_r) }}
                         </td>
-                        <td class="py-3 text-right font-mono font-bold {% if stat.expectancy >= 0 %}positive{% else %}negative{% endif %}">
+                        <td class="text-right font-mono font-bold {% if stat.expectancy >= 0 %}positive{% else %}negative{% endif %}">
                             {{ "%.3f"|format(stat.expectancy) }}R
                         </td>
-                        <td class="py-3 text-right">{{ "%.1f"|format(stat.profit_factor) }}</td>
+                        <td class="text-right text-dark-200">{{ "%.1f"|format(stat.profit_factor) }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
         {% else %}
-        <div class="text-center py-8 text-gray-500">
+        <div class="text-center py-8 text-dark-500">
             <p>No strategy data yet. Start logging trades!</p>
         </div>
         {% endif %}
@@ -137,8 +142,8 @@
     <!-- Equity Curve -->
     {% if equity_data %}
     <div class="card">
-        <h2 class="text-xl font-bold mb-4">📈 Equity Curve (R)</h2>
-        <div id="equity-chart" class="h-64 bg-gray-50 rounded-lg flex items-center justify-center">
+        <h2 class="text-xl font-bold mb-4 text-white">📈 Equity Curve (R)</h2>
+        <div id="equity-chart" class="h-64 bg-dark-900/50 rounded-xl flex items-center justify-center">
             <canvas id="equityCanvas" width="800" height="250"></canvas>
         </div>
     </div>
@@ -154,6 +159,11 @@ const canvas = document.getElementById('equityCanvas');
 const ctx = canvas.getContext('2d');
 const data = {{ equity_data | tojson }};
 
+// Check for dark mode
+const isDark = document.documentElement.classList.contains('dark');
+const textColor = isDark ? '#94a3b8' : '#475569';
+const gridColor = isDark ? '#334155' : '#e2e8f0';
+
 if (data.length > 1) {
     const padding = 40;
     const width = canvas.width - padding * 2;
@@ -165,7 +175,7 @@ if (data.length > 1) {
     const range = maxR - minR || 1;
     
     // Draw axes
-    ctx.strokeStyle = '#e5e7eb';
+    ctx.strokeStyle = gridColor;
     ctx.beginPath();
     ctx.moveTo(padding, padding);
     ctx.lineTo(padding, height + padding);
@@ -174,7 +184,7 @@ if (data.length > 1) {
     
     // Draw zero line
     const zeroY = padding + height - ((0 - minR) / range * height);
-    ctx.strokeStyle = '#9ca3af';
+    ctx.strokeStyle = textColor;
     ctx.setLineDash([5, 5]);
     ctx.beginPath();
     ctx.moveTo(padding, zeroY);
@@ -183,7 +193,7 @@ if (data.length > 1) {
     ctx.setLineDash([]);
     
     // Draw equity curve
-    ctx.strokeStyle = rValues[rValues.length - 1] >= 0 ? '#16a34a' : '#dc2626';
+    ctx.strokeStyle = rValues[rValues.length - 1] >= 0 ? '#4ade80' : '#f87171';
     ctx.lineWidth = 2;
     ctx.beginPath();
     
@@ -201,11 +211,11 @@ if (data.length > 1) {
     ctx.lineTo(width + padding, zeroY);
     ctx.lineTo(padding, zeroY);
     ctx.closePath();
-    ctx.fillStyle = rValues[rValues.length - 1] >= 0 ? 'rgba(22, 163, 74, 0.1)' : 'rgba(220, 38, 38, 0.1)';
+    ctx.fillStyle = rValues[rValues.length - 1] >= 0 ? 'rgba(74, 222, 128, 0.1)' : 'rgba(248, 113, 113, 0.1)';
     ctx.fill();
     
     // Labels
-    ctx.fillStyle = '#374151';
+    ctx.fillStyle = textColor;
     ctx.font = '12px system-ui';
     ctx.fillText(`${maxR.toFixed(1)}R`, 5, padding + 5);
     ctx.fillText(`${minR.toFixed(1)}R`, 5, height + padding);

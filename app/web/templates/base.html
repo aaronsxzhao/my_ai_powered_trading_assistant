@@ -274,6 +274,90 @@
             background-color: #e2e8f0 !important;
             color: #334155 !important;
         }
+        
+        /* Fix gradient text in light mode */
+        :root:not(.dark) .bg-gradient-to-r.from-white.to-dark-300 {
+            background: linear-gradient(135deg, #0f172a, #475569) !important;
+            -webkit-background-clip: text !important;
+            background-clip: text !important;
+        }
+        
+        :root:not(.dark) .bg-clip-text {
+            -webkit-text-fill-color: transparent !important;
+        }
+        
+        /* Fix page titles */
+        :root:not(.dark) h1, :root:not(.dark) h2, :root:not(.dark) h3 {
+            color: #0f172a !important;
+        }
+        
+        /* Fix table header text */
+        :root:not(.dark) .table-modern th {
+            color: #475569 !important;
+        }
+        
+        :root:not(.dark) .table-modern td {
+            color: #334155 !important;
+        }
+        
+        /* Fix font-mono and font-bold text */
+        :root:not(.dark) .font-mono {
+            color: #334155 !important;
+        }
+        
+        :root:not(.dark) .font-bold.text-white {
+            color: #0f172a !important;
+        }
+        
+        /* Fix loading overlay text */
+        :root:not(.dark) #loading span,
+        :root:not(.dark) #loading .text-dark-300 {
+            color: #334155 !important;
+        }
+        
+        /* Fix badge text */
+        :root:not(.dark) .badge {
+            color: inherit !important;
+        }
+        
+        :root:not(.dark) .badge.bg-dark-700 {
+            background-color: #e2e8f0 !important;
+            color: #475569 !important;
+        }
+        
+        /* Fix footer */
+        :root:not(.dark) footer {
+            background-color: rgba(241,245,249,0.5) !important;
+            border-color: #e2e8f0 !important;
+        }
+        
+        :root:not(.dark) footer span {
+            color: #64748b !important;
+        }
+        
+        /* Fix background gradient div */
+        :root:not(.dark) .fixed.inset-0.bg-gradient-to-br {
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%) !important;
+        }
+        
+        /* Fix positive/negative colors in light mode - keep them visible */
+        :root:not(.dark) .positive { color: #16a34a !important; }
+        :root:not(.dark) .negative { color: #dc2626 !important; }
+        :root:not(.dark) .win { background-color: rgba(22, 163, 74, 0.15) !important; color: #16a34a !important; }
+        :root:not(.dark) .loss { background-color: rgba(220, 38, 38, 0.15) !important; color: #dc2626 !important; }
+        :root:not(.dark) .breakeven { background-color: rgba(100, 116, 139, 0.15) !important; color: #475569 !important; }
+        
+        /* Fix accent colors */
+        :root:not(.dark) .text-accent-400, :root:not(.dark) .text-accent-300 { color: #2563eb !important; }
+        :root:not(.dark) .text-success-400, :root:not(.dark) .text-success-300 { color: #16a34a !important; }
+        :root:not(.dark) .text-danger-400, :root:not(.dark) .text-danger-300 { color: #dc2626 !important; }
+        
+        /* Fix cards with colored backgrounds */
+        :root:not(.dark) .bg-success-500\/10 { background-color: rgba(22, 163, 74, 0.1) !important; }
+        :root:not(.dark) .bg-danger-500\/10 { background-color: rgba(220, 38, 38, 0.1) !important; }
+        :root:not(.dark) .bg-accent-500\/10 { background-color: rgba(59, 130, 246, 0.1) !important; }
+        :root:not(.dark) .bg-amber-500\/10 { background-color: rgba(245, 158, 11, 0.1) !important; }
+        :root:not(.dark) .bg-purple-500\/10 { background-color: rgba(168, 85, 247, 0.1) !important; }
     </style>
 </head>
 <body class="bg-dark-950 dark:bg-dark-950 text-white dark:text-white font-sans min-h-screen antialiased transition-colors duration-300">

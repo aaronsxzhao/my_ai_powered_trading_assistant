@@ -61,7 +61,7 @@ class LLMAnalyzer:
         max_tokens: int = 2000,
         temperature: float = 0.2,
     ) -> Optional[str]:
-        """Make an LLM API call via LiteLLM proxy."""
+        """Make an LLM API call via LiteLLM proxy (synchronous)."""
         if not self.is_available:
             logger.error("LLM not available - check API key")
             return None
@@ -84,6 +84,19 @@ class LLMAnalyzer:
         except Exception as e:
             logger.error(f"LLM call failed: {e}")
             return None
+
+    async def _call_llm_async(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        max_tokens: int = 2000,
+        temperature: float = 0.2,
+    ) -> Optional[str]:
+        """Make an LLM API call asynchronously (non-blocking)."""
+        import asyncio
+        return await asyncio.to_thread(
+            self._call_llm, system_prompt, user_prompt, max_tokens, temperature
+        )
 
     def classify_trade_setup(
         self,

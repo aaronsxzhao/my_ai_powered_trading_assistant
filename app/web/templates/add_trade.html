@@ -4,7 +4,12 @@
 
 {% block content %}
 <div class="max-w-2xl mx-auto">
-    <h1 class="text-3xl font-bold text-gray-900 mb-6">Add Trade</h1>
+    <div class="mb-6">
+        <h1 class="text-3xl font-bold bg-gradient-to-r from-white to-dark-300 bg-clip-text text-transparent">
+            Add Trade
+        </h1>
+        <p class="text-dark-400 text-sm mt-1">Log a new trade for AI coaching</p>
+    </div>
 
     <form action="/api/trades" method="POST" class="card space-y-6">
         <div class="grid grid-cols-2 gap-4">
@@ -32,7 +37,7 @@
             <!-- Direction -->
             <div>
                 <label class="label">Direction *</label>
-                <select name="direction" required class="input">
+                <select name="direction" required class="select">
                     <option value="long">🟢 Long</option>
                     <option value="short">🔴 Short</option>
                 </select>
@@ -72,7 +77,7 @@
         <!-- Strategy (optional - LLM will classify if not set) -->
         <div>
             <label class="label">Strategy (optional - AI will classify if empty)</label>
-            <select name="strategy" class="input">
+            <select name="strategy" class="select">
                 <option value="">-- Let AI classify --</option>
                 <optgroup label="With Trend">
                     {% for s in strategies if s.category == 'with_trend' %}
@@ -120,9 +125,9 @@
 
     <!-- R Calculator -->
     <div class="card mt-6">
-        <h3 class="font-bold mb-3">📊 R-Multiple Calculator</h3>
-        <p class="text-gray-500 text-sm mb-4">Enter your prices above to see the R-multiple.</p>
-        <div id="r-preview" class="text-2xl font-mono font-bold text-gray-400">--</div>
+        <h3 class="font-bold mb-3 text-white">📊 R-Multiple Calculator</h3>
+        <p class="text-dark-400 text-sm mb-4">Enter your prices above to see the R-multiple.</p>
+        <div id="r-preview" class="text-2xl font-mono font-bold text-dark-500">--</div>
     </div>
 </div>
 {% endblock %}
@@ -144,7 +149,7 @@ function calculateR() {
     
     if (!entry || !exit || !stop) {
         rPreview.textContent = '--';
-        rPreview.className = 'text-2xl font-mono font-bold text-gray-400';
+        rPreview.className = 'text-2xl font-mono font-bold text-dark-500';
         return;
     }
     
@@ -166,7 +171,7 @@ function calculateR() {
     }
     
     rPreview.textContent = r.toFixed(2) + 'R';
-    rPreview.className = 'text-2xl font-mono font-bold ' + (r >= 0 ? 'text-green-600' : 'text-red-600');
+    rPreview.className = 'text-2xl font-mono font-bold ' + (r >= 0 ? 'positive' : 'negative');
 }
 
 entryInput.addEventListener('input', calculateR);

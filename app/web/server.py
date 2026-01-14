@@ -184,10 +184,16 @@ async def update_trade_notes(trade_id: int, request: Request):
 
 @app.get("/api/trades/{trade_id}/review")
 async def get_trade_review(trade_id: int):
-    """Get AI review for a trade (async endpoint)."""
-    try:
+    """Get AI review for a trade (non-blocking async endpoint)."""
+    import asyncio
+    
+    def _get_review():
         coach = TradeCoach()
-        review = coach.review_trade(trade_id)
+        return coach.review_trade(trade_id)
+    
+    try:
+        # Run LLM call in thread pool to not block event loop
+        review = await asyncio.to_thread(_get_review)
         
         if review:
             return JSONResponse({
@@ -369,16 +375,13 @@ async def import_csv(
     format: str = Form("generic"),
     balance_file: Optional[UploadFile] = File(None),
 ):
-    """Upload and import a CSV file with specified format.
-    
-    For TradingView order history, optionally include balance_file for cross-validation.
-    """
-    if not file.filename.endswith('.csv'):
-        return JSONResponse({"error": "Only CSV files allowed", "imported": 0, "errors": 1})
-    
-    # Save file temporarily
+    """Upload and import a CSV file (non-blocking)."""
+    import asyncio
     import tempfile
     import os
+    
+    if not file.filename.endswith('.csv'):
+        return JSONResponse({"error": "Only CSV files allowed", "imported": 0, "errors": 1})
     
     try:
         # Save main file
@@ -395,19 +398,18 @@ async def import_csv(
                 bal_tmp.write(bal_content)
                 balance_path = bal_tmp.name
         
-        # Import with specified format
-        ingester = TradeIngester()
+        def _do_import():
+            ingester = TradeIngester()
+            if format == 'tv_order_history' and balance_path:
+                from pathlib import Path
+                return ingester._import_tv_order_history(
+                    Path(tmp_path), skip_errors=True, balance_file_path=Path(balance_path)
+                )
+            else:
+                return ingester.import_csv(tmp_path, format=format)
         
-        # Pass balance file for cross-validation if TV order history
-        if format == 'tv_order_history' and balance_path:
-            from pathlib import Path
-            imported, errors, messages = ingester._import_tv_order_history(
-                Path(tmp_path), 
-                skip_errors=True,
-                balance_file_path=Path(balance_path)
-            )
-        else:
-            imported, errors, messages = ingester.import_csv(tmp_path, format=format)
+        # Run import in thread to not block event loop
+        imported, errors, messages = await asyncio.to_thread(_do_import)
         
         # Clean up temp files
         os.unlink(tmp_path)
@@ -423,20 +425,20 @@ async def import_csv(
         })
         
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return JSONResponse({
-            "error": str(e),
-            "imported": 0,
-            "errors": 1,
-        })
+        logger.error(f"Import error: {e}")
+        return JSONResponse({"error": str(e), "imported": 0, "errors": 1})
 
 
 @app.post("/api/bulk-import")
 async def bulk_import():
-    """Import all CSVs from imports folder."""
-    ingester = TradeIngester()
-    imported, errors, messages = ingester.bulk_import_from_folder()
+    """Import all CSVs from imports folder (non-blocking)."""
+    import asyncio
+    
+    def _do_import():
+        ingester = TradeIngester()
+        return ingester.bulk_import_from_folder()
+    
+    imported, errors, messages = await asyncio.to_thread(_do_import)
     
     return JSONResponse({
         "imported": imported,
@@ -477,44 +479,57 @@ async def remove_ticker(ticker: str):
 
 @app.post("/api/generate-premarket")
 async def generate_premarket(ticker: str = Form(None)):
-    """Generate premarket report."""
+    """Generate premarket report (non-blocking)."""
+    import asyncio
     from app.reports.premarket import PremarketReport
-    
-    generator = PremarketReport()
-    
-    if ticker:
-        reports = [generator.generate_ticker_report(ticker)]
-    else:
-        reports = generator.generate_all_reports()
-    
-    output_dir = generator.save_reports(reports, date.today())
-    
+
+    def _generate():
+        generator = PremarketReport()
+        if ticker:
+            reports = [generator.generate_ticker_report(ticker)]
+        else:
+            reports = generator.generate_all_reports()
+        output_dir = generator.save_reports(reports, date.today())
+        return len(reports), str(output_dir)
+
+    count, output_dir = await asyncio.to_thread(_generate)
+
     return JSONResponse({
-        "message": f"Generated {len(reports)} reports",
-        "path": str(output_dir),
+        "message": f"Generated {count} reports",
+        "path": output_dir,
     })
 
 
 @app.post("/api/generate-eod")
 async def generate_eod():
-    """Generate end-of-day report."""
+    """Generate end-of-day report (non-blocking)."""
+    import asyncio
     from app.reports.eod import EndOfDayReport
-    
-    generator = EndOfDayReport()
-    report = generator.generate_report()
-    output_path = generator.save_report(report)
-    
+
+    def _generate():
+        generator = EndOfDayReport()
+        report = generator.generate_report()
+        output_path = generator.save_report(report)
+        return str(output_path)
+
+    output_path = await asyncio.to_thread(_generate)
+
     return JSONResponse({
         "message": "Generated EOD report",
-        "path": str(output_path),
+        "path": output_path,
     })
 
 
 @app.post("/api/reclassify")
 async def reclassify_trades():
-    """Reclassify unclassified trades with LLM."""
-    ingester = TradeIngester()
-    reclassified, failed = ingester.reclassify_all_trades()
+    """Reclassify unclassified trades with LLM (non-blocking)."""
+    import asyncio
+    
+    def _reclassify():
+        ingester = TradeIngester()
+        return ingester.reclassify_all_trades()
+    
+    reclassified, failed = await asyncio.to_thread(_reclassify)
 
     return JSONResponse({
         "reclassified": reclassified,
@@ -1165,9 +1180,12 @@ STRATEGY BREAKDOWN:
 
 Provide a comprehensive analysis of this trader's performance with specific patterns, strengths, weaknesses, and recommendations."""
 
-        # Call LLM
+        # Call LLM (non-blocking)
         import json
-        result_text = analyzer._call_llm(system_prompt, user_prompt, max_tokens=3000)
+        import asyncio
+        result_text = await asyncio.to_thread(
+            analyzer._call_llm, system_prompt, user_prompt, 3000
+        )
         
         if not result_text:
             return JSONResponse({
