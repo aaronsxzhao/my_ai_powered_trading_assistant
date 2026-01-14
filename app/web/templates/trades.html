@@ -8,7 +8,9 @@
         <h1 class="text-3xl font-bold text-gray-900">Trades</h1>
         <div class="flex space-x-3">
             <a href="/add-trade" class="btn btn-primary">+ Add Trade</a>
-            <button onclick="reclassifyTrades()" class="btn btn-secondary">🧠 Reclassify with LLM</button>
+            <button onclick="recalculateMetrics()" class="btn btn-secondary">🔄 Recalculate</button>
+            <button onclick="reclassifyTrades()" class="btn btn-secondary">🧠 Reclassify</button>
+            <button onclick="deleteAllTrades()" class="btn btn-secondary text-red-600">🗑️ Delete All</button>
         </div>
     </div>
 
@@ -19,12 +21,15 @@
                 <thead>
                     <tr class="text-left text-gray-500 text-sm border-b">
                         <th class="pb-3">ID</th>
-                        <th class="pb-3">Date</th>
+                        <th class="pb-3">Exit Time</th>
                         <th class="pb-3">Ticker</th>
                         <th class="pb-3">Direction</th>
+                        <th class="pb-3">Shares</th>
                         <th class="pb-3">Entry</th>
                         <th class="pb-3">Exit</th>
+                        <th class="pb-3">P&L ($)</th>
                         <th class="pb-3">R-Multiple</th>
+                        <th class="pb-3">Result</th>
                         <th class="pb-3">Strategy</th>
                         <th class="pb-3">Actions</th>
                     </tr>
@@ -33,7 +38,13 @@
                     {% for trade in trades %}
                     <tr class="border-b border-gray-100 hover:bg-gray-50">
                         <td class="py-3 text-gray-500">#{{ trade.id }}</td>
-                        <td class="py-3">{{ trade.trade_date }}</td>
+                        <td class="py-3 text-sm">
+                            {% if trade.exit_time %}
+                                {{ trade.exit_time.strftime('%Y-%m-%d %H:%M:%S') }}
+                            {% else %}
+                                {{ trade.trade_date }}
+                            {% endif %}
+                        </td>
                         <td class="py-3 font-bold">{{ trade.ticker }}</td>
                         <td class="py-3">
                             {% if trade.direction.value == 'long' %}
@@ -42,18 +53,59 @@
                                 <span class="px-2 py-1 bg-red-100 text-red-700 rounded text-sm">SHORT</span>
                             {% endif %}
                         </td>
-                        <td class="py-3 font-mono">${{ "%.2f"|format(trade.entry_price) }}</td>
-                        <td class="py-3 font-mono">${{ "%.2f"|format(trade.exit_price) if trade.exit_price else '-' }}</td>
+                        <td class="py-3 font-mono">{{ "%.0f"|format(trade.size) if trade.size else '-' }}</td>
+                        <td class="py-3 font-mono text-sm">
+                            {% if trade.currency and trade.currency != 'USD' and trade.currency_rate %}
+                                ${{ "%.4f"|format(trade.entry_price / trade.currency_rate) }}
+                                <span class="text-xs text-gray-500">({{ trade.currency }} {{ "%.4f"|format(trade.entry_price) }})</span>
+                            {% else %}
+                                ${{ "%.4f"|format(trade.entry_price) }}
+                            {% endif %}
+                        </td>
+                        <td class="py-3 font-mono text-sm">
+                            {% if trade.exit_price %}
+                                {% if trade.currency and trade.currency != 'USD' and trade.currency_rate %}
+                                    ${{ "%.4f"|format(trade.exit_price / trade.currency_rate) }}
+                                    <span class="text-xs text-gray-500">({{ trade.currency }} {{ "%.4f"|format(trade.exit_price) }})</span>
+                                {% else %}
+                                    ${{ "%.4f"|format(trade.exit_price) }}
+                                {% endif %}
+                            {% else %}-{% endif %}
+                        </td>
+                        <td class="py-3 font-mono font-bold {% if trade.pnl_dollars and trade.pnl_dollars >= 0 %}positive{% else %}negative{% endif %}">
+                            {% if trade.pnl_dollars %}
+                                {% if trade.currency and trade.currency != 'USD' and trade.currency_rate %}
+                                    {{ "+" if trade.pnl_dollars > 0 else "" }}${{ "%.2f"|format(trade.pnl_dollars / trade.currency_rate) }}
+                                    <span class="text-xs text-gray-500">({{ trade.currency }} {{ "%.2f"|format(trade.pnl_dollars) }})</span>
+                                {% else %}
+                                    {{ "+" if trade.pnl_dollars > 0 else "" }}${{ "%.2f"|format(trade.pnl_dollars) }}
+                                {% endif %}
+                            {% else %}-{% endif %}
+                        </td>
                         <td class="py-3 font-mono font-bold {% if trade.r_multiple and trade.r_multiple >= 0 %}positive{% else %}negative{% endif %}">
                             {% if trade.r_multiple %}{{ "%.2f"|format(trade.r_multiple) }}R{% else %}-{% endif %}
+                        </td>
+                        <td class="py-3">
+                            {% if trade.outcome %}
+                                {% if trade.outcome.value == 'win' %}
+                                    <span class="px-2 py-1 bg-green-100 text-green-700 rounded text-sm font-bold">WIN</span>
+                                {% elif trade.outcome.value == 'loss' %}
+                                    <span class="px-2 py-1 bg-red-100 text-red-700 rounded text-sm font-bold">LOSS</span>
+                                {% else %}
+                                    <span class="px-2 py-1 bg-gray-100 text-gray-600 rounded text-sm">B/E</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="text-gray-400">-</span>
+                            {% endif %}
                         </td>
                         <td class="py-3">
                             <span class="px-2 py-1 bg-gray-100 rounded text-sm">
                                 {{ trade.strategy.name if trade.strategy else 'unclassified' }}
                             </span>
                         </td>
-                        <td class="py-3">
-                            <a href="/trades/{{ trade.id }}" class="text-blue-600 hover:underline mr-3">Review</a>
+                        <td class="py-3 space-x-2">
+                            <button onclick="openEditModal({{ trade.id }}, {{ trade.size or 0 }}, {{ trade.entry_price }}, {{ trade.exit_price or 0 }}, {{ trade.stop_price or 0 }}, '{{ trade.currency or "USD" }}', {{ trade.currency_rate or 1.0 }}, '{{ trade.entry_time.strftime('%Y-%m-%dT%H:%M:%S') if trade.entry_time else '' }}', '{{ trade.exit_time.strftime('%Y-%m-%dT%H:%M:%S') if trade.exit_time else '' }}')" class="text-gray-600 hover:text-blue-600">✏️</button>
+                            <a href="/trades/{{ trade.id }}" class="text-blue-600 hover:underline">Review</a>
                             <button onclick="deleteTrade({{ trade.id }})" class="text-red-600 hover:underline">Delete</button>
                         </td>
                     </tr>
@@ -74,8 +126,94 @@
     </div>
 </div>
 
+<!-- Toast -->
 <div id="toast" class="fixed bottom-4 right-4 bg-gray-900 text-white px-6 py-3 rounded-lg shadow-lg hidden">
     <span id="toast-message"></span>
+</div>
+
+<!-- Edit Trade Modal -->
+<div id="edit-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center">
+    <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md mx-4">
+        <div class="flex justify-between items-center mb-2">
+            <h3 class="text-xl font-bold">Edit Trade #<span id="edit-trade-id"></span></h3>
+            <button onclick="closeEditModal()" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+        </div>
+        <p id="edit-date-display" class="text-sm text-gray-500 mb-4"></p>
+        
+        <form id="edit-form" class="space-y-4">
+            <input type="hidden" id="edit-id">
+            
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Entry Time</label>
+                    <input type="datetime-local" id="edit-entry-time" step="1"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Exit Time</label>
+                    <input type="datetime-local" id="edit-exit-time" step="1"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm">
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Shares</label>
+                <input type="number" id="edit-shares" step="1" min="1" 
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+            </div>
+            
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Entry Price</label>
+                <input type="number" id="edit-entry" step="0.0001" min="0" 
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+            </div>
+            
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Exit Price</label>
+                <input type="number" id="edit-exit" step="0.0001" min="0" 
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+            </div>
+            
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Stop Price</label>
+                <input type="number" id="edit-stop" step="0.0001" min="0" 
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+            </div>
+            
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Currency</label>
+                    <select id="edit-currency" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        <option value="USD">USD ($)</option>
+                        <option value="HKD">HKD (HK$)</option>
+                        <option value="EUR">EUR (€)</option>
+                        <option value="GBP">GBP (£)</option>
+                        <option value="JPY">JPY (¥)</option>
+                        <option value="CNY">CNY (¥)</option>
+                        <option value="CAD">CAD (C$)</option>
+                        <option value="AUD">AUD (A$)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Rate to USD</label>
+                    <div class="flex space-x-2">
+                        <input type="number" id="edit-rate" step="0.0001" min="0" placeholder="e.g. 7.78 for HKD"
+                            class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        <button type="button" onclick="fetchHistoricalRate(document.getElementById('edit-currency').value)" 
+                            class="px-3 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200" title="Fetch historical rate">
+                            🔄
+                        </button>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">1 USD = X currency (auto-fetches for trade date)</p>
+                </div>
+            </div>
+            
+            <div class="flex space-x-3 pt-4">
+                <button type="button" onclick="closeEditModal()" class="btn btn-secondary flex-1">Cancel</button>
+                <button type="submit" class="btn btn-primary flex-1">Save Changes</button>
+            </div>
+        </form>
+    </div>
 </div>
 {% endblock %}
 
@@ -106,5 +244,152 @@ async function reclassifyTrades() {
     showToast(`Reclassified ${data.reclassified} trades`);
     setTimeout(() => window.location.reload(), 1500);
 }
+
+async function recalculateMetrics() {
+    showToast('Recalculating R-multiple, P&L for all trades...');
+    const response = await fetch('/api/recalculate-metrics', { method: 'POST' });
+    const data = await response.json();
+    showToast(data.message);
+    setTimeout(() => window.location.reload(), 1500);
+}
+
+async function deleteAllTrades() {
+    if (!confirm('⚠️ Delete ALL trades? This cannot be undone!\n\nClick OK to delete all trades.')) return;
+    if (!confirm('Are you REALLY sure? All trade history will be lost!')) return;
+    
+    const response = await fetch('/api/trades', { method: 'DELETE' });
+    const data = await response.json();
+    showToast(data.message);
+    setTimeout(() => window.location.reload(), 1500);
+}
+
+// Store trade date for rate fetching
+let currentTradeDate = null;
+
+// Edit Modal Functions
+function openEditModal(id, shares, entry, exit, stop, currency, rate, entryTime, exitTime) {
+    document.getElementById('edit-id').value = id;
+    document.getElementById('edit-trade-id').textContent = id;
+    document.getElementById('edit-shares').value = shares || '';
+    document.getElementById('edit-entry').value = entry || '';
+    document.getElementById('edit-exit').value = exit || '';
+    document.getElementById('edit-stop').value = stop || '';
+    document.getElementById('edit-currency').value = currency || 'USD';
+    document.getElementById('edit-rate').value = rate && rate !== 1 ? rate : '';
+    
+    // Set datetime fields
+    document.getElementById('edit-entry-time').value = entryTime || '';
+    document.getElementById('edit-exit-time').value = exitTime || '';
+    
+    currentTradeDate = exitTime || entryTime;
+    document.getElementById('edit-modal').classList.remove('hidden');
+    
+    // Show trade date in the modal
+    if (exitTime) {
+        const dateDisplay = document.getElementById('edit-date-display');
+        if (dateDisplay) {
+            dateDisplay.textContent = `Exit: ${exitTime.replace('T', ' ')}`;
+        }
+    }
+}
+
+// Fetch historical exchange rate from API
+async function fetchHistoricalRate(currency) {
+    if (currency === 'USD') {
+        document.getElementById('edit-rate').value = '';
+        return;
+    }
+    
+    const rateInput = document.getElementById('edit-rate');
+    rateInput.placeholder = 'Fetching...';
+    
+    try {
+        let url = `/api/exchange-rate?currency=${currency}`;
+        if (currentTradeDate) {
+            // Extract date part if it's a datetime
+            const dateOnly = currentTradeDate.split('T')[0].split(' ')[0];
+            url += `&date=${dateOnly}`;
+        }
+        
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (data.rate) {
+            rateInput.value = data.rate.toFixed(4);
+            const source = data.source === 'frankfurter' ? '(historical)' : '(fallback)';
+            showToast(`Rate for ${data.date}: 1 USD = ${data.rate.toFixed(4)} ${currency} ${source}`);
+        }
+    } catch (err) {
+        console.error('Failed to fetch rate:', err);
+        // Use fallback rates
+        const fallbackRates = {
+            'HKD': 7.78, 'EUR': 0.92, 'GBP': 0.79, 'JPY': 149.5,
+            'CNY': 7.24, 'CAD': 1.36, 'AUD': 1.53
+        };
+        if (fallbackRates[currency]) {
+            rateInput.value = fallbackRates[currency];
+        }
+    }
+    rateInput.placeholder = 'e.g. 7.78 for HKD';
+}
+
+// Fetch rate when currency changes
+document.getElementById('edit-currency').addEventListener('change', function() {
+    fetchHistoricalRate(this.value);
+});
+
+function closeEditModal() {
+    document.getElementById('edit-modal').classList.add('hidden');
+}
+
+// Close modal on escape key
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeEditModal();
+});
+
+// Close modal on backdrop click
+document.getElementById('edit-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'edit-modal') closeEditModal();
+});
+
+// Handle form submission
+document.getElementById('edit-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const id = document.getElementById('edit-id').value;
+    const currency = document.getElementById('edit-currency').value;
+    const entryTime = document.getElementById('edit-entry-time').value;
+    const exitTime = document.getElementById('edit-exit-time').value;
+    
+    const data = {
+        size: parseFloat(document.getElementById('edit-shares').value) || null,
+        entry_price: parseFloat(document.getElementById('edit-entry').value) || null,
+        exit_price: parseFloat(document.getElementById('edit-exit').value) || null,
+        stop_price: parseFloat(document.getElementById('edit-stop').value) || null,
+        currency: currency,
+        currency_rate: currency === 'USD' ? 1.0 : (parseFloat(document.getElementById('edit-rate').value) || 1.0),
+        entry_time: entryTime || null,
+        exit_time: exitTime || null,
+    };
+    
+    try {
+        const response = await fetch(`/api/trades/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        
+        if (response.ok) {
+            showToast('Trade updated successfully');
+            closeEditModal();
+            setTimeout(() => window.location.reload(), 500);
+        } else {
+            const err = await response.json();
+            showToast('Error: ' + (err.detail || 'Failed to update'));
+        }
+    } catch (err) {
+        showToast('Error: ' + err.message);
+    }
+});
 </script>
 {% endblock %}

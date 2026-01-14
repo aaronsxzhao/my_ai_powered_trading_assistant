@@ -5,16 +5,29 @@ Uses robin_stocks library to fetch order history.
 """
 
 import logging
+import os
 from datetime import datetime, date, timedelta
-from typing import Optional
+from typing import Optional, Tuple
 from pathlib import Path
+from dataclasses import dataclass
 
-from app.config import PROJECT_ROOT
+from app.config import PROJECT_ROOT, DATA_DIR
 
 logger = logging.getLogger(__name__)
 
-# Store credentials securely
-ROBINHOOD_PICKLE_PATH = PROJECT_ROOT / "data" / ".robinhood.pickle"
+# Use simple pickle name - robin_stocks manages the directory
+ROBINHOOD_PICKLE_NAME = "brooks_coach_robinhood"
+ROBINHOOD_PICKLE_PATH = DATA_DIR / f".{ROBINHOOD_PICKLE_NAME}.pickle"
+
+
+@dataclass
+class LoginResult:
+    """Result of a login attempt."""
+    success: bool
+    needs_mfa: bool = False
+    needs_device_approval: bool = False
+    message: str = ""
+    error: Optional[str] = None
 
 
 class RobinhoodClient:
@@ -28,6 +41,8 @@ class RobinhoodClient:
         """Initialize Robinhood client."""
         self._logged_in = False
         self._rs = None
+        self._pending_username = None
+        self._pending_password = None
 
     def _get_robin_stocks(self):
         """Lazy import robin_stocks."""
@@ -45,7 +60,7 @@ class RobinhoodClient:
         password: str,
         mfa_code: Optional[str] = None,
         store_session: bool = True,
-    ) -> bool:
+    ) -> LoginResult:
         """
         Login to Robinhood.
         
@@ -56,67 +71,109 @@ class RobinhoodClient:
             store_session: Whether to store session for future use
             
         Returns:
-            True if login successful
+            LoginResult with status and any required follow-up actions
         """
         rs = self._get_robin_stocks()
         
+        # Store for potential retry
+        self._pending_username = username
+        self._pending_password = password
+        
         try:
-            # Try to login with stored session first
-            if store_session and ROBINHOOD_PICKLE_PATH.exists():
-                login_result = rs.login(
-                    username=username,
-                    password=password,
-                    store_session=True,
-                    pickle_name=str(ROBINHOOD_PICKLE_PATH),
-                )
-            else:
-                login_result = rs.login(
-                    username=username,
-                    password=password,
-                    mfa_code=mfa_code,
-                    store_session=store_session,
-                    pickle_name=str(ROBINHOOD_PICKLE_PATH) if store_session else None,
-                )
+            # Ensure data directory exists
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            
+            # Set up environment for robin_stocks token storage
+            # robin_stocks uses ~/.tokens by default
+            tokens_dir = Path.home() / ".tokens"
+            tokens_dir.mkdir(exist_ok=True)
+            
+            login_result = rs.login(
+                username=username,
+                password=password,
+                mfa_code=mfa_code,
+                store_session=store_session,
+                pickle_name=ROBINHOOD_PICKLE_NAME,
+                expiresIn=86400,  # 24 hours
+            )
             
             if login_result:
                 self._logged_in = True
                 logger.info("Successfully logged in to Robinhood")
-                return True
+                return LoginResult(
+                    success=True,
+                    message="Successfully connected to Robinhood!"
+                )
             else:
                 logger.error("Robinhood login failed")
-                return False
+                return LoginResult(
+                    success=False,
+                    error="Login failed. Check your credentials."
+                )
                 
         except Exception as e:
+            error_str = str(e).lower()
             logger.error(f"Robinhood login error: {e}")
-            return False
+            
+            # Check for specific error types
+            if "mfa" in error_str or "verification" in error_str or "code" in error_str:
+                return LoginResult(
+                    success=False,
+                    needs_mfa=True,
+                    message="MFA code required. Please enter the code from your authenticator app."
+                )
+            elif "device" in error_str or "approve" in error_str:
+                return LoginResult(
+                    success=False,
+                    needs_device_approval=True,
+                    message="Device approval required. Please check your Robinhood app and approve this device, then try again."
+                )
+            else:
+                return LoginResult(
+                    success=False,
+                    error=str(e)
+                )
 
-    def login_with_stored_session(self) -> bool:
+    def login_with_stored_session(self) -> LoginResult:
         """
         Try to login using stored session.
         
         Returns:
-            True if login successful
+            LoginResult with status
         """
-        if not ROBINHOOD_PICKLE_PATH.exists():
-            return False
+        tokens_path = Path.home() / ".tokens" / f"{ROBINHOOD_PICKLE_NAME}.pickle"
+        
+        if not tokens_path.exists():
+            return LoginResult(
+                success=False,
+                error="No stored session found. Please login first."
+            )
             
         rs = self._get_robin_stocks()
         
         try:
-            # robin_stocks will use the pickle file automatically
             login_result = rs.login(
-                pickle_name=str(ROBINHOOD_PICKLE_PATH),
+                pickle_name=ROBINHOOD_PICKLE_NAME,
             )
             
             if login_result:
                 self._logged_in = True
                 logger.info("Logged in to Robinhood using stored session")
-                return True
-            return False
+                return LoginResult(
+                    success=True,
+                    message="Connected using stored session."
+                )
+            return LoginResult(
+                success=False,
+                error="Stored session expired. Please login again."
+            )
             
         except Exception as e:
             logger.warning(f"Stored session login failed: {e}")
-            return False
+            return LoginResult(
+                success=False,
+                error=f"Session error: {str(e)}"
+            )
 
     def logout(self):
         """Logout from Robinhood."""
@@ -130,12 +187,14 @@ class RobinhoodClient:
 
     def has_stored_session(self) -> bool:
         """Check if there's a stored session."""
-        return ROBINHOOD_PICKLE_PATH.exists()
+        tokens_path = Path.home() / ".tokens" / f"{ROBINHOOD_PICKLE_NAME}.pickle"
+        return tokens_path.exists()
 
     def clear_stored_session(self):
         """Clear stored session."""
-        if ROBINHOOD_PICKLE_PATH.exists():
-            ROBINHOOD_PICKLE_PATH.unlink()
+        tokens_path = Path.home() / ".tokens" / f"{ROBINHOOD_PICKLE_NAME}.pickle"
+        if tokens_path.exists():
+            tokens_path.unlink()
             logger.info("Cleared stored Robinhood session")
 
     def get_stock_orders(
@@ -164,7 +223,9 @@ class RobinhoodClient:
                 return []
             
             # Filter by date and status
-            cutoff_date = datetime.now() - timedelta(days=days_back)
+            # Use timezone-aware datetime for comparison
+            from datetime import timezone
+            cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_back)
             filtered_orders = []
             
             for order in all_orders:
@@ -175,9 +236,14 @@ class RobinhoodClient:
                 # Parse order date
                 created_at = order.get('created_at', '')
                 if created_at:
-                    order_date = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
-                    if order_date < cutoff_date:
-                        continue
+                    try:
+                        # Handle both Z suffix and +00:00 formats
+                        order_date = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                        if order_date < cutoff_date:
+                            continue
+                    except ValueError:
+                        # If date parsing fails, include the order anyway
+                        pass
                 
                 filtered_orders.append(order)
             
@@ -194,25 +260,27 @@ class RobinhoodClient:
     ) -> list[dict]:
         """
         Get options order history.
-        
+
         Args:
             days_back: Number of days to look back
-            
+
         Returns:
             List of order dictionaries
         """
         if not self._logged_in:
             raise RuntimeError("Not logged in to Robinhood")
-            
+
         rs = self._get_robin_stocks()
-        
+
         try:
             all_orders = rs.orders.get_all_option_orders()
-            
+
             if not all_orders:
                 return []
-            
-            cutoff_date = datetime.now() - timedelta(days=days_back)
+
+            # Use timezone-aware datetime for comparison
+            from datetime import timezone
+            cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_back)
             filtered_orders = []
             
             for order in all_orders:
@@ -221,9 +289,12 @@ class RobinhoodClient:
                     
                 created_at = order.get('created_at', '')
                 if created_at:
-                    order_date = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
-                    if order_date < cutoff_date:
-                        continue
+                    try:
+                        order_date = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                        if order_date < cutoff_date:
+                            continue
+                    except ValueError:
+                        pass
                 
                 filtered_orders.append(order)
             

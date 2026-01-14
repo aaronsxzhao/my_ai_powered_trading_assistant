@@ -137,6 +137,21 @@ Respond in JSON format:
     "reasoning": "Brief explanation of why this classification"
 }"""
 
+        # Calculate R-multiple safely
+        if direction == "long":
+            risk = entry_price - stop_price
+            reward = exit_price - entry_price
+        else:
+            risk = stop_price - entry_price
+            reward = entry_price - exit_price
+        
+        if abs(risk) < 0.0001:
+            r_mult = reward / (entry_price * 0.02) if entry_price > 0 else 0
+        else:
+            r_mult = reward / risk
+        
+        r_mult_str = f"{'+' if r_mult > 0 else ''}{r_mult:.2f}R"
+
         user_prompt = f"""Classify this trade:
 
 TRADE DETAILS:
@@ -145,7 +160,7 @@ TRADE DETAILS:
 - Entry: ${entry_price}
 - Exit: ${exit_price}
 - Stop: ${stop_price}
-- P&L: {"+" if (exit_price - entry_price) * (1 if direction == "long" else -1) > 0 else ""}{((exit_price - entry_price) / (entry_price - stop_price) if direction == "long" else (entry_price - exit_price) / (stop_price - entry_price)):.2f}R
+- P&L: {r_mult_str}
 
 TRADER'S NOTES:
 Entry Reason: {entry_reason or "Not provided"}
@@ -202,11 +217,19 @@ Classify this trade setup."""
         
         Returns detailed Brooks-style review with coaching.
         """
-        r_multiple = (
-            (exit_price - entry_price) / (entry_price - stop_price)
-            if direction == "long"
-            else (entry_price - exit_price) / (stop_price - entry_price)
-        )
+        # Calculate R-multiple with safety check for zero risk
+        if direction == "long":
+            risk = entry_price - stop_price
+            reward = exit_price - entry_price
+        else:
+            risk = stop_price - entry_price
+            reward = entry_price - exit_price
+        
+        # Handle edge case where stop == entry (zero risk)
+        if abs(risk) < 0.0001:
+            r_multiple = reward / (entry_price * 0.02) if entry_price > 0 else 0  # Assume 2% risk
+        else:
+            r_multiple = reward / risk
 
         system_prompt = """You are Al Brooks, the legendary price action trader and author. 
 You are coaching a trader on their completed trade using your price action methodology.

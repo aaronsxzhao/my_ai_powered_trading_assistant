@@ -34,8 +34,8 @@ IMPORTS_DIR = PROJECT_ROOT / "imports"
 # Supported import formats
 IMPORT_FORMATS = {
     "generic": "Generic CSV (ticker, direction, entry_price, exit_price, stop_price)",
-    "tv_order_history": "TradingView - Order History Export",
-    "tv_orders": "TradingView - Orders Export (coming soon)",
+    "tv_order_history": "TradingView - Order History Export (RECOMMENDED)",
+    "tv_balance_history": "TradingView - Balance History Export (simpler, less detail)",
     "robinhood": "Robinhood - Auto Import (requires login)",
     "thinkorswim": "TD Ameritrade ThinkOrSwim",
     "tradovate": "Tradovate",
@@ -86,6 +86,8 @@ class TradeIngester:
         exit_reason: Optional[str] = None,
         high_during_trade: Optional[float] = None,
         low_during_trade: Optional[float] = None,
+        currency: str = "USD",
+        currency_rate: float = 1.0,
     ) -> Trade:
         """
         Add a trade manually.
@@ -109,6 +111,8 @@ class TradeIngester:
             exit_reason: Reason for exit
             high_during_trade: Highest price during trade
             low_during_trade: Lowest price during trade
+            currency: Currency code (USD, HKD, etc.)
+            currency_rate: Exchange rate (1 USD = X currency)
 
         Returns:
             Created Trade object
@@ -141,6 +145,8 @@ class TradeIngester:
                 exit_reason=exit_reason,
                 high_during_trade=high_during_trade,
                 low_during_trade=low_during_trade,
+                currency=currency,
+                currency_rate=currency_rate,
             )
 
             # Compute metrics
@@ -183,6 +189,8 @@ class TradeIngester:
             raise FileNotFoundError(f"CSV file not found: {file_path}")
 
         # Use format-specific parser
+        if format == "tv_balance_history":
+            return self._import_tv_balance_history(file_path, skip_errors)
         if format == "tv_order_history":
             return self._import_tv_order_history(file_path, skip_errors)
         
@@ -214,6 +222,108 @@ class TradeIngester:
         logger.info(f"Imported {imported} trades, {errors} errors")
         return imported, errors, error_messages
 
+    def _import_tv_balance_history(
+        self,
+        file_path: Path,
+        skip_errors: bool = True,
+    ) -> tuple[int, int, list[str]]:
+        """
+        Import trades from TradingView Paper Trading BALANCE HISTORY export.
+        
+        This is the RECOMMENDED format because each row contains a complete trade
+        with entry price, exit price, direction, and P&L already calculated.
+        
+        Columns: Time, Balance Before, Balance After, Realized P&L (value), 
+                 Realized P&L (currency), Action
+        
+        The Action column contains:
+        "Close long position for symbol AMEX:SOXL at price 26.73 for 370 units. 
+         Position AVG Price was 26.590000..."
+        
+        Args:
+            file_path: Path to CSV file
+            skip_errors: Whether to skip errors
+            
+        Returns:
+            Tuple of (imported_count, error_count, error_messages)
+        """
+        df = pd.read_csv(file_path)
+        
+        logger.info(f"TradingView Balance History: {len(df)} entries")
+        
+        imported = 0
+        errors = 0
+        error_messages = []
+        skipped = 0
+        
+        # Pattern to parse the Action column
+        # Example: "Close long position for symbol AMEX:SOXL at price 160.7 for 400 units. Position AVG Price was 160.800000, currency: HKD..."
+        action_pattern = re.compile(
+            r'Close\s+(long|short)\s+position\s+for\s+symbol\s+(\S+)\s+at\s+price\s+([\d.]+)\s+for\s+([\d.]+)\s+units\.\s+Position\s+AVG\s+Price\s+was\s+([\d.]+)',
+            re.IGNORECASE
+        )
+        
+        for idx, row in df.iterrows():
+            try:
+                action = row.get('Action', '')
+                match = action_pattern.search(action)
+                
+                if not match:
+                    skipped += 1
+                    continue
+                
+                direction = match.group(1).lower()  # 'long' or 'short'
+                symbol = match.group(2)  # 'AMEX:SOXL'
+                exit_price = float(match.group(3))
+                size = float(match.group(4))
+                entry_price = float(match.group(5))
+                
+                # Extract ticker from symbol (remove exchange prefix)
+                ticker = symbol.split(':')[1] if ':' in symbol else symbol
+                
+                # Parse time
+                time_str = row.get('Time', '')
+                try:
+                    exit_time = pd.to_datetime(time_str)
+                except:
+                    exit_time = datetime.now()
+                
+                # Get P&L from the row
+                pnl = row.get('Realized P&L (value)', 0)
+                
+                # Estimate stop price (not in balance history)
+                # Use 2% from entry as default
+                if direction == 'long':
+                    stop_price = entry_price * 0.98
+                else:
+                    stop_price = entry_price * 1.02
+                
+                trade = self.add_trade_manual(
+                    ticker=ticker,
+                    trade_date=exit_time.date() if hasattr(exit_time, 'date') else date.today(),
+                    direction=direction,
+                    entry_price=entry_price,
+                    exit_price=exit_price,
+                    stop_price=stop_price,
+                    size=size,
+                    exit_time=exit_time,
+                    notes=f"Imported from TradingView Balance History. P&L: {pnl:.2f}",
+                )
+                imported += 1
+                
+            except Exception as e:
+                errors += 1
+                error_messages.append(f"Row {idx}: {str(e)}")
+                logger.warning(f"Failed to import TradingView balance row {idx}: {e}")
+                if not skip_errors:
+                    raise
+        
+        summary = f"Imported {imported} trades from {len(df)} entries. Skipped {skipped} non-trade entries."
+        logger.info(summary)
+        error_messages.insert(0, summary)
+        
+        return imported, errors, error_messages
+
     def _import_tv_order_history(
         self,
         file_path: Path,
@@ -222,11 +332,18 @@ class TradeIngester:
         """
         Import trades from TradingView Paper Trading ORDER HISTORY export.
         
+        Handles multi-leg trades with scaling in/out using average cost basis:
+        - Buy 300 @ $10, Buy 200 @ $11 → avg entry = $10.40
+        - Sell 400 @ $12 → creates trade: 400 shares, entry=$10.40, exit=$12
+        - Sell 100 @ $13 → creates trade: 100 shares, entry=$10.40, exit=$13
+        
+        Position tracking:
+        - Positive position = long
+        - Negative position = short
+        - Each exit (partial or full) creates a trade record
+        
         Columns: Symbol, Side, Type, Qty, Limit Price, Stop Price, Fill Price, 
                  Status, Closing Time, Level ID, Leverage, Margin
-        
-        TradingView exports individual orders (Buy/Sell), so we need to
-        match them to create complete trades.
         
         Args:
             file_path: Path to CSV file
@@ -256,7 +373,24 @@ class TradeIngester:
         if df.empty:
             return 0, 0, [f"No filled orders found. Discarded {rejected_count} rejected, {cancelled_count} cancelled."]
 
+        # Exchange to currency mapping
+        EXCHANGE_CURRENCY = {
+            'HKEX': ('HKD', 7.78),  # Hong Kong
+            'TSE': ('JPY', 149.5),  # Tokyo
+            'SSE': ('CNY', 7.24),  # Shanghai
+            'SZSE': ('CNY', 7.24),  # Shenzhen
+            'LSE': ('GBP', 0.79),  # London
+            'EURONEXT': ('EUR', 0.92),
+            'TSX': ('CAD', 1.36),  # Toronto
+            'ASX': ('AUD', 1.53),  # Australia
+            # US exchanges default to USD
+            'NYSE': ('USD', 1.0),
+            'NASDAQ': ('USD', 1.0),
+            'AMEX': ('USD', 1.0),
+        }
+        
         # Parse the data
+        df['parsed_exchange'] = df['Symbol'].apply(lambda x: x.split(':')[0] if ':' in str(x) else 'USD')
         df['parsed_ticker'] = df['Symbol'].apply(lambda x: x.split(':')[1] if ':' in str(x) else x)
         df['parsed_datetime'] = pd.to_datetime(df['Closing Time'])
         df['parsed_price'] = df['Fill Price'].astype(float)
@@ -264,17 +398,31 @@ class TradeIngester:
         df['parsed_side'] = df['Side'].str.lower()
         df['stop_price_raw'] = pd.to_numeric(df['Stop Price'], errors='coerce')
         
-        # Sort by datetime
-        df = df.sort_values('parsed_datetime').reset_index(drop=True)
+        # Keep original row order as tiebreaker for same-timestamp trades
+        # TradingView exports newest first, so we reverse to get oldest first
+        df['original_order'] = range(len(df) - 1, -1, -1)  # Reverse order
         
-        # Group by ticker and match Buy/Sell orders
+        # Sort by datetime, then by original order (for same-timestamp trades)
+        df = df.sort_values(['parsed_datetime', 'original_order']).reset_index(drop=True)
+        
+        # Process each ticker separately with position tracking
         trades_data = []
         
         for ticker in df['parsed_ticker'].unique():
             ticker_orders = df[df['parsed_ticker'] == ticker].copy()
             
-            # Track open positions
-            open_positions = []  # List of (entry_time, entry_price, qty, stop_price)
+            # Ensure orders for this ticker are sorted chronologically
+            ticker_orders = ticker_orders.sort_values(['parsed_datetime', 'original_order']).reset_index(drop=True)
+            
+            # Get currency info from first order's exchange
+            first_exchange = ticker_orders.iloc[0]['parsed_exchange']
+            currency, currency_rate = EXCHANGE_CURRENCY.get(first_exchange, ('USD', 1.0))
+            
+            # Position state: positive = long, negative = short
+            position_qty = 0.0
+            avg_entry_price = 0.0
+            first_entry_time = None
+            last_stop_price = None
             
             for _, order in ticker_orders.iterrows():
                 side = order['parsed_side']
@@ -282,51 +430,76 @@ class TradeIngester:
                 price = order['parsed_price']
                 order_time = order['parsed_datetime']
                 stop = order['stop_price_raw'] if pd.notna(order['stop_price_raw']) else None
-                order_type = order['Type']
+                
+                if stop:
+                    last_stop_price = stop
                 
                 if side == 'buy':
-                    # Opening a long position
-                    open_positions.append({
-                        'entry_time': order_time,
-                        'entry_price': price,
-                        'qty': qty,
-                        'stop_price': stop,
-                        'direction': 'long',
+                    order_qty = qty  # Positive for buy
+                else:  # sell
+                    order_qty = -qty  # Negative for sell
+                
+                # Determine if this order is opening or closing
+                if position_qty == 0:
+                    # No position - this opens a new position
+                    position_qty = order_qty
+                    avg_entry_price = price
+                    first_entry_time = order_time
+                    
+                elif (position_qty > 0 and order_qty > 0) or (position_qty < 0 and order_qty < 0):
+                    # Adding to existing position (scaling in)
+                    # Recalculate weighted average entry price
+                    total_cost = abs(position_qty) * avg_entry_price + qty * price
+                    position_qty += order_qty
+                    avg_entry_price = total_cost / abs(position_qty)
+                    
+                elif (position_qty > 0 and order_qty < 0) or (position_qty < 0 and order_qty > 0):
+                    # Reducing or closing position (exit)
+                    close_qty = min(abs(order_qty), abs(position_qty))
+                    
+                    # Create a trade record for this exit
+                    direction = 'long' if position_qty > 0 else 'short'
+                    
+                    # Estimate stop if not available
+                    stop_price = last_stop_price
+                    if stop_price is None:
+                        if direction == 'long':
+                            stop_price = avg_entry_price * 0.98
+                        else:
+                            stop_price = avg_entry_price * 1.02
+                    
+                    trades_data.append({
+                        'ticker': ticker,
+                        'direction': direction,
+                        'entry_price': avg_entry_price,
+                        'exit_price': price,
+                        'stop_price': stop_price,
+                        'size': close_qty,
+                        'entry_time': first_entry_time,
+                        'exit_time': order_time,
+                        'currency': currency,
+                        'currency_rate': currency_rate,
                     })
                     
-                elif side == 'sell':
-                    # Could be closing a long or opening a short
-                    # Look for matching open long position
-                    matched = False
-                    for i, pos in enumerate(open_positions):
-                        if pos['direction'] == 'long' and pos['qty'] == qty:
-                            # Close the long position
-                            trades_data.append({
-                                'ticker': ticker,
-                                'direction': 'long',
-                                'entry_price': pos['entry_price'],
-                                'exit_price': price,
-                                'stop_price': pos['stop_price'] or stop,
-                                'size': qty,
-                                'entry_time': pos['entry_time'],
-                                'exit_time': order_time,
-                            })
-                            open_positions.pop(i)
-                            matched = True
-                            break
+                    # Update position
+                    new_position = position_qty + order_qty
                     
-                    if not matched:
-                        # Opening a short position
-                        open_positions.append({
-                            'entry_time': order_time,
-                            'entry_price': price,
-                            'qty': qty,
-                            'stop_price': stop,
-                            'direction': 'short',
-                        })
-            
-            # Check for any unmatched short positions that might have been closed by buys
-            # (This handles the case where sells came before buys in data)
+                    # Check if we flipped direction (e.g., closed long and opened short)
+                    if (position_qty > 0 and new_position < 0) or (position_qty < 0 and new_position > 0):
+                        # We closed the original position AND opened a new one
+                        # The remaining qty starts a new position
+                        position_qty = new_position
+                        avg_entry_price = price
+                        first_entry_time = order_time
+                    elif new_position == 0:
+                        # Fully closed
+                        position_qty = 0
+                        avg_entry_price = 0
+                        first_entry_time = None
+                    else:
+                        # Partially closed, same direction
+                        position_qty = new_position
+                        # avg_entry_price stays the same
         
         # Import the matched trades
         imported = 0
@@ -335,26 +508,19 @@ class TradeIngester:
         
         for trade_data in trades_data:
             try:
-                # Estimate stop if not available
-                stop = trade_data.get('stop_price')
-                if stop is None or pd.isna(stop):
-                    entry = trade_data['entry_price']
-                    if trade_data['direction'] == 'long':
-                        stop = entry * 0.98  # 2% stop
-                    else:
-                        stop = entry * 1.02
-                
                 trade = self.add_trade_manual(
                     ticker=trade_data['ticker'],
                     trade_date=trade_data['exit_time'].date() if trade_data.get('exit_time') else date.today(),
                     direction=trade_data['direction'],
                     entry_price=trade_data['entry_price'],
                     exit_price=trade_data['exit_price'],
-                    stop_price=float(stop),
+                    stop_price=float(trade_data['stop_price']),
                     size=trade_data['size'],
                     entry_time=trade_data.get('entry_time'),
                     exit_time=trade_data.get('exit_time'),
                     notes=f"Imported from TradingView Order History",
+                    currency=trade_data.get('currency', 'USD'),
+                    currency_rate=trade_data.get('currency_rate', 1.0),
                 )
                 imported += 1
                 
@@ -365,7 +531,7 @@ class TradeIngester:
                 if not skip_errors:
                     raise
         
-        logger.info(f"TradingView import: {imported} trades created, {errors} errors")
+        logger.info(f"TradingView import: {imported} trades created from {filled_count} orders, {errors} errors")
         
         # Add summary message
         summary = f"Processed {filled_count} filled orders → {imported} trades. Discarded: {rejected_count} rejected, {cancelled_count} cancelled."
@@ -379,7 +545,7 @@ class TradeIngester:
         password: str,
         mfa_code: Optional[str] = None,
         days_back: int = 30,
-    ) -> tuple[int, int, list[str]]:
+    ) -> dict:
         """
         Auto-import trades from Robinhood.
         
@@ -394,29 +560,44 @@ class TradeIngester:
             days_back: Number of days to look back (default 30)
             
         Returns:
-            Tuple of (imported_count, error_count, error_messages)
+            Dict with: imported, errors, messages, needs_mfa, needs_device_approval
         """
         from app.data.robinhood import get_robinhood_client
         
         client = get_robinhood_client()
-        messages = []
         
         # Login
-        if not client.login(username, password, mfa_code):
-            return 0, 1, ["Failed to login to Robinhood. Check credentials or MFA code."]
+        login_result = client.login(username, password, mfa_code)
+        
+        if not login_result.success:
+            return {
+                "imported": 0,
+                "errors": 1,
+                "messages": [login_result.message or login_result.error],
+                "needs_mfa": login_result.needs_mfa,
+                "needs_device_approval": login_result.needs_device_approval,
+            }
+        
+        messages = [login_result.message]
         
         try:
             # Get stock orders
             orders = client.get_stock_orders(days_back=days_back)
-            
+
             if not orders:
-                return 0, 0, [f"No filled orders found in the last {days_back} days."]
-            
+                return {
+                    "imported": 0,
+                    "errors": 0,
+                    "messages": [f"No filled orders found in the last {days_back} days."],
+                    "needs_mfa": False,
+                    "needs_device_approval": False,
+                }
+
             messages.append(f"Found {len(orders)} filled orders from Robinhood")
-            
+
             imported = 0
             errors = 0
-            
+
             # Group orders by ticker to match buy/sell pairs
             orders_by_ticker = {}
             for order in orders:
@@ -426,15 +607,15 @@ class TradeIngester:
                     if ticker not in orders_by_ticker:
                         orders_by_ticker[ticker] = []
                     orders_by_ticker[ticker].append(parsed)
-            
+
             # Match buy/sell orders to create trades
             for ticker, ticker_orders in orders_by_ticker.items():
                 # Sort by time
                 ticker_orders.sort(key=lambda x: x['entry_time'])
-                
+
                 # Track open positions
                 open_buys = []
-                
+
                 for order in ticker_orders:
                     if order['direction'] == 'long':  # Buy
                         open_buys.append(order)
@@ -442,12 +623,12 @@ class TradeIngester:
                         # Try to match with a buy
                         if open_buys:
                             buy_order = open_buys.pop(0)
-                            
+
                             # Create a trade from matched buy/sell
                             try:
                                 # Estimate stop as 2% from entry
                                 stop = buy_order['entry_price'] * 0.98
-                                
+
                                 trade = self.add_trade_manual(
                                     ticker=ticker,
                                     trade_date=order['exit_time'].date(),
@@ -464,14 +645,25 @@ class TradeIngester:
                             except Exception as e:
                                 errors += 1
                                 messages.append(f"{ticker}: {str(e)}")
-            
+
             messages.insert(0, f"Imported {imported} trades from Robinhood ({errors} errors)")
-            
-            return imported, errors, messages
-            
-        finally:
-            # Logout but keep session stored
-            pass
+
+            return {
+                "imported": imported,
+                "errors": errors,
+                "messages": messages,
+                "needs_mfa": False,
+                "needs_device_approval": False,
+            }
+
+        except Exception as e:
+            return {
+                "imported": 0,
+                "errors": 1,
+                "messages": [f"Error: {str(e)}"],
+                "needs_mfa": False,
+                "needs_device_approval": False,
+            }
 
     def robinhood_login_with_session(self) -> bool:
         """
@@ -669,6 +861,20 @@ class TradeIngester:
         except Exception as e:
             session.rollback()
             logger.error(f"Failed to delete trade: {e}")
+            raise
+
+    def delete_all_trades(self) -> int:
+        """Delete all trades. Returns count of deleted trades."""
+        session = get_session()
+        try:
+            count = session.query(Trade).count()
+            session.query(Trade).delete()
+            session.commit()
+            logger.info(f"Deleted all {count} trades")
+            return count
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Failed to delete all trades: {e}")
             raise
 
         finally:

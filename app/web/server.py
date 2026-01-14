@@ -431,10 +431,27 @@ async def reclassify_trades():
     """Reclassify unclassified trades with LLM."""
     ingester = TradeIngester()
     reclassified, failed = ingester.reclassify_all_trades()
-    
+
     return JSONResponse({
         "reclassified": reclassified,
         "failed": failed,
+    })
+
+
+@app.post("/api/recalculate-metrics")
+async def recalculate_all_metrics():
+    """Recalculate R-multiple, P&L, and other metrics for all trades."""
+    with get_session() as session:
+        trades = session.query(Trade).all()
+        updated = 0
+        for trade in trades:
+            trade.compute_metrics()
+            updated += 1
+        session.commit()
+    
+    return JSONResponse({
+        "updated": updated,
+        "message": f"Recalculated metrics for {updated} trades"
     })
 
 
@@ -447,6 +464,65 @@ async def delete_trade(trade_id: int):
     raise HTTPException(status_code=404, detail="Trade not found")
 
 
+@app.delete("/api/trades")
+async def delete_all_trades():
+    """Delete ALL trades. Use with caution!"""
+    ingester = TradeIngester()
+    count = ingester.delete_all_trades()
+    return JSONResponse({"message": f"Deleted {count} trades", "count": count})
+
+
+@app.patch("/api/trades/{trade_id}")
+async def update_trade(trade_id: int, request: Request):
+    """Update trade fields (size, prices, times, currency)."""
+    from datetime import datetime
+    data = await request.json()
+    
+    with get_session() as session:
+        trade = session.query(Trade).filter(Trade.id == trade_id).first()
+        if not trade:
+            raise HTTPException(status_code=404, detail="Trade not found")
+        
+        # Update fields if provided
+        if data.get("size") is not None:
+            trade.size = float(data["size"])
+        if data.get("entry_price") is not None:
+            trade.entry_price = float(data["entry_price"])
+        if data.get("exit_price") is not None:
+            trade.exit_price = float(data["exit_price"])
+        if data.get("stop_price") is not None:
+            trade.stop_price = float(data["stop_price"])
+        if data.get("currency") is not None:
+            trade.currency = data["currency"]
+        if data.get("currency_rate") is not None:
+            trade.currency_rate = float(data["currency_rate"])
+        
+        # Update times if provided
+        if data.get("entry_time"):
+            try:
+                trade.entry_time = datetime.fromisoformat(data["entry_time"])
+            except ValueError:
+                pass
+        if data.get("exit_time"):
+            try:
+                trade.exit_time = datetime.fromisoformat(data["exit_time"])
+                # Also update trade_date to match exit date
+                trade.trade_date = trade.exit_time.date()
+            except ValueError:
+                pass
+        
+        # Recalculate metrics after update
+        trade.compute_metrics()
+        session.commit()
+        
+        return JSONResponse({
+            "message": "Trade updated",
+            "trade_id": trade_id,
+            "r_multiple": trade.r_multiple,
+            "pnl_dollars": trade.pnl_dollars,
+        })
+
+
 @app.get("/api/status")
 async def get_status():
     """Get current system status and configuration."""
@@ -457,6 +533,56 @@ async def get_status():
         "tickers": load_tickers_from_file(),
         "outputs_dir": str(OUTPUTS_DIR),
         "imports_dir": str(IMPORTS_DIR),
+    })
+
+
+@app.get("/api/exchange-rate")
+async def get_exchange_rate_api(currency: str, date: str = None):
+    """
+    Get historical exchange rate for a currency.
+    
+    Args:
+        currency: Target currency code (e.g., 'HKD')
+        date: Date in YYYY-MM-DD format (defaults to today)
+        
+    Returns:
+        Exchange rate (1 USD = X currency)
+    """
+    from app.data.currency import get_exchange_rate
+    from datetime import date as date_type, datetime
+    
+    trade_date = None
+    if date:
+        try:
+            trade_date = datetime.fromisoformat(date.replace('Z', '+00:00')).date()
+        except ValueError:
+            try:
+                trade_date = date_type.fromisoformat(date[:10])
+            except ValueError:
+                pass
+    
+    rate = get_exchange_rate(currency, trade_date)
+    
+    if rate is None:
+        # Return fallback rates if API fails
+        fallback_rates = {
+            'HKD': 7.78, 'EUR': 0.92, 'GBP': 0.79, 'JPY': 149.5,
+            'CNY': 7.24, 'CAD': 1.36, 'AUD': 1.53, 'CHF': 0.88,
+            'SGD': 1.34, 'KRW': 1320.0, 'TWD': 31.5,
+        }
+        rate = fallback_rates.get(currency, 1.0)
+        return JSONResponse({
+            "currency": currency,
+            "rate": rate,
+            "date": date or str(date_type.today()),
+            "source": "fallback",
+        })
+    
+    return JSONResponse({
+        "currency": currency,
+        "rate": rate,
+        "date": date or str(date_type.today()),
+        "source": "frankfurter",
     })
 
 
@@ -482,24 +608,32 @@ async def robinhood_import(request: Request):
         days_back = data.get('days_back', 30)
         
         if not username or not password:
-            return JSONResponse({"error": "Username and password required", "imported": 0, "errors": 1})
+            return JSONResponse({
+                "error": "Username and password required",
+                "imported": 0,
+                "errors": 1,
+                "needs_mfa": False,
+                "needs_device_approval": False,
+            })
         
         ingester = TradeIngester()
-        imported, errors, messages = ingester.import_from_robinhood(
+        result = ingester.import_from_robinhood(
             username=username,
             password=password,
             mfa_code=mfa_code,
             days_back=days_back,
         )
         
-        return JSONResponse({
-            "imported": imported,
-            "errors": errors,
-            "messages": messages,
-        })
+        return JSONResponse(result)
         
     except Exception as e:
-        return JSONResponse({"error": str(e), "imported": 0, "errors": 1})
+        return JSONResponse({
+            "error": str(e),
+            "imported": 0,
+            "errors": 1,
+            "needs_mfa": False,
+            "needs_device_approval": False,
+        })
 
 
 @app.post("/api/robinhood/import-session")

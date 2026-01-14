@@ -20,6 +20,10 @@ pip install -r requirements.txt
 python -m app.main web
 
 # 4. Open http://localhost:8000 in your browser
+
+# 5. To stop the application:
+#    Press Ctrl+C in the terminal, or run:
+pkill -f "python -m app.main web"
 ```
 
 That's it! The web interface lets you:
@@ -39,6 +43,14 @@ brooks web --port 3000
 ```
 
 Open http://localhost:8000 in your browser.
+
+**Stop the application:**
+```bash
+# Option 1: Press Ctrl+C in the terminal running the server
+
+# Option 2: Kill from another terminal
+pkill -f "app.main web"
+```
 
 ![Dashboard](docs/screenshot-dashboard.png)
 

@@ -124,6 +124,10 @@ class Trade(Base):
     size = Column(Float)  # Number of shares/contracts
     stop_price = Column(Float)
     target_price = Column(Float)
+    
+    # Currency (for non-USD trades)
+    currency = Column(String(10), default="USD")  # USD, HKD, EUR, etc.
+    currency_rate = Column(Float, default=1.0)  # Rate to convert to USD (1 USD = X currency)
 
     # Computed metrics (populated by analytics)
     r_multiple = Column(Float)  # PnL / initial risk
@@ -189,12 +193,18 @@ class Trade(Base):
         if self.entry_price and self.exit_price and self.stop_price:
             if self.direction == TradeDirection.LONG:
                 risk = self.entry_price - self.stop_price
-                if risk > 0:
-                    self.r_multiple = (self.exit_price - self.entry_price) / risk
+                reward = self.exit_price - self.entry_price
             else:
                 risk = self.stop_price - self.entry_price
-                if risk > 0:
-                    self.r_multiple = (self.entry_price - self.exit_price) / risk
+                reward = self.entry_price - self.exit_price
+            
+            # Handle zero or negative risk (stop == entry)
+            if risk > 0.0001:
+                self.r_multiple = reward / risk
+            elif self.entry_price > 0:
+                # Fallback: assume 2% risk for R calculation
+                assumed_risk = self.entry_price * 0.02
+                self.r_multiple = reward / assumed_risk
 
         # PnL
         if self.entry_price and self.exit_price:
@@ -227,11 +237,21 @@ class Trade(Base):
             delta = self.exit_time - self.entry_time
             self.hold_time_minutes = int(delta.total_seconds() / 60)
 
-        # Outcome
-        if self.r_multiple is not None:
-            if self.r_multiple > 0.1:
+        # Outcome - based on P&L dollars rounded to 2 decimals
+        # Only breakeven if P&L rounds to exactly $0.00
+        if self.pnl_dollars is not None:
+            pnl_rounded = round(self.pnl_dollars, 2)
+            if pnl_rounded > 0:
                 self.outcome = TradeOutcome.WIN
-            elif self.r_multiple < -0.1:
+            elif pnl_rounded < 0:
+                self.outcome = TradeOutcome.LOSS
+            else:
+                self.outcome = TradeOutcome.BREAKEVEN
+        elif self.r_multiple is not None:
+            # Fallback to R-multiple if no P&L
+            if self.r_multiple > 0:
+                self.outcome = TradeOutcome.WIN
+            elif self.r_multiple < 0:
                 self.outcome = TradeOutcome.LOSS
             else:
                 self.outcome = TradeOutcome.BREAKEVEN
@@ -302,6 +322,21 @@ def init_db() -> None:
     """Initialize database and create tables."""
     engine = get_engine()
     Base.metadata.create_all(engine)
+    
+    # Add currency columns to existing trades table if they don't exist
+    # This handles migrations for existing databases
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        try:
+            conn.execute(text("SELECT currency FROM trades LIMIT 1"))
+        except Exception:
+            # Column doesn't exist, add it
+            try:
+                conn.execute(text("ALTER TABLE trades ADD COLUMN currency VARCHAR(10) DEFAULT 'USD'"))
+                conn.execute(text("ALTER TABLE trades ADD COLUMN currency_rate FLOAT DEFAULT 1.0"))
+                conn.commit()
+            except Exception:
+                pass  # Column might already exist or other error
 
     # Seed default strategies
     session = get_session()
