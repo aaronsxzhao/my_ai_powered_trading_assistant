@@ -97,34 +97,6 @@ class Tag(Base):
         return f"<Tag(name='{self.name}')>"
 
 
-class Order(Base):
-    """Individual order that makes up a trade (for multi-leg trades)."""
-
-    __tablename__ = "orders"
-
-    id = Column(Integer, primary_key=True)
-    trade_id = Column(Integer, ForeignKey("trades.id"), nullable=False)
-    
-    # Order details
-    side = Column(String(10), nullable=False)  # 'buy' or 'sell'
-    quantity = Column(Float, nullable=False)
-    price = Column(Float, nullable=False)
-    order_time = Column(DateTime)
-    stop_price = Column(Float)
-    
-    # Metadata
-    order_type = Column(String(20))  # 'market', 'limit', 'stop'
-    status = Column(String(20))  # 'filled', 'cancelled', etc.
-    
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    # Relationship
-    trade = relationship("Trade", back_populates="orders")
-
-    def __repr__(self):
-        return f"<Order(side='{self.side}', qty={self.quantity}, price={self.price})>"
-
-
 class Trade(Base):
     """Individual trade record."""
 
@@ -194,9 +166,6 @@ class Trade(Base):
 
     # Tags relationship
     tags = relationship("Tag", secondary=trade_tags, back_populates="trades")
-    
-    # Orders relationship (for multi-leg trades)
-    orders = relationship("Order", back_populates="trade", order_by="Order.order_time", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Trade(ticker='{self.ticker}', date='{self.trade_date}', direction='{self.direction.value}')>"

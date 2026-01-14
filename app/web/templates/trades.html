@@ -50,134 +50,120 @@
     {% endif %}
 
     <!-- Trades Table -->
-    <div class="card p-0">
+    <div class="card overflow-hidden">
         {% if trades %}
-        <table class="w-full text-sm">
-            <thead class="bg-dark-800 sticky top-0">
-                <tr class="text-dark-400 text-xs uppercase">
-                    <th class="py-3 px-2 text-left w-8"></th>
-                    <th class="py-3 px-2 text-left">Result</th>
-                    <th class="py-3 px-2 text-left">Date</th>
-                    <th class="py-3 px-2 text-left">Ticker</th>
-                    <th class="py-3 px-2 text-left">Type</th>
-                    <th class="py-3 px-2 text-right">Entry</th>
-                    <th class="py-3 px-2 text-right">Exit</th>
-                    <th class="py-3 px-2 text-right">P&L</th>
-                    <th class="py-3 px-2 text-right">%</th>
-                    <th class="py-3 px-2 text-center">Dir</th>
-                    <th class="py-3 px-2 text-right w-24">Actions</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-dark-700/50">
-                {% for trade in trades %}
-                <!-- Main Trade Row -->
-                <tr class="group hover:bg-dark-700/30 cursor-pointer trade-row" data-trade-id="{{ trade.id }}" onclick="toggleDrawer({{ trade.id }})">
-                    <td class="py-3 px-2">
-                        <span class="drawer-toggle text-dark-500 transition-transform inline-block" id="toggle-{{ trade.id }}">▶</span>
-                    </td>
-                    <td class="py-3 px-2">
-                        {% if trade.outcome %}
-                            {% if trade.outcome.value == 'win' %}
-                                <span class="win">WIN</span>
-                            {% elif trade.outcome.value == 'loss' %}
-                                <span class="loss">LOSS</span>
+        <div class="overflow-x-auto">
+            <table class="table-modern">
+                <thead>
+                    <tr>
+                        <th class="rounded-tl-xl">ID</th>
+                        <th>Exit Time</th>
+                        <th>Ticker</th>
+                        <th>Dir</th>
+                        <th>Shares</th>
+                        <th>Entry</th>
+                        <th>Exit</th>
+                        <th>P&L</th>
+                        <th>R</th>
+                        <th>Duration</th>
+                        <th>Result</th>
+                        <th>Strategy</th>
+                        <th class="rounded-tr-xl">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for trade in trades %}
+                    <tr class="group">
+                        <td class="text-dark-500 text-sm">#{{ trade.id }}</td>
+                        <td class="text-sm font-mono text-dark-400">
+                            {% if trade.exit_time %}
+                                {{ trade.exit_time.strftime('%m/%d %H:%M') }}
                             {% else %}
-                                <span class="breakeven">B/E</span>
+                                {{ trade.trade_date }}
                             {% endif %}
-                        {% else %}
-                            <span class="text-dark-500">-</span>
-                        {% endif %}
-                    </td>
-                    <td class="py-3 px-2 font-mono text-dark-300 text-xs">
-                        {{ trade.exit_time.strftime('%b %d, %Y') if trade.exit_time else trade.trade_date }}
-                    </td>
-                    <td class="py-3 px-2">
-                        <span class="font-bold text-white">{{ trade.ticker }}</span>
-                    </td>
-                    <td class="py-3 px-2 text-dark-400 text-xs">
-                        {{ trade.strategy.name if trade.strategy else '-' }}
-                    </td>
-                    <td class="py-3 px-2 font-mono text-right text-dark-300">${{ "%.2f"|format(trade.entry_price) }}</td>
-                    <td class="py-3 px-2 font-mono text-right text-dark-300">${{ "%.2f"|format(trade.exit_price) if trade.exit_price else '-' }}</td>
-                    <td class="py-3 px-2 font-mono text-right font-semibold {% if trade.pnl_dollars and trade.pnl_dollars >= 0 %}positive{% else %}negative{% endif %}">
-                        {% if trade.pnl_dollars %}
-                            {{ "+" if trade.pnl_dollars > 0 else "" }}${{ "%.2f"|format(trade.pnl_dollars) }}
-                        {% else %}-{% endif %}
-                    </td>
-                    <td class="py-3 px-2 font-mono text-right text-xs {% if trade.pnl_percent and trade.pnl_percent >= 0 %}positive{% else %}negative{% endif %}">
-                        {% if trade.pnl_percent %}{{ "%.1f"|format(trade.pnl_percent) }}%{% else %}-{% endif %}
-                    </td>
-                    <td class="py-3 px-2 text-center">
-                        {% if trade.direction.value == 'long' %}
-                            <span class="px-2 py-0.5 rounded text-xs font-medium bg-success-500/20 text-success-400 border border-success-500/30">LONG</span>
-                        {% else %}
-                            <span class="px-2 py-0.5 rounded text-xs font-medium bg-danger-500/20 text-danger-400 border border-danger-500/30">SHORT</span>
-                        {% endif %}
-                    </td>
-                    <td class="py-3 px-2 text-right" onclick="event.stopPropagation()">
-                        <div class="flex items-center justify-end space-x-1 opacity-60 group-hover:opacity-100">
-                            <button onclick="openEditModal({{ trade.id }}, {{ trade.size or 0 }}, {{ trade.entry_price }}, {{ trade.exit_price or 0 }}, {{ trade.stop_price or 0 }}, '{{ trade.currency or "USD" }}', {{ trade.currency_rate or 1.0 }}, '{{ trade.entry_time.strftime('%Y-%m-%dT%H:%M:%S') if trade.entry_time else '' }}', '{{ trade.exit_time.strftime('%Y-%m-%dT%H:%M:%S') if trade.exit_time else '' }}')" 
-                                    class="p-1.5 rounded hover:bg-dark-600 transition" title="Edit">✏️</button>
-                            <a href="/trades/{{ trade.id }}" class="p-1.5 rounded hover:bg-dark-600 transition" title="Review">👁️</a>
-                            <button onclick="deleteTrade({{ trade.id }})" class="p-1.5 rounded hover:bg-dark-600 transition text-danger-400" title="Delete">🗑️</button>
-                        </div>
-                    </td>
-                </tr>
-                <!-- Drawer: Child Orders -->
-                <tr class="drawer-content hidden bg-dark-900/50" id="drawer-{{ trade.id }}">
-                    <td colspan="11" class="p-0">
-                        <div class="px-8 py-4 border-l-4 border-accent-500/50">
-                            <!-- Trade Summary Header -->
-                            <div class="flex items-center justify-between mb-3">
-                                <div class="flex items-center gap-4 text-sm">
-                                    <span class="text-dark-400">Size: <span class="text-white font-mono">{{ "%.0f"|format(trade.size) if trade.size else '-' }}</span></span>
-                                    <span class="text-dark-400">Duration: <span class="text-white font-mono">{{ trade.duration_display }}</span></span>
-                                    <span class="text-dark-400">R: <span class="font-mono {% if trade.r_multiple and trade.r_multiple >= 0 %}positive{% else %}negative{% endif %}">{{ "%.2f"|format(trade.r_multiple) if trade.r_multiple else '-' }}R</span></span>
-                                    <span class="text-dark-400">Stop: <span class="text-white font-mono">${{ "%.2f"|format(trade.stop_price) if trade.stop_price else '-' }}</span></span>
-                                </div>
+                        </td>
+                        <td>
+                            <span class="font-bold text-white">{{ trade.ticker }}</span>
+                        </td>
+                        <td>
+                            {% if trade.direction.value == 'long' %}
+                                <span class="badge badge-success">LONG</span>
+                            {% else %}
+                                <span class="badge bg-danger-500/20 text-danger-400 border border-danger-500/30">SHORT</span>
+                            {% endif %}
+                        </td>
+                        <td class="font-mono text-sm">{{ "%.0f"|format(trade.size) if trade.size else '-' }}</td>
+                        <td class="font-mono text-sm">
+                            {% if trade.currency and trade.currency != 'USD' and trade.currency_rate %}
+                                <span class="text-white">${{ "%.2f"|format(trade.entry_price / trade.currency_rate) }}</span>
+                                <span class="text-xs text-dark-500 block">{{ trade.currency }} {{ "%.2f"|format(trade.entry_price) }}</span>
+                            {% else %}
+                                ${{ "%.4f"|format(trade.entry_price) }}
+                            {% endif %}
+                        </td>
+                        <td class="font-mono text-sm">
+                            {% if trade.exit_price %}
+                                {% if trade.currency and trade.currency != 'USD' and trade.currency_rate %}
+                                    <span class="text-white">${{ "%.2f"|format(trade.exit_price / trade.currency_rate) }}</span>
+                                    <span class="text-xs text-dark-500 block">{{ trade.currency }} {{ "%.2f"|format(trade.exit_price) }}</span>
+                                {% else %}
+                                    ${{ "%.4f"|format(trade.exit_price) }}
+                                {% endif %}
+                            {% else %}-{% endif %}
+                        </td>
+                        <td class="font-mono font-semibold {% if trade.pnl_dollars and trade.pnl_dollars >= 0 %}positive{% else %}negative{% endif %}">
+                            {% if trade.pnl_dollars %}
+                                {% if trade.currency and trade.currency != 'USD' and trade.currency_rate %}
+                                    <span class="text-inherit">${{ "%.2f"|format(trade.pnl_dollars / trade.currency_rate) }}</span>
+                                    <span class="text-xs text-dark-500 block">{{ trade.currency }} {{ "%.2f"|format(trade.pnl_dollars) }}</span>
+                                {% else %}
+                                    {{ "+" if trade.pnl_dollars > 0 else "" }}${{ "%.2f"|format(trade.pnl_dollars) }}
+                                {% endif %}
+                            {% else %}-{% endif %}
+                        </td>
+                        <td class="font-mono font-semibold {% if trade.r_multiple and trade.r_multiple >= 0 %}positive{% else %}negative{% endif %}">
+                            {% if trade.r_multiple %}{{ "%.2f"|format(trade.r_multiple) }}R{% else %}-{% endif %}
+                        </td>
+                        <td class="text-sm text-dark-400 font-mono">
+                            {{ trade.duration_display }}
+                        </td>
+                        <td>
+                            {% if trade.outcome %}
+                                {% if trade.outcome.value == 'win' %}
+                                    <span class="win">WIN</span>
+                                {% elif trade.outcome.value == 'loss' %}
+                                    <span class="loss">LOSS</span>
+                                {% else %}
+                                    <span class="breakeven">B/E</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="text-dark-500">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="badge bg-dark-700 text-dark-300 border-dark-600">
+                                {{ trade.strategy.name if trade.strategy else 'unclassified' }}
+                            </span>
+                        </td>
+                        <td>
+                            <div class="flex items-center space-x-1 opacity-50 group-hover:opacity-100 transition-opacity">
+                                <button onclick="openEditModal({{ trade.id }}, {{ trade.size or 0 }}, {{ trade.entry_price }}, {{ trade.exit_price or 0 }}, {{ trade.stop_price or 0 }}, '{{ trade.currency or "USD" }}', {{ trade.currency_rate or 1.0 }}, '{{ trade.entry_time.strftime('%Y-%m-%dT%H:%M:%S') if trade.entry_time else '' }}', '{{ trade.exit_time.strftime('%Y-%m-%dT%H:%M:%S') if trade.exit_time else '' }}')" 
+                                        class="btn btn-ghost p-2 text-sm" title="Edit">
+                                    ✏️
+                                </button>
+                                <a href="/trades/{{ trade.id }}" class="btn btn-ghost p-2 text-sm text-accent-400" title="Review">
+                                    👁️
+                                </a>
+                                <button onclick="deleteTrade({{ trade.id }})" class="btn btn-ghost p-2 text-sm text-danger-400" title="Delete">
+                                    🗑️
+                                </button>
                             </div>
-                            
-                            <!-- Child Orders Table -->
-                            {% if trade.orders and trade.orders|length > 0 %}
-                            <table class="w-full text-xs">
-                                <thead>
-                                    <tr class="text-dark-500 uppercase border-b border-dark-700">
-                                        <th class="py-2 px-3 text-left">Action</th>
-                                        <th class="py-2 px-3 text-left">Type</th>
-                                        <th class="py-2 px-3 text-left">Date</th>
-                                        <th class="py-2 px-3 text-left">Time</th>
-                                        <th class="py-2 px-3 text-right">Size</th>
-                                        <th class="py-2 px-3 text-right">Price</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="divide-y divide-dark-700/30">
-                                    {% for order in trade.orders %}
-                                    <tr class="hover:bg-dark-800/50">
-                                        <td class="py-2 px-3">
-                                            {% if order.side == 'buy' %}
-                                                <span class="text-success-400 font-medium">Buy</span>
-                                            {% else %}
-                                                <span class="text-danger-400 font-medium">Sell</span>
-                                            {% endif %}
-                                        </td>
-                                        <td class="py-2 px-3 text-dark-400">{{ order.order_type or 'MARKET' }}</td>
-                                        <td class="py-2 px-3 text-dark-300 font-mono">{{ order.order_time.strftime('%b %d, %Y') if order.order_time else '-' }}</td>
-                                        <td class="py-2 px-3 text-dark-400 font-mono">{{ order.order_time.strftime('%H:%M:%S') if order.order_time else '-' }}</td>
-                                        <td class="py-2 px-3 text-right text-dark-300 font-mono">{{ "%.0f"|format(order.quantity) }}</td>
-                                        <td class="py-2 px-3 text-right text-white font-mono">${{ "%.2f"|format(order.price) }}</td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                            {% else %}
-                            <div class="text-dark-500 text-sm py-2">No individual orders recorded for this trade.</div>
-                            {% endif %}
-                        </div>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
         {% else %}
         <div class="text-center py-16">
             <div class="text-6xl mb-4">📭</div>
@@ -273,20 +259,6 @@
 <script>
 let currentTradeId = null;
 let currentTradeDate = null;
-
-// Toggle drawer to show/hide child orders
-function toggleDrawer(tradeId) {
-    const drawer = document.getElementById(`drawer-${tradeId}`);
-    const toggle = document.getElementById(`toggle-${tradeId}`);
-    
-    if (drawer.classList.contains('hidden')) {
-        drawer.classList.remove('hidden');
-        toggle.style.transform = 'rotate(90deg)';
-    } else {
-        drawer.classList.add('hidden');
-        toggle.style.transform = 'rotate(0deg)';
-    }
-}
 
 function openEditModal(id, shares, entry, exit, stop, currency, rate, entryTime, exitTime) {
     currentTradeId = id;

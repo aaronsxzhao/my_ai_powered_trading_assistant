@@ -568,7 +568,6 @@ class TradeIngester:
                         'exit_time': exit_time,
                         'currency': currency,
                         'currency_rate': currency_rate,
-                        'child_orders': pending_orders.copy(),  # Store child orders for drawer display
                     }
                     
                     # Cross-validate against balance history if available
@@ -604,8 +603,6 @@ class TradeIngester:
                 unmatched_count += len(pending_orders)
         
         # Import the matched trades
-        from app.journal.models import Order
-        
         imported = 0
         errors = 0
         error_messages = []
@@ -626,28 +623,6 @@ class TradeIngester:
                     currency=trade_data.get('currency', 'USD'),
                     currency_rate=trade_data.get('currency_rate', 1.0),
                 )
-                
-                # Save child orders if present (for multi-leg trades)
-                if trade and trade_data.get('child_orders'):
-                    session = get_session()
-                    try:
-                        for order_data in trade_data['child_orders']:
-                            order = Order(
-                                trade_id=trade.id,
-                                side=order_data['side'],
-                                quantity=order_data['qty'],
-                                price=order_data['price'],
-                                order_time=order_data.get('time'),
-                                stop_price=order_data.get('stop'),
-                                status='filled'
-                            )
-                            session.add(order)
-                        session.commit()
-                    except Exception as e:
-                        logger.warning(f"Failed to save child orders: {e}")
-                    finally:
-                        session.close()
-                
                 imported += 1
                 
             except Exception as e:
