@@ -1,73 +1,605 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark" style="color-scheme: dark;">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Brooks Trading Coach{% endblock %}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    <style>
-        .nav-link { @apply px-4 py-2 rounded-lg hover:bg-gray-700 transition; }
-        .nav-link.active { @apply bg-blue-600; }
-        .card { @apply bg-white rounded-xl shadow-md p-6; }
-        .btn { @apply px-4 py-2 rounded-lg font-medium transition; }
-        .btn-primary { @apply bg-blue-600 text-white hover:bg-blue-700; }
-        .btn-secondary { @apply bg-gray-200 text-gray-800 hover:bg-gray-300; }
-        .btn-success { @apply bg-green-600 text-white hover:bg-green-700; }
-        .btn-danger { @apply bg-red-600 text-white hover:bg-red-700; }
-        .input { @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent; }
-        .label { @apply block text-sm font-medium text-gray-700 mb-1; }
-        .stat-card { @apply bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-4 text-center; }
-        .positive { @apply text-green-600; }
-        .negative { @apply text-red-600; }
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                    colors: {
+                        dark: {
+                            50: '#f8fafc',
+                            100: '#f1f5f9',
+                            200: '#e2e8f0',
+                            300: '#cbd5e1',
+                            400: '#94a3b8',
+                            500: '#64748b',
+                            600: '#475569',
+                            700: '#334155',
+                            800: '#1e293b',
+                            900: '#0f172a',
+                            950: '#020617',
+                        },
+                        accent: {
+                            400: '#60a5fa',
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                        },
+                        success: {
+                            400: '#4ade80',
+                            500: '#22c55e',
+                        },
+                        danger: {
+                            400: '#f87171',
+                            500: '#ef4444',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer components {
+            /* Modern Navigation */
+            .nav-link {
+                @apply px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200
+                       text-dark-300 hover:text-white hover:bg-white/10 backdrop-blur-sm;
+            }
+            .nav-link.active {
+                @apply bg-gradient-to-r from-accent-500/20 to-accent-600/20 text-white 
+                       border border-accent-500/30 shadow-lg shadow-accent-500/10;
+            }
+            
+            /* Glass Cards */
+            .card {
+                @apply bg-dark-800/50 backdrop-blur-xl rounded-2xl border border-dark-700/50 
+                       shadow-xl shadow-black/10 p-6 transition-all duration-300;
+            }
+            .card:hover {
+                @apply border-dark-600/50 shadow-2xl;
+            }
+            .card-glass {
+                @apply bg-gradient-to-br from-white/5 to-white/0 backdrop-blur-xl 
+                       rounded-2xl border border-white/10 p-6;
+            }
+            
+            /* Modern Buttons */
+            .btn {
+                @apply px-5 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 
+                       inline-flex items-center justify-center gap-2 disabled:opacity-50;
+            }
+            .btn-primary {
+                @apply bg-gradient-to-r from-accent-500 to-accent-600 text-white 
+                       hover:from-accent-400 hover:to-accent-500 shadow-lg shadow-accent-500/25
+                       active:scale-[0.98];
+            }
+            .btn-secondary {
+                @apply bg-dark-700 text-dark-200 hover:bg-dark-600 border border-dark-600;
+            }
+            .btn-success {
+                @apply bg-gradient-to-r from-success-500 to-emerald-600 text-white 
+                       hover:from-success-400 hover:to-emerald-500 shadow-lg shadow-success-500/25;
+            }
+            .btn-danger {
+                @apply bg-gradient-to-r from-danger-500 to-red-600 text-white 
+                       hover:from-danger-400 hover:to-red-500 shadow-lg shadow-danger-500/25;
+            }
+            .btn-ghost {
+                @apply text-dark-300 hover:text-white hover:bg-white/10;
+            }
+            
+            /* Form Elements */
+            .input {
+                @apply w-full px-4 py-3 bg-dark-900/50 border border-dark-600 rounded-xl 
+                       text-white placeholder-dark-400 focus:ring-2 focus:ring-accent-500/50 
+                       focus:border-accent-500 transition-all duration-200;
+            }
+            .label {
+                @apply block text-sm font-medium text-dark-300 mb-2;
+            }
+            .select {
+                @apply w-full px-4 py-3 bg-dark-900/50 border border-dark-600 rounded-xl 
+                       text-white focus:ring-2 focus:ring-accent-500/50 focus:border-accent-500;
+            }
+            
+            /* Stats */
+            .stat-card {
+                @apply bg-gradient-to-br from-dark-700/50 to-dark-800/50 rounded-2xl p-5 
+                       border border-dark-600/30 text-center transition-all duration-300 hover:scale-[1.02];
+            }
+            .stat-value {
+                @apply text-3xl font-bold bg-gradient-to-r from-white to-dark-200 bg-clip-text text-transparent;
+            }
+            .stat-label {
+                @apply text-sm text-dark-400 mt-1;
+            }
+            
+            /* Tables */
+            .table-modern {
+                @apply w-full text-sm;
+            }
+            .table-modern thead {
+                @apply bg-dark-800/80 backdrop-blur-sm sticky top-0;
+            }
+            .table-modern th {
+                @apply px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider;
+            }
+            .table-modern tbody tr {
+                @apply border-b border-dark-700/50 transition-colors hover:bg-dark-700/30;
+            }
+            .table-modern td {
+                @apply px-4 py-4 text-dark-200;
+            }
+            
+            /* Colors */
+            .positive { @apply text-success-400; }
+            .negative { @apply text-danger-400; }
+            .win { @apply bg-success-500/20 text-success-400 px-2.5 py-1 rounded-lg text-xs font-semibold; }
+            .loss { @apply bg-danger-500/20 text-danger-400 px-2.5 py-1 rounded-lg text-xs font-semibold; }
+            .breakeven { @apply bg-dark-600/50 text-dark-300 px-2.5 py-1 rounded-lg text-xs font-semibold; }
+            
+            /* Badges */
+            .badge {
+                @apply inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium;
+            }
+            .badge-primary {
+                @apply bg-accent-500/20 text-accent-400 border border-accent-500/30;
+            }
+            .badge-success {
+                @apply bg-success-500/20 text-success-400 border border-success-500/30;
+            }
+            .badge-warning {
+                @apply bg-amber-500/20 text-amber-400 border border-amber-500/30;
+            }
+            
+            /* Loading */
+            .loading-spinner {
+                @apply animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full;
+            }
+            
+            /* Drawer toggle */
+            .drawer-toggle {
+                @apply transition-transform duration-200 cursor-pointer;
+            }
+            .drawer-content {
+                @apply transition-all duration-200;
+            }
+
+            /* Animations */
+            @keyframes fadeIn {
+                from { opacity: 0; transform: translateY(10px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            .animate-fadeIn {
+                animation: fadeIn 0.3s ease-out;
+            }
+            
+            @keyframes pulse-glow {
+                0%, 100% { box-shadow: 0 0 20px rgba(59, 130, 246, 0.3); }
+                50% { box-shadow: 0 0 30px rgba(59, 130, 246, 0.5); }
+            }
+            .glow-pulse {
+                animation: pulse-glow 2s ease-in-out infinite;
+            }
+        }
+        
+        /* Light mode overrides - comprehensive */
+        :root:not(.dark) {
+            --bg-primary: #f8fafc;
+            --bg-secondary: #ffffff;
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+        }
+        
+        :root:not(.dark) body {
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%) !important;
+            color: #0f172a !important;
+        }
+        
+        /* Background colors */
+        :root:not(.dark) .bg-dark-950 { background-color: #f8fafc !important; }
+        :root:not(.dark) .bg-dark-900 { background-color: #f1f5f9 !important; }
+        :root:not(.dark) .bg-dark-800 { background-color: #ffffff !important; }
+        :root:not(.dark) .bg-dark-700 { background-color: #e2e8f0 !important; }
+        :root:not(.dark) .bg-dark-600 { background-color: #cbd5e1 !important; }
+        :root:not(.dark) .bg-dark-900\/50, :root:not(.dark) .bg-dark-800\/50 { background-color: rgba(241,245,249,0.9) !important; }
+        :root:not(.dark) .bg-dark-900\/80, :root:not(.dark) .bg-dark-800\/80 { background-color: rgba(255,255,255,0.95) !important; }
+        :root:not(.dark) .bg-dark-700\/50 { background-color: rgba(226,232,240,0.8) !important; }
+        :root:not(.dark) .bg-dark-700\/30 { background-color: rgba(226,232,240,0.5) !important; }
+        
+        /* Text colors - ALL text must be dark in light mode */
+        :root:not(.dark) .text-white { color: #0f172a !important; }
+        :root:not(.dark) .text-dark-100 { color: #1e293b !important; }
+        :root:not(.dark) .text-dark-200 { color: #334155 !important; }
+        :root:not(.dark) .text-dark-300 { color: #475569 !important; }
+        :root:not(.dark) .text-dark-400 { color: #64748b !important; }
+        :root:not(.dark) .text-dark-500 { color: #94a3b8 !important; }
+        :root:not(.dark) .text-inherit { color: inherit !important; }
+        
+        /* Gradient text fix for light mode */
+        :root:not(.dark) .bg-clip-text {
+            background: linear-gradient(135deg, #0f172a, #334155) !important;
+            -webkit-background-clip: text !important;
+            background-clip: text !important;
+            color: transparent !important;
+        }
+        
+        /* Border colors */
+        :root:not(.dark) .border-dark-500 { border-color: #94a3b8 !important; }
+        :root:not(.dark) .border-dark-600 { border-color: #cbd5e1 !important; }
+        :root:not(.dark) .border-dark-700 { border-color: #e2e8f0 !important; }
+        :root:not(.dark) .border-dark-700\/50 { border-color: rgba(226,232,240,0.7) !important; }
+        :root:not(.dark) .border-dark-600\/30 { border-color: rgba(203,213,225,0.5) !important; }
+        
+        /* Cards */
+        :root:not(.dark) .card { 
+            background: rgba(255,255,255,0.95) !important;
+            border-color: #e2e8f0 !important;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.08), 0 2px 4px -1px rgba(0,0,0,0.04) !important;
+        }
+        
+        :root:not(.dark) .stat-card {
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%) !important;
+            border-color: #e2e8f0 !important;
+        }
+        
+        :root:not(.dark) .stat-value {
+            background: linear-gradient(135deg, #0f172a, #334155) !important;
+            -webkit-background-clip: text !important;
+            background-clip: text !important;
+        }
+        
+        /* Form elements */
+        :root:not(.dark) .input, :root:not(.dark) .select, :root:not(.dark) textarea {
+            background-color: #ffffff !important;
+            border-color: #cbd5e1 !important;
+            color: #0f172a !important;
+        }
+        :root:not(.dark) .input::placeholder, :root:not(.dark) textarea::placeholder {
+            color: #94a3b8 !important;
+        }
+        
+        /* Navigation */
+        :root:not(.dark) nav {
+            background-color: rgba(255,255,255,0.9) !important;
+            border-color: #e2e8f0 !important;
+        }
+        :root:not(.dark) .nav-link {
+            color: #475569 !important;
+        }
+        :root:not(.dark) .nav-link:hover {
+            color: #0f172a !important;
+            background-color: rgba(0,0,0,0.05) !important;
+        }
+        :root:not(.dark) .nav-link.active {
+            color: #2563eb !important;
+            background: linear-gradient(135deg, rgba(59,130,246,0.15), rgba(59,130,246,0.08)) !important;
+        }
+        
+        /* Tables */
+        :root:not(.dark) .table-modern { color: #0f172a !important; }
+        :root:not(.dark) .table-modern thead {
+            background-color: #f1f5f9 !important;
+        }
+        :root:not(.dark) .table-modern th {
+            color: #475569 !important;
+        }
+        :root:not(.dark) .table-modern tbody tr {
+            border-color: #e2e8f0 !important;
+        }
+        :root:not(.dark) .table-modern tbody tr:hover {
+            background-color: rgba(241,245,249,0.7) !important;
+        }
+        :root:not(.dark) .table-modern td {
+            color: #334155 !important;
+        }
+        
+        /* Badges */
+        :root:not(.dark) .badge {
+            border-color: currentColor !important;
+        }
+        :root:not(.dark) .bg-dark-700.text-dark-300 {
+            background-color: #e2e8f0 !important;
+            color: #475569 !important;
+        }
+        
+        /* Buttons */
+        :root:not(.dark) .btn-secondary {
+            background-color: #e2e8f0 !important;
+            color: #334155 !important;
+            border-color: #cbd5e1 !important;
+        }
+        :root:not(.dark) .btn-ghost {
+            color: #475569 !important;
+        }
+        :root:not(.dark) .btn-ghost:hover {
+            background-color: rgba(0,0,0,0.05) !important;
+        }
+        
+        /* Toast and Loading */
+        :root:not(.dark) #toast {
+            background-color: #1e293b !important;
+            color: white !important;
+        }
+        :root:not(.dark) #loading > div {
+            background-color: white !important;
+            color: #0f172a !important;
+        }
+        :root:not(.dark) #loading .text-dark-300 {
+            color: #475569 !important;
+        }
+        
+        /* Footer */
+        :root:not(.dark) footer {
+            background-color: rgba(241,245,249,0.8) !important;
+            border-color: #e2e8f0 !important;
+        }
+        
+        /* Mobile nav */
+        :root:not(.dark) .md\\:hidden.fixed.bottom-0 {
+            background-color: rgba(255,255,255,0.95) !important;
+            border-color: #e2e8f0 !important;
+        }
+        
+        /* Accent colors remain visible */
+        :root:not(.dark) .text-accent-300 { color: #3b82f6 !important; }
+        :root:not(.dark) .text-accent-400 { color: #2563eb !important; }
+        :root:not(.dark) .text-success-300 { color: #16a34a !important; }
+        :root:not(.dark) .text-success-400 { color: #15803d !important; }
+        :root:not(.dark) .text-danger-300 { color: #dc2626 !important; }
+        :root:not(.dark) .text-danger-400 { color: #b91c1c !important; }
+        :root:not(.dark) .text-amber-300 { color: #d97706 !important; }
+        :root:not(.dark) .text-amber-400 { color: #b45309 !important; }
+        :root:not(.dark) .text-purple-300 { color: #7c3aed !important; }
+        :root:not(.dark) .text-purple-400 { color: #6d28d9 !important; }
+        
+        /* Font mono stays readable */
+        :root:not(.dark) .font-mono { color: #334155 !important; }
+        
+        /* Fix specific color classes */
+        :root:not(.dark) .positive { color: #15803d !important; }
+        :root:not(.dark) .negative { color: #b91c1c !important; }
+        
+        /* Win/Loss/Breakeven badges */
+        :root:not(.dark) .win { 
+            background-color: rgba(22, 163, 74, 0.15) !important; 
+            color: #15803d !important; 
+        }
+        :root:not(.dark) .loss { 
+            background-color: rgba(220, 38, 38, 0.15) !important; 
+            color: #b91c1c !important; 
+        }
+        :root:not(.dark) .breakeven { 
+            background-color: rgba(100, 116, 139, 0.15) !important; 
+            color: #475569 !important; 
+        }
+        
+        /* Drawer styles */
+        :root:not(.dark) .drawer-content {
+            background-color: #f8fafc !important;
+        }
     </style>
 </head>
-<body class="bg-gray-100 min-h-screen">
+<body class="bg-dark-950 dark:bg-dark-950 text-white dark:text-white font-sans min-h-screen antialiased transition-colors duration-300">
+    <!-- Gradient Background -->
+    <div class="fixed inset-0 bg-gradient-to-br from-dark-950 via-dark-900 to-dark-950 dark:from-dark-950 dark:via-dark-900 dark:to-dark-950 -z-10 transition-colors duration-300"></div>
+    <div class="fixed inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-accent-500/5 via-transparent to-transparent -z-10"></div>
+    
     <!-- Navigation -->
-    <nav class="bg-gray-900 text-white shadow-lg">
-        <div class="max-w-7xl mx-auto px-4">
+    <nav class="sticky top-0 z-50 bg-dark-900/80 backdrop-blur-xl border-b border-dark-700/50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex items-center justify-between h-16">
+                <!-- Logo & Nav Links -->
                 <div class="flex items-center space-x-8">
-                    <a href="/" class="text-xl font-bold">📈 Brooks Coach</a>
-                    <div class="flex space-x-2">
-                        <a href="/" class="nav-link {% if request.url.path == '/' %}active{% endif %}">Dashboard</a>
-                        <a href="/trades" class="nav-link {% if '/trades' in request.url.path %}active{% endif %}">Trades</a>
-                        <a href="/add-trade" class="nav-link {% if request.url.path == '/add-trade' %}active{% endif %}">+ Add Trade</a>
-                        <a href="/import" class="nav-link {% if request.url.path == '/import' %}active{% endif %}">Import</a>
-                        <a href="/tickers" class="nav-link {% if request.url.path == '/tickers' %}active{% endif %}">Tickers</a>
-                        <a href="/reports" class="nav-link {% if request.url.path == '/reports' %}active{% endif %}">Reports</a>
-                        <a href="/stats" class="nav-link {% if request.url.path == '/stats' %}active{% endif %}">Stats</a>
+                    <a href="/" class="flex items-center space-x-3 group">
+                        <span class="text-2xl">📈</span>
+                        <span class="text-xl font-bold bg-gradient-to-r from-white to-dark-300 bg-clip-text text-transparent 
+                                     group-hover:from-accent-400 group-hover:to-accent-500 transition-all duration-300">
+                            Brooks Coach
+                        </span>
+                    </a>
+                    <div class="hidden md:flex items-center space-x-1">
+                        <a href="/" class="nav-link {% if request.url.path == '/' %}active{% endif %}">
+                            <span class="mr-1.5">🏠</span> Dashboard
+                        </a>
+                        <a href="/trades" class="nav-link {% if '/trades' in request.url.path %}active{% endif %}">
+                            <span class="mr-1.5">📊</span> Trades
+                        </a>
+                        <a href="/add-trade" class="nav-link {% if request.url.path == '/add-trade' %}active{% endif %}">
+                            <span class="mr-1.5">➕</span> Add
+                        </a>
+                        <a href="/import" class="nav-link {% if request.url.path == '/import' %}active{% endif %}">
+                            <span class="mr-1.5">📥</span> Import
+                        </a>
+                        <a href="/reports" class="nav-link {% if request.url.path == '/reports' %}active{% endif %}">
+                            <span class="mr-1.5">📋</span> Reports
+                        </a>
+                        <a href="/stats" class="nav-link {% if request.url.path == '/stats' %}active{% endif %}">
+                            <span class="mr-1.5">📈</span> Stats
+                        </a>
+                        <a href="/analysis" class="nav-link {% if request.url.path == '/analysis' %}active{% endif %}">
+                            <span class="mr-1.5">🔍</span> Analyze
+                        </a>
                     </div>
                 </div>
-                <div class="text-sm text-gray-400 flex items-center space-x-4">
-                    {% if data_provider is defined %}
-                        <span class="{% if data_provider == 'polygon' %}text-green-400{% else %}text-gray-400{% endif %}">
-                            📊 {{ data_provider | upper }}
-                        </span>
-                    {% endif %}
-                    {% if llm_available is defined %}
-                        {% if llm_available %}
-                            <span class="text-green-400">🧠 AI Active</span>
-                        {% else %}
-                            <span class="text-yellow-400">⚠️ No LLM</span>
+                
+                <!-- Status & Settings -->
+                <div class="flex items-center space-x-4">
+                    <div class="hidden sm:flex items-center space-x-3 text-sm">
+                        {% if data_provider is defined %}
+                            <span class="badge {% if data_provider == 'polygon' %}badge-success{% else %}badge-warning{% endif %}">
+                                📊 {{ data_provider | upper }}
+                            </span>
                         {% endif %}
-                    {% endif %}
+                        {% if llm_available is defined %}
+                            {% if llm_available %}
+                                <span class="badge badge-success">🧠 AI Active</span>
+                            {% else %}
+                                <span class="badge badge-warning">⚠️ No LLM</span>
+                            {% endif %}
+                        {% endif %}
+                    </div>
+                    <a href="/tickers" class="nav-link p-2 {% if request.url.path == '/tickers' %}active{% endif %}" title="Tickers">
+                        🎯
+                    </a>
+                    <a href="/materials" class="nav-link p-2 {% if request.url.path == '/materials' %}active{% endif %}" title="Training Materials">
+                        📚
+                    </a>
+                    <button onclick="toggleTheme()" class="nav-link p-2" title="Toggle Dark/Light Mode" id="theme-toggle">
+                        <span id="theme-icon">🌙</span>
+                    </button>
+                    <a href="/settings" class="nav-link p-2 {% if request.url.path == '/settings' %}active{% endif %}" title="Settings">
+                        ⚙️
+                    </a>
                 </div>
             </div>
         </div>
     </nav>
 
+    <!-- Mobile Navigation -->
+    <div class="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-dark-900/95 backdrop-blur-xl border-t border-dark-700/50 px-2 py-2 safe-area-inset-bottom">
+        <div class="flex justify-around">
+            <a href="/" class="flex flex-col items-center px-3 py-2 text-xs {% if request.url.path == '/' %}text-accent-400{% else %}text-dark-400{% endif %}">
+                <span class="text-lg mb-1">🏠</span>
+                Home
+            </a>
+            <a href="/trades" class="flex flex-col items-center px-3 py-2 text-xs {% if '/trades' in request.url.path %}text-accent-400{% else %}text-dark-400{% endif %}">
+                <span class="text-lg mb-1">📊</span>
+                Trades
+            </a>
+            <a href="/add-trade" class="flex flex-col items-center px-3 py-2 text-xs {% if request.url.path == '/add-trade' %}text-accent-400{% else %}text-dark-400{% endif %}">
+                <span class="text-lg mb-1">➕</span>
+                Add
+            </a>
+            <a href="/import" class="flex flex-col items-center px-3 py-2 text-xs {% if request.url.path == '/import' %}text-accent-400{% else %}text-dark-400{% endif %}">
+                <span class="text-lg mb-1">📥</span>
+                Import
+            </a>
+            <a href="/settings" class="flex flex-col items-center px-3 py-2 text-xs {% if request.url.path == '/settings' %}text-accent-400{% else %}text-dark-400{% endif %}">
+                <span class="text-lg mb-1">⚙️</span>
+                Settings
+            </a>
+        </div>
+    </div>
+
     <!-- Main Content -->
-    <main class="max-w-7xl mx-auto px-4 py-8">
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24 md:pb-8 animate-fadeIn">
         {% block content %}{% endblock %}
     </main>
 
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-20 md:bottom-6 right-6 bg-dark-800 text-white px-6 py-4 rounded-2xl shadow-2xl 
+                          border border-dark-600 backdrop-blur-xl hidden z-50 max-w-sm animate-fadeIn">
+        <div class="flex items-center space-x-3">
+            <span id="toast-icon">✓</span>
+            <span id="toast-message"></span>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loading" class="fixed inset-0 bg-dark-950/80 backdrop-blur-sm flex items-center justify-center z-50 hidden">
+        <div class="bg-dark-800 rounded-2xl p-8 flex flex-col items-center space-y-4 border border-dark-600 shadow-2xl">
+            <div class="loading-spinner w-10 h-10 border-4 border-accent-500 border-t-transparent"></div>
+            <span class="text-dark-300">Loading...</span>
+        </div>
+    </div>
+
     <!-- Footer -->
-    <footer class="bg-gray-900 text-gray-400 py-4 mt-8">
-        <div class="max-w-7xl mx-auto px-4 text-center text-sm">
-            Brooks Price Action Trading Coach • Advisory Only • Not Financial Advice
+    <footer class="bg-dark-900/50 border-t border-dark-700/50 py-6 mt-auto">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex flex-col md:flex-row items-center justify-between text-sm text-dark-500">
+                <span>Brooks Price Action Trading Coach</span>
+                <span class="mt-2 md:mt-0">Advisory Only • Not Financial Advice</span>
+            </div>
         </div>
     </footer>
+
+    <script>
+        // Quick toast notification (non-blocking)
+        function showToast(message, type = 'success', duration = 3000) {
+            const toast = document.getElementById('toast');
+            const icon = document.getElementById('toast-icon');
+            const msg = document.getElementById('toast-message');
+            
+            const icons = {
+                'success': '✓',
+                'error': '✕',
+                'info': 'ℹ',
+                'start': '🚀',
+                'finish': '✅',
+                'loading': '⏳'
+            };
+            icon.textContent = icons[type] || '✓';
+            msg.textContent = message;
+            
+            toast.classList.remove('hidden');
+            if (duration > 0) {
+                setTimeout(() => toast.classList.add('hidden'), duration);
+            }
+        }
+        
+        // Quick "start" notification (0.5 second)
+        function showStartToast(action) {
+            showToast(`Starting ${action}...`, 'start', 500);
+        }
+        
+        // Quick "finish" notification (3 seconds)
+        function showFinishToast(action, brief = '') {
+            const msg = brief ? `${action} complete: ${brief}` : `${action} complete!`;
+            showToast(msg, 'finish', 3000);
+        }
+        
+        // Old blocking loading (deprecated - avoid using)
+        function showLoading(show) {
+            document.getElementById('loading').classList.toggle('hidden', !show);
+        }
+        
+        // Theme toggle (dark/light mode)
+        function toggleTheme() {
+            const html = document.documentElement;
+            const isDark = html.classList.contains('dark');
+            
+            if (isDark) {
+                html.classList.remove('dark');
+                localStorage.setItem('theme', 'light');
+                document.getElementById('theme-icon').textContent = '☀️';
+            } else {
+                html.classList.add('dark');
+                localStorage.setItem('theme', 'dark');
+                document.getElementById('theme-icon').textContent = '🌙';
+            }
+        }
+        
+        // Load saved theme preference
+        (function() {
+            const savedTheme = localStorage.getItem('theme');
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const useDark = savedTheme === 'dark' || (!savedTheme && prefersDark);
+            
+            if (useDark) {
+                document.documentElement.classList.add('dark');
+                if (document.getElementById('theme-icon')) {
+                    document.getElementById('theme-icon').textContent = '🌙';
+                }
+            } else {
+                document.documentElement.classList.remove('dark');
+                if (document.getElementById('theme-icon')) {
+                    document.getElementById('theme-icon').textContent = '☀️';
+                }
+            }
+        })();
+    </script>
 
     {% block scripts %}{% endblock %}
 </body>

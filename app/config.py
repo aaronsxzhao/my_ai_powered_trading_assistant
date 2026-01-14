@@ -22,12 +22,14 @@ DATA_DIR = PROJECT_ROOT / "data"
 CACHE_DIR = DATA_DIR / "cache"
 OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 IMPORTS_DIR = PROJECT_ROOT / "imports"
+MATERIALS_DIR = PROJECT_ROOT / "materials"
 
 # Ensure directories exist
 DATA_DIR.mkdir(exist_ok=True)
 CACHE_DIR.mkdir(exist_ok=True)
 OUTPUTS_DIR.mkdir(exist_ok=True)
 IMPORTS_DIR.mkdir(exist_ok=True)
+MATERIALS_DIR.mkdir(exist_ok=True)
 
 
 def load_config() -> dict[str, Any]:

@@ -328,6 +328,7 @@ class TradeIngester:
         self,
         file_path: Path,
         skip_errors: bool = True,
+        balance_file_path: Optional[Path] = None,
     ) -> tuple[int, int, list[str]]:
         """
         Import trades from TradingView Paper Trading ORDER HISTORY export.
@@ -342,16 +343,52 @@ class TradeIngester:
         - Negative position = short
         - Each exit (partial or full) creates a trade record
         
+        Cross-validation:
+        - If balance_file_path is provided, validates computed trades against balance history
+        
         Columns: Symbol, Side, Type, Qty, Limit Price, Stop Price, Fill Price, 
                  Status, Closing Time, Level ID, Leverage, Margin
         
         Args:
             file_path: Path to CSV file
             skip_errors: Whether to skip errors
+            balance_file_path: Optional path to balance history CSV for cross-validation
             
         Returns:
             Tuple of (imported_count, error_count, error_messages)
         """
+        # Load balance history for cross-validation if provided
+        balance_data = {}
+        if balance_file_path and balance_file_path.exists():
+            try:
+                balance_df = pd.read_csv(balance_file_path)
+                # Parse balance history into a lookup table
+                # Key: (ticker, exit_price, qty) -> (avg_entry, direction)
+                for _, row in balance_df.iterrows():
+                    action = str(row.get('Action', ''))
+                    if 'Close' not in action or 'position' not in action:
+                        continue
+                    
+                    # Parse: "Close long/short position for symbol EXCHANGE:TICKER at price X for Y units. Position AVG Price was Z"
+                    # Example: "Close short position for symbol AMEX:SOXL at price 39.67 for 200 units. Position AVG Price was 40.010000"
+                    match = re.search(r'Close (\w+) position for symbol [\w:]+:(\w+) at price ([\d.]+) for (\d+) units.*AVG Price was ([\d.]+)', action, re.IGNORECASE)
+                    if match:
+                        direction = match.group(1)  # long or short
+                        ticker = match.group(2)
+                        exit_price = float(match.group(3))
+                        qty = int(match.group(4))
+                        avg_entry = float(match.group(5))
+                        
+                        key = (ticker, round(exit_price, 2), qty)
+                        balance_data[key] = {
+                            'direction': direction,
+                            'avg_entry': avg_entry,
+                            'exit_price': exit_price,
+                        }
+                logger.info(f"Loaded {len(balance_data)} trades from balance history for cross-validation")
+            except Exception as e:
+                logger.warning(f"Could not load balance history for cross-validation: {e}")
+        
         df = pd.read_csv(file_path)
         
         total_orders = len(df)
@@ -398,110 +435,177 @@ class TradeIngester:
         df['parsed_side'] = df['Side'].str.lower()
         df['stop_price_raw'] = pd.to_numeric(df['Stop Price'], errors='coerce')
         
-        # Keep original row order as tiebreaker for same-timestamp trades
-        # TradingView exports newest first, so we reverse to get oldest first
-        df['original_order'] = range(len(df) - 1, -1, -1)  # Reverse order
+        # Keep original CSV row order - DO NOT SORT!
+        # TradingView exports newest first (row 1 = newest, row N = oldest)
+        # Process exactly in CSV order: row 1 → row 2 → ... → row N
+        df['csv_row_order'] = range(len(df))
         
-        # Sort by datetime, then by original order (for same-timestamp trades)
-        df = df.sort_values(['parsed_datetime', 'original_order']).reset_index(drop=True)
+        # ============================================================
+        # POSITION ACCUMULATOR ALGORITHM
+        # ============================================================
+        # Process rows in EXACT CSV order (first row to last row)
+        # Row 1 = newest order, Row N = oldest order
+        # Track running position per ticker: sell → -qty, buy → +qty
+        # When position reaches 0 → complete trade set
+        # Direction: last order BUY → LONG, last order SELL → SHORT
+        # Only dump unmatched orders at the END (last rows)
+        # ============================================================
         
-        # Process each ticker separately with position tracking
         trades_data = []
+        unmatched_count = 0
         
+        # Group orders by ticker - maintain EXACT CSV row order within each ticker
         for ticker in df['parsed_ticker'].unique():
             ticker_orders = df[df['parsed_ticker'] == ticker].copy()
             
-            # Ensure orders for this ticker are sorted chronologically
-            ticker_orders = ticker_orders.sort_values(['parsed_datetime', 'original_order']).reset_index(drop=True)
+            # Sort by csv_row_order to maintain exact CSV sequence
+            ticker_orders = ticker_orders.sort_values('csv_row_order').reset_index(drop=True)
             
             # Get currency info from first order's exchange
             first_exchange = ticker_orders.iloc[0]['parsed_exchange']
             currency, currency_rate = EXCHANGE_CURRENCY.get(first_exchange, ('USD', 1.0))
             
-            # Position state: positive = long, negative = short
-            position_qty = 0.0
-            avg_entry_price = 0.0
-            first_entry_time = None
+            logger.info(f"Processing {len(ticker_orders)} orders for {ticker} (CSV row order, first→last)")
+            
+            # Position tracking
+            position = 0  # Running position: positive = net long, negative = net short
+            pending_orders = []  # Orders accumulated for current trade set
             last_stop_price = None
             
-            for _, order in ticker_orders.iterrows():
-                side = order['parsed_side']
-                qty = order['parsed_qty']
-                price = order['parsed_price']
+            for idx, order in ticker_orders.iterrows():
+                side = order['parsed_side']  # 'buy' or 'sell'
+                qty = float(order['parsed_qty'])
+                price = float(order['parsed_price'])
                 order_time = order['parsed_datetime']
                 stop = order['stop_price_raw'] if pd.notna(order['stop_price_raw']) else None
                 
                 if stop:
                     last_stop_price = stop
                 
-                if side == 'buy':
-                    order_qty = qty  # Positive for buy
-                else:  # sell
-                    order_qty = -qty  # Negative for sell
+                # Track position before update
+                prev_position = position
                 
-                # Determine if this order is opening or closing
-                if position_qty == 0:
-                    # No position - this opens a new position
-                    position_qty = order_qty
-                    avg_entry_price = price
-                    first_entry_time = order_time
+                # Update position
+                if side == 'buy':
+                    position += qty
+                else:  # sell
+                    position -= qty
+                
+                logger.info(f"  [{idx}] {side.upper()} {int(qty)} @ {price:.4f} | Position: {int(prev_position)} → {int(position)}")
+                
+                # Add to pending orders
+                pending_orders.append({
+                    'side': side,
+                    'qty': qty,
+                    'price': price,
+                    'time': order_time,
+                    'stop': stop,
+                })
+                
+                # Check if position reached 0 (or very close due to float rounding)
+                # Trade set is complete!
+                if abs(position) < 0.001 and len(pending_orders) > 0:
+                    position = 0  # Normalize rounding errors
                     
-                elif (position_qty > 0 and order_qty > 0) or (position_qty < 0 and order_qty < 0):
-                    # Adding to existing position (scaling in)
-                    # Recalculate weighted average entry price
-                    total_cost = abs(position_qty) * avg_entry_price + qty * price
-                    position_qty += order_qty
-                    avg_entry_price = total_cost / abs(position_qty)
+                    # Determine direction from LAST order (the opening order)
+                    last_order = pending_orders[-1]
+                    if last_order['side'] == 'buy':
+                        direction = 'long'
+                        # Long: buys are entry, sells are exit
+                        entry_orders = [o for o in pending_orders if o['side'] == 'buy']
+                        exit_orders = [o for o in pending_orders if o['side'] == 'sell']
+                    else:
+                        direction = 'short'
+                        # Short: sells are entry, buys are exit
+                        entry_orders = [o for o in pending_orders if o['side'] == 'sell']
+                        exit_orders = [o for o in pending_orders if o['side'] == 'buy']
                     
-                elif (position_qty > 0 and order_qty < 0) or (position_qty < 0 and order_qty > 0):
-                    # Reducing or closing position (exit)
-                    close_qty = min(abs(order_qty), abs(position_qty))
+                    # Calculate weighted average entry price
+                    entry_total_cost = sum(o['qty'] * o['price'] for o in entry_orders)
+                    entry_total_qty = sum(o['qty'] for o in entry_orders)
+                    avg_entry_price = entry_total_cost / entry_total_qty if entry_total_qty > 0 else 0
                     
-                    # Create a trade record for this exit
-                    direction = 'long' if position_qty > 0 else 'short'
+                    # Calculate weighted average exit price
+                    exit_total_cost = sum(o['qty'] * o['price'] for o in exit_orders)
+                    exit_total_qty = sum(o['qty'] for o in exit_orders)
+                    avg_exit_price = exit_total_cost / exit_total_qty if exit_total_qty > 0 else 0
                     
-                    # Estimate stop if not available
+                    # VALIDATION: Entry and exit quantities should match
+                    if abs(entry_total_qty - exit_total_qty) > 0.001:
+                        logger.warning(f"    ⚠️ Quantity mismatch: entry={entry_total_qty}, exit={exit_total_qty}")
+                    
+                    # VALIDATION: Ensure we have valid prices
+                    if avg_entry_price <= 0 or avg_exit_price <= 0:
+                        logger.warning(f"    ⚠️ Invalid prices: entry={avg_entry_price}, exit={avg_exit_price}")
+                        pending_orders = []
+                        continue
+                    
+                    # Entry time = oldest entry order (last in list since we process newest first)
+                    # Exit time = newest exit order (first in list)
+                    entry_time = entry_orders[-1]['time'] if entry_orders else None
+                    exit_time = exit_orders[0]['time'] if exit_orders else None
+                    
+                    # Get stop price
                     stop_price = last_stop_price
+                    for o in pending_orders:
+                        if o['stop']:
+                            stop_price = o['stop']
+                            break
                     if stop_price is None:
                         if direction == 'long':
                             stop_price = avg_entry_price * 0.98
                         else:
                             stop_price = avg_entry_price * 1.02
                     
-                    trades_data.append({
+                    trade_entry = {
                         'ticker': ticker,
                         'direction': direction,
                         'entry_price': avg_entry_price,
-                        'exit_price': price,
+                        'exit_price': avg_exit_price,
                         'stop_price': stop_price,
-                        'size': close_qty,
-                        'entry_time': first_entry_time,
-                        'exit_time': order_time,
+                        'size': entry_total_qty,
+                        'entry_time': entry_time,
+                        'exit_time': exit_time,
                         'currency': currency,
                         'currency_rate': currency_rate,
-                    })
+                        'child_orders': pending_orders.copy(),  # Store child orders for drawer display
+                    }
                     
-                    # Update position
-                    new_position = position_qty + order_qty
+                    # Cross-validate against balance history if available
+                    if balance_data:
+                        # Try to find a matching entry in balance history
+                        key = (ticker, round(avg_exit_price, 2), int(entry_total_qty))
+                        if key in balance_data:
+                            expected = balance_data[key]
+                            expected_entry = expected['avg_entry']
+                            
+                            if abs(avg_entry_price - expected_entry) > 0.01:
+                                logger.warning(f"    Cross-validation MISMATCH: "
+                                             f"computed={avg_entry_price:.4f}, expected={expected_entry:.4f}")
+                                trade_entry['entry_price'] = expected_entry
+                                trade_entry['notes'] = "Entry corrected via balance history"
+                            else:
+                                logger.info(f"    Cross-validation OK ✓")
                     
-                    # Check if we flipped direction (e.g., closed long and opened short)
-                    if (position_qty > 0 and new_position < 0) or (position_qty < 0 and new_position > 0):
-                        # We closed the original position AND opened a new one
-                        # The remaining qty starts a new position
-                        position_qty = new_position
-                        avg_entry_price = price
-                        first_entry_time = order_time
-                    elif new_position == 0:
-                        # Fully closed
-                        position_qty = 0
-                        avg_entry_price = 0
-                        first_entry_time = None
-                    else:
-                        # Partially closed, same direction
-                        position_qty = new_position
-                        # avg_entry_price stays the same
+                    logger.info(f"    ══► TRADE: {direction.upper()} entry={trade_entry['entry_price']:.4f} "
+                              f"exit={avg_exit_price:.4f} qty={int(entry_total_qty)} "
+                              f"({len(pending_orders)} orders matched)")
+                    
+                    trades_data.append(trade_entry)
+                    
+                    # Reset for next trade set
+                    pending_orders = []
+            
+            # Log any unmatched orders at the END only (as user requested)
+            if len(pending_orders) > 0:
+                logger.info(f"  ⚠️ Discarding {len(pending_orders)} unmatched orders at end (position={int(position)}):")
+                for o in pending_orders[-5:]:  # Only show last 5
+                    logger.info(f"     - {o['side'].upper()} {int(o['qty'])} @ {o['price']:.4f}")
+                unmatched_count += len(pending_orders)
         
         # Import the matched trades
+        from app.journal.models import Order
+        
         imported = 0
         errors = 0
         error_messages = []
@@ -522,6 +626,28 @@ class TradeIngester:
                     currency=trade_data.get('currency', 'USD'),
                     currency_rate=trade_data.get('currency_rate', 1.0),
                 )
+                
+                # Save child orders if present (for multi-leg trades)
+                if trade and trade_data.get('child_orders'):
+                    session = get_session()
+                    try:
+                        for order_data in trade_data['child_orders']:
+                            order = Order(
+                                trade_id=trade.id,
+                                side=order_data['side'],
+                                quantity=order_data['qty'],
+                                price=order_data['price'],
+                                order_time=order_data.get('time'),
+                                stop_price=order_data.get('stop'),
+                                status='filled'
+                            )
+                            session.add(order)
+                        session.commit()
+                    except Exception as e:
+                        logger.warning(f"Failed to save child orders: {e}")
+                    finally:
+                        session.close()
+                
                 imported += 1
                 
             except Exception as e:
@@ -531,10 +657,14 @@ class TradeIngester:
                 if not skip_errors:
                     raise
         
-        logger.info(f"TradingView import: {imported} trades created from {filled_count} orders, {errors} errors")
+        logger.info(f"TradingView import: {imported} trades created from {filled_count} orders, {errors} errors, {unmatched_count} unmatched positions discarded")
         
         # Add summary message
-        summary = f"Processed {filled_count} filled orders → {imported} trades. Discarded: {rejected_count} rejected, {cancelled_count} cancelled."
+        summary = f"Processed {filled_count} filled orders → {imported} trades."
+        if rejected_count or cancelled_count:
+            summary += f" Discarded: {rejected_count} rejected, {cancelled_count} cancelled."
+        if unmatched_count:
+            summary += f" {unmatched_count} open position(s) discarded (no matching close)."
         error_messages.insert(0, summary)
         
         return imported, errors, error_messages

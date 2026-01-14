@@ -5,83 +5,99 @@
 {% block content %}
 <div class="space-y-8">
     <!-- Header -->
-    <div class="flex justify-between items-center">
-        <h1 class="text-3xl font-bold text-gray-900">Dashboard</h1>
-        <div class="flex space-x-3">
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+            <h1 class="text-4xl font-bold bg-gradient-to-r from-white via-dark-100 to-dark-300 bg-clip-text text-transparent">
+                Trading Dashboard
+            </h1>
+            <p class="text-dark-400 mt-1">Your AI-powered trading coach</p>
+        </div>
+        <div class="flex flex-wrap gap-3">
             <button onclick="generatePremarket()" class="btn btn-primary">
                 📊 Generate Premarket
             </button>
             <button onclick="generateEOD()" class="btn btn-secondary">
-                📋 Generate EOD
+                📋 EOD Report
             </button>
         </div>
     </div>
 
     <!-- Stats Cards -->
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div class="stat-card">
-            <div class="text-3xl font-bold text-gray-900">{{ total_trades }}</div>
-            <div class="text-gray-600">Total Trades</div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="stat-card glow-pulse" style="animation-delay: 0s;">
+            <div class="stat-value">{{ total_trades }}</div>
+            <div class="stat-label">Total Trades</div>
         </div>
-        <div class="stat-card">
-            <div class="text-3xl font-bold {% if total_r >= 0 %}positive{% else %}negative{% endif %}">
+        <div class="stat-card" style="animation-delay: 0.1s;">
+            <div class="stat-value {% if total_r >= 0 %}positive{% else %}negative{% endif %}">
                 {{ "%.2f"|format(total_r) }}R
             </div>
-            <div class="text-gray-600">Total R</div>
+            <div class="stat-label">Total R-Multiple</div>
         </div>
-        <div class="stat-card">
-            <div class="text-3xl font-bold text-gray-900">{{ "%.1f"|format(win_rate * 100) }}%</div>
-            <div class="text-gray-600">Win Rate</div>
+        <div class="stat-card" style="animation-delay: 0.2s;">
+            <div class="stat-value">{{ "%.1f"|format(win_rate * 100) }}%</div>
+            <div class="stat-label">Win Rate</div>
         </div>
-        <div class="stat-card">
-            <div class="text-3xl font-bold text-green-600">{{ winners }}</div>
-            <div class="text-gray-600">Winners</div>
+        <div class="stat-card" style="animation-delay: 0.3s;">
+            <div class="flex justify-center gap-4">
+                <div>
+                    <div class="text-2xl font-bold positive">{{ winners }}</div>
+                    <div class="text-xs text-dark-500">Wins</div>
+                </div>
+                <div class="text-dark-600">|</div>
+                <div>
+                    <div class="text-2xl font-bold negative">{{ total_trades - winners }}</div>
+                    <div class="text-xs text-dark-500">Losses</div>
+                </div>
+            </div>
+            <div class="stat-label mt-1">W/L</div>
         </div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Recent Trades -->
         <div class="card">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-xl font-bold">Recent Trades</h2>
-                <a href="/trades" class="text-blue-600 hover:underline">View All →</a>
+                <h2 class="text-xl font-bold text-white">Recent Trades</h2>
+                <a href="/trades" class="text-accent-400 hover:text-accent-300 text-sm font-medium">
+                    View All →
+                </a>
             </div>
             
             {% if recent_trades %}
-            <div class="overflow-x-auto">
-                <table class="w-full">
-                    <thead>
-                        <tr class="text-left text-gray-500 text-sm border-b">
-                            <th class="pb-2">Date</th>
-                            <th class="pb-2">Ticker</th>
-                            <th class="pb-2">Dir</th>
-                            <th class="pb-2 text-right">R</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for trade in recent_trades %}
-                        <tr class="border-b border-gray-100 hover:bg-gray-50 cursor-pointer" onclick="window.location='/trades/{{ trade.id }}'">
-                            <td class="py-2 text-sm">{{ trade.trade_date }}</td>
-                            <td class="py-2 font-medium">{{ trade.ticker }}</td>
-                            <td class="py-2">
-                                {% if trade.direction.value == 'long' %}
-                                    <span class="text-green-600">▲</span>
-                                {% else %}
-                                    <span class="text-red-600">▼</span>
-                                {% endif %}
-                            </td>
-                            <td class="py-2 text-right font-mono {% if trade.r_multiple and trade.r_multiple >= 0 %}positive{% else %}negative{% endif %}">
-                                {% if trade.r_multiple %}{{ "%.2f"|format(trade.r_multiple) }}{% else %}-{% endif %}
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+            <div class="space-y-2">
+                {% for trade in recent_trades %}
+                <a href="/trades/{{ trade.id }}" 
+                   class="flex items-center justify-between p-3 bg-dark-700/30 rounded-xl hover:bg-dark-700/50 transition-all group">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-lg flex items-center justify-center
+                            {% if trade.direction.value == 'long' %}bg-success-500/20 text-success-400
+                            {% else %}bg-danger-500/20 text-danger-400{% endif %}">
+                            {% if trade.direction.value == 'long' %}▲{% else %}▼{% endif %}
+                        </div>
+                        <div>
+                            <div class="font-semibold text-white group-hover:text-accent-400 transition-colors">
+                                {{ trade.ticker }}
+                            </div>
+                            <div class="text-xs text-dark-400">{{ trade.trade_date }}</div>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <div class="font-mono font-bold {% if trade.r_multiple and trade.r_multiple >= 0 %}positive{% else %}negative{% endif %}">
+                            {% if trade.r_multiple %}{{ "%.2f"|format(trade.r_multiple) }}R{% else %}-{% endif %}
+                        </div>
+                        {% if trade.pnl_dollars %}
+                        <div class="text-xs text-dark-400">${{ "%.0f"|format(trade.pnl_dollars) }}</div>
+                        {% endif %}
+                    </div>
+                </a>
+                {% endfor %}
             </div>
             {% else %}
-            <div class="text-center py-8 text-gray-500">
-                <p>No trades yet.</p>
-                <a href="/add-trade" class="text-blue-600 hover:underline">Add your first trade →</a>
+            <div class="text-center py-12">
+                <div class="text-4xl mb-3">📭</div>
+                <p class="text-dark-400 mb-4">No trades yet</p>
+                <a href="/add-trade" class="btn btn-primary">➕ Add Your First Trade</a>
             </div>
             {% endif %}
         </div>
@@ -89,30 +105,37 @@
         <!-- Strategy Performance -->
         <div class="card">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-xl font-bold">Top Strategies</h2>
-                <a href="/stats" class="text-blue-600 hover:underline">Full Stats →</a>
+                <h2 class="text-xl font-bold text-white">Top Strategies</h2>
+                <a href="/stats" class="text-accent-400 hover:text-accent-300 text-sm font-medium">
+                    Full Stats →
+                </a>
             </div>
             
             {% if strategy_stats %}
             <div class="space-y-3">
                 {% for stat in strategy_stats %}
-                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div class="flex items-center justify-between p-4 bg-dark-700/30 rounded-xl">
                     <div>
-                        <div class="font-medium">{{ stat.strategy_name }}</div>
-                        <div class="text-sm text-gray-500">{{ stat.trade_count }} trades • {{ "%.0f"|format(stat.win_rate * 100) }}% win</div>
+                        <div class="font-medium text-white">{{ stat.strategy_name }}</div>
+                        <div class="text-sm text-dark-400 flex items-center gap-2 mt-1">
+                            <span>{{ stat.trade_count }} trades</span>
+                            <span class="text-dark-600">•</span>
+                            <span>{{ "%.0f"|format(stat.win_rate * 100) }}% win</span>
+                        </div>
                     </div>
                     <div class="text-right">
-                        <div class="font-mono font-bold {% if stat.expectancy >= 0 %}positive{% else %}negative{% endif %}">
+                        <div class="font-mono text-lg font-bold {% if stat.expectancy >= 0 %}positive{% else %}negative{% endif %}">
                             {{ "%.2f"|format(stat.expectancy) }}R
                         </div>
-                        <div class="text-xs text-gray-500">expectancy</div>
+                        <div class="text-xs text-dark-500">expectancy</div>
                     </div>
                 </div>
                 {% endfor %}
             </div>
             {% else %}
-            <div class="text-center py-8 text-gray-500">
-                <p>No strategy data yet.</p>
+            <div class="text-center py-12">
+                <div class="text-4xl mb-3">📈</div>
+                <p class="text-dark-400">Strategy data will appear after more trades</p>
             </div>
             {% endif %}
         </div>
@@ -120,68 +143,80 @@
 
     <!-- Quick Actions -->
     <div class="card">
-        <h2 class="text-xl font-bold mb-4">Quick Actions</h2>
+        <h2 class="text-xl font-bold text-white mb-4">Quick Actions</h2>
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <a href="/add-trade" class="p-4 bg-blue-50 rounded-lg text-center hover:bg-blue-100 transition">
-                <div class="text-2xl mb-2">➕</div>
-                <div class="font-medium">Add Trade</div>
+            <a href="/add-trade" class="group p-6 bg-gradient-to-br from-accent-500/10 to-accent-600/5 rounded-xl text-center 
+                                        border border-accent-500/20 hover:border-accent-500/40 transition-all hover:scale-[1.02]">
+                <div class="text-3xl mb-2 group-hover:scale-110 transition-transform">➕</div>
+                <div class="font-medium text-white">Add Trade</div>
             </a>
-            <a href="/import" class="p-4 bg-green-50 rounded-lg text-center hover:bg-green-100 transition">
-                <div class="text-2xl mb-2">📥</div>
-                <div class="font-medium">Import CSV</div>
+            <a href="/import" class="group p-6 bg-gradient-to-br from-success-500/10 to-emerald-600/5 rounded-xl text-center 
+                                     border border-success-500/20 hover:border-success-500/40 transition-all hover:scale-[1.02]">
+                <div class="text-3xl mb-2 group-hover:scale-110 transition-transform">📥</div>
+                <div class="font-medium text-white">Import CSV</div>
             </a>
-            <a href="/tickers" class="p-4 bg-purple-50 rounded-lg text-center hover:bg-purple-100 transition">
-                <div class="text-2xl mb-2">📈</div>
-                <div class="font-medium">Manage Tickers</div>
+            <a href="/tickers" class="group p-6 bg-gradient-to-br from-purple-500/10 to-purple-600/5 rounded-xl text-center 
+                                      border border-purple-500/20 hover:border-purple-500/40 transition-all hover:scale-[1.02]">
+                <div class="text-3xl mb-2 group-hover:scale-110 transition-transform">🎯</div>
+                <div class="font-medium text-white">Watchlist</div>
             </a>
-            <a href="/reports" class="p-4 bg-orange-50 rounded-lg text-center hover:bg-orange-100 transition">
-                <div class="text-2xl mb-2">📊</div>
-                <div class="font-medium">View Reports</div>
+            <a href="/reports" class="group p-6 bg-gradient-to-br from-amber-500/10 to-orange-600/5 rounded-xl text-center 
+                                      border border-amber-500/20 hover:border-amber-500/40 transition-all hover:scale-[1.02]">
+                <div class="text-3xl mb-2 group-hover:scale-110 transition-transform">📊</div>
+                <div class="font-medium text-white">Reports</div>
             </a>
         </div>
     </div>
 
     <!-- Watchlist -->
     <div class="card">
-        <h2 class="text-xl font-bold mb-4">Watchlist</h2>
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold text-white">Watchlist</h2>
+            <a href="/tickers" class="text-accent-400 hover:text-accent-300 text-sm font-medium">Edit →</a>
+        </div>
         <div class="flex flex-wrap gap-2">
             {% for ticker in tickers %}
-            <span class="px-3 py-1 bg-gray-100 rounded-full text-sm font-medium">{{ ticker }}</span>
+            <span class="px-4 py-2 bg-dark-700/50 border border-dark-600 rounded-xl text-sm font-medium text-dark-200 
+                         hover:border-dark-500 transition-colors cursor-default">
+                {{ ticker }}
+            </span>
             {% endfor %}
-            <a href="/tickers" class="px-3 py-1 bg-blue-100 text-blue-600 rounded-full text-sm font-medium hover:bg-blue-200">
-                + Edit
-            </a>
+            {% if not tickers %}
+            <p class="text-dark-500">No tickers in watchlist. <a href="/tickers" class="text-accent-400 hover:underline">Add some →</a></p>
+            {% endif %}
         </div>
     </div>
-</div>
-
-<!-- Toast notification -->
-<div id="toast" class="fixed bottom-4 right-4 bg-gray-900 text-white px-6 py-3 rounded-lg shadow-lg hidden">
-    <span id="toast-message"></span>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-function showToast(message) {
-    const toast = document.getElementById('toast');
-    document.getElementById('toast-message').textContent = message;
-    toast.classList.remove('hidden');
-    setTimeout(() => toast.classList.add('hidden'), 3000);
-}
-
 async function generatePremarket() {
-    showToast('Generating premarket reports...');
-    const response = await fetch('/api/generate-premarket', { method: 'POST' });
-    const data = await response.json();
-    showToast(data.message);
+    showLoading(true);
+    showToast('Generating premarket reports... This may take a minute.');
+    
+    try {
+        const response = await fetch('/api/generate-premarket', { method: 'POST' });
+        const data = await response.json();
+        showToast(data.message || 'Premarket reports generated!');
+    } catch (err) {
+        showToast('Error generating reports', 'error');
+    }
+    showLoading(false);
 }
 
 async function generateEOD() {
+    showLoading(true);
     showToast('Generating EOD report...');
-    const response = await fetch('/api/generate-eod', { method: 'POST' });
-    const data = await response.json();
-    showToast(data.message);
+    
+    try {
+        const response = await fetch('/api/generate-eod', { method: 'POST' });
+        const data = await response.json();
+        showToast(data.message || 'EOD report generated!');
+    } catch (err) {
+        showToast('Error generating report', 'error');
+    }
+    showLoading(false);
 }
 </script>
 {% endblock %}

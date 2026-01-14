@@ -4,21 +4,43 @@
 
 {% block content %}
 <div class="space-y-6">
-    <div class="flex items-center space-x-4">
-        <a href="/trades" class="text-gray-500 hover:text-gray-700">← Back to Trades</a>
-    </div>
+    <!-- Back Link -->
+    <a href="/trades" class="inline-flex items-center text-dark-400 hover:text-white transition-colors">
+        <span class="mr-2">←</span> Back to Trades
+    </a>
 
-    <div class="flex justify-between items-start">
+    <!-- Header -->
+    <div class="flex flex-col md:flex-row justify-between items-start gap-4">
         <div>
-            <h1 class="text-3xl font-bold text-gray-900">{{ trade.ticker }}</h1>
-            <p class="text-gray-500">Trade #{{ trade.id }} • {{ trade.trade_date }}</p>
+            <div class="flex items-center gap-3">
+                <h1 class="text-4xl font-bold text-white">{{ trade.ticker }}</h1>
+                {% if trade.direction.value == 'long' %}
+                    <span class="badge badge-success">▲ LONG</span>
+                {% else %}
+                    <span class="badge bg-danger-500/20 text-danger-400 border border-danger-500/30">▼ SHORT</span>
+                {% endif %}
+            </div>
+            <p class="text-dark-400 mt-1">Trade #{{ trade.id }} • {{ trade.trade_date }}</p>
         </div>
-        <div class="text-right">
-            <div class="text-4xl font-bold font-mono {% if trade.r_multiple and trade.r_multiple >= 0 %}positive{% else %}negative{% endif %}">
-                {% if trade.r_multiple %}{{ "%.2f"|format(trade.r_multiple) }}R{% else %}-{% endif %}
+        <div class="flex items-center gap-6">
+            <div class="text-right">
+                <div class="text-sm text-dark-400">R-Multiple</div>
+                <div class="text-4xl font-bold font-mono {% if trade.r_multiple and trade.r_multiple >= 0 %}positive{% else %}negative{% endif %}">
+                    {% if trade.r_multiple %}{{ "%.2f"|format(trade.r_multiple) }}R{% else %}-{% endif %}
+                </div>
             </div>
             {% if trade.pnl_dollars %}
-            <div class="text-gray-500">${{ "%.2f"|format(trade.pnl_dollars) }}</div>
+            <div class="text-right">
+                <div class="text-sm text-dark-400">P&L</div>
+                <div class="text-2xl font-mono {% if trade.pnl_dollars >= 0 %}positive{% else %}negative{% endif %}">
+                    {% if trade.currency and trade.currency != 'USD' and trade.currency_rate %}
+                        ${{ "%.2f"|format(trade.pnl_dollars / trade.currency_rate) }}
+                        <span class="text-sm text-dark-400 block">({{ trade.currency }} {{ "%.2f"|format(trade.pnl_dollars) }})</span>
+                    {% else %}
+                        {{ "+" if trade.pnl_dollars > 0 else "" }}${{ "%.2f"|format(trade.pnl_dollars) }}
+                    {% endif %}
+                </div>
+            </div>
             {% endif %}
         </div>
     </div>
@@ -26,185 +48,365 @@
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Trade Details -->
         <div class="card">
-            <h2 class="text-xl font-bold mb-4">Trade Details</h2>
-            <div class="grid grid-cols-2 gap-4">
-                <div>
-                    <div class="text-sm text-gray-500">Direction</div>
-                    <div class="font-medium">
-                        {% if trade.direction.value == 'long' %}
-                            <span class="text-green-600">▲ LONG</span>
+            <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                📊 Trade Details
+            </h2>
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <div class="stat-card">
+                    <div class="text-sm text-dark-400 mb-1">Entry</div>
+                    <div class="text-xl font-mono font-bold text-white">${{ "%.4f"|format(trade.entry_price) }}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="text-sm text-dark-400 mb-1">Exit</div>
+                    <div class="text-xl font-mono font-bold text-white">${{ "%.4f"|format(trade.exit_price) if trade.exit_price else '-' }}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="text-sm text-dark-400 mb-1">Stop</div>
+                    <div class="text-xl font-mono font-bold text-white">${{ "%.4f"|format(trade.stop_price) if trade.stop_price else '-' }}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="text-sm text-dark-400 mb-1">Size</div>
+                    <div class="text-xl font-bold text-white">{{ "%.0f"|format(trade.size) if trade.size else '1' }}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="text-sm text-dark-400 mb-1">Duration</div>
+                    <div class="text-lg font-mono text-white">{{ trade.duration_display }}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="text-sm text-dark-400 mb-1">Strategy</div>
+                    <div class="text-sm font-medium text-accent-400">{{ trade.strategy.name if trade.strategy else 'Unclassified' }}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="text-sm text-dark-400 mb-1">Result</div>
+                    {% if trade.outcome %}
+                        {% if trade.outcome.value == 'win' %}
+                            <span class="win text-base">WIN</span>
+                        {% elif trade.outcome.value == 'loss' %}
+                            <span class="loss text-base">LOSS</span>
                         {% else %}
-                            <span class="text-red-600">▼ SHORT</span>
+                            <span class="breakeven text-base">B/E</span>
                         {% endif %}
-                    </div>
+                    {% else %}
+                        <span class="text-dark-500">-</span>
+                    {% endif %}
                 </div>
-                <div>
-                    <div class="text-sm text-gray-500">Strategy</div>
-                    <div class="font-medium">{{ trade.strategy.name if trade.strategy else 'Unclassified' }}</div>
-                </div>
-                <div>
-                    <div class="text-sm text-gray-500">Entry</div>
-                    <div class="font-mono font-medium">${{ "%.2f"|format(trade.entry_price) }}</div>
-                </div>
-                <div>
-                    <div class="text-sm text-gray-500">Exit</div>
-                    <div class="font-mono font-medium">${{ "%.2f"|format(trade.exit_price) if trade.exit_price else '-' }}</div>
-                </div>
-                <div>
-                    <div class="text-sm text-gray-500">Stop</div>
-                    <div class="font-mono font-medium">${{ "%.2f"|format(trade.stop_price) if trade.stop_price else '-' }}</div>
-                </div>
-                <div>
-                    <div class="text-sm text-gray-500">Size</div>
-                    <div class="font-medium">{{ trade.size or 1 }} shares</div>
-                </div>
+            </div>
+
+            {% if trade.mae or trade.mfe %}
+            <div class="mt-4 pt-4 border-t border-dark-700 grid grid-cols-2 gap-4">
                 {% if trade.mae %}
                 <div>
-                    <div class="text-sm text-gray-500">MAE</div>
-                    <div class="font-mono text-red-600">{{ "%.2f"|format(trade.mae) }}R</div>
+                    <div class="text-sm text-dark-400">MAE (Max Adverse)</div>
+                    <div class="font-mono text-danger-400 text-lg">{{ "%.2f"|format(trade.mae) }}R</div>
                 </div>
                 {% endif %}
                 {% if trade.mfe %}
                 <div>
-                    <div class="text-sm text-gray-500">MFE</div>
-                    <div class="font-mono text-green-600">{{ "%.2f"|format(trade.mfe) }}R</div>
+                    <div class="text-sm text-dark-400">MFE (Max Favorable)</div>
+                    <div class="font-mono text-success-400 text-lg">{{ "%.2f"|format(trade.mfe) }}R</div>
                 </div>
                 {% endif %}
             </div>
+            {% endif %}
 
             {% if trade.notes %}
-            <div class="mt-4 pt-4 border-t">
-                <div class="text-sm text-gray-500 mb-1">Notes</div>
-                <div class="text-gray-700">{{ trade.notes }}</div>
+            <div class="mt-4 pt-4 border-t border-dark-700">
+                <div class="text-sm text-dark-400 mb-2">Notes</div>
+                <div class="text-dark-200 bg-dark-900/50 rounded-lg p-3">{{ trade.notes }}</div>
             </div>
             {% endif %}
 
             {% if trade.entry_reason %}
-            <div class="mt-4 pt-4 border-t">
-                <div class="text-sm text-gray-500 mb-1">Entry Reason</div>
-                <div class="text-gray-700">{{ trade.entry_reason }}</div>
+            <div class="mt-4 pt-4 border-t border-dark-700">
+                <div class="text-sm text-dark-400 mb-2">Entry Reason</div>
+                <div class="text-dark-200 bg-dark-900/50 rounded-lg p-3">{{ trade.entry_reason }}</div>
             </div>
             {% endif %}
         </div>
 
-        <!-- LLM Review -->
-        <div class="card">
+        <!-- AI Review -->
+        <div class="card" id="review-card">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-xl font-bold">🧠 AI Review</h2>
-                {% if review %}
-                <span class="text-3xl font-bold 
-                    {% if review.grade == 'A' %}text-green-600
-                    {% elif review.grade == 'B' %}text-blue-600
-                    {% elif review.grade == 'C' %}text-yellow-600
-                    {% elif review.grade == 'D' %}text-orange-600
-                    {% else %}text-red-600{% endif %}">
-                    {{ review.grade }}
-                </span>
-                {% endif %}
+                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                    🧠 AI Coaching Review
+                </h2>
+                <div id="review-grade" class="flex items-center gap-2 hidden">
+                    <span class="text-sm text-dark-400">Grade:</span>
+                    <span id="grade-value" class="text-3xl font-bold"></span>
+                </div>
             </div>
 
-            {% if review %}
-            <div class="space-y-4">
+            <!-- Loading State -->
+            <div id="review-loading" class="text-center py-12">
+                <div class="loading-spinner w-10 h-10 border-4 border-accent-500 border-t-transparent mx-auto mb-4"></div>
+                <p class="text-dark-300">Analyzing trade with AI...</p>
+                <p class="text-sm text-dark-500 mt-1">This may take 10-20 seconds</p>
+            </div>
+
+            <!-- Review Content (hidden until loaded) -->
+            <div id="review-content" class="hidden space-y-4">
                 <!-- Context -->
                 <div>
-                    <div class="text-sm text-gray-500 mb-1">Context</div>
-                    <div class="flex space-x-2">
-                        <span class="px-2 py-1 bg-blue-100 text-blue-700 rounded text-sm">{{ review.regime }}</span>
-                        <span class="px-2 py-1 bg-purple-100 text-purple-700 rounded text-sm">Always-In: {{ review.always_in }}</span>
+                    <div class="text-sm text-dark-400 mb-2">Market Context</div>
+                    <div class="flex flex-wrap gap-2">
+                        <span id="review-regime" class="badge badge-primary"></span>
+                        <span id="review-always-in" class="badge bg-purple-500/20 text-purple-400 border border-purple-500/30"></span>
                     </div>
-                    {% if review.context_description %}
-                    <p class="text-gray-600 mt-2 text-sm">{{ review.context_description }}</p>
-                    {% endif %}
+                    <p id="review-context-desc" class="text-dark-300 mt-3 text-sm leading-relaxed"></p>
                 </div>
 
                 <!-- Setup -->
                 <div>
-                    <div class="text-sm text-gray-500 mb-1">Setup Classification</div>
-                    <span class="px-2 py-1 
-                        {% if review.setup_quality == 'good' %}bg-green-100 text-green-700
-                        {% elif review.setup_quality == 'marginal' %}bg-yellow-100 text-yellow-700
-                        {% else %}bg-red-100 text-red-700{% endif %} rounded text-sm">
-                        {{ review.setup_classification }} ({{ review.setup_quality }})
-                    </span>
+                    <div class="text-sm text-dark-400 mb-2">Setup Classification</div>
+                    <span id="review-setup" class="badge"></span>
                 </div>
 
                 <!-- What was good -->
-                {% if review.what_was_good %}
-                <div>
-                    <div class="text-sm text-gray-500 mb-1">✅ What Was Good</div>
-                    <ul class="space-y-1">
-                        {% for item in review.what_was_good %}
-                        <li class="text-green-700 text-sm">• {{ item }}</li>
-                        {% endfor %}
-                    </ul>
+                <div id="good-section" class="hidden bg-success-500/10 border border-success-500/30 rounded-xl p-4">
+                    <div class="text-sm text-success-400 font-medium mb-2">✅ What Was Good</div>
+                    <ul id="good-list" class="space-y-1"></ul>
                 </div>
-                {% endif %}
 
                 <!-- What was flawed -->
-                {% if review.what_was_flawed %}
-                <div>
-                    <div class="text-sm text-gray-500 mb-1">❌ What Was Flawed</div>
-                    <ul class="space-y-1">
-                        {% for item in review.what_was_flawed %}
-                        <li class="text-red-700 text-sm">• {{ item }}</li>
-                        {% endfor %}
-                    </ul>
+                <div id="flawed-section" class="hidden bg-danger-500/10 border border-danger-500/30 rounded-xl p-4">
+                    <div class="text-sm text-danger-400 font-medium mb-2">⚠️ Areas to Improve</div>
+                    <ul id="flawed-list" class="space-y-1"></ul>
                 </div>
-                {% endif %}
 
-                <!-- Errors -->
-                {% if review.errors_detected %}
-                <div>
-                    <div class="text-sm text-gray-500 mb-1">⚠️ Errors Detected</div>
-                    <ul class="space-y-1">
-                        {% for error in review.errors_detected %}
-                        <li class="text-orange-700 text-sm">• {{ error }}</li>
-                        {% endfor %}
-                    </ul>
+                <!-- Rule for next time -->
+                <div id="rule-section" class="hidden bg-accent-500/10 border border-accent-500/30 rounded-xl p-4">
+                    <div class="text-sm text-accent-400 font-medium mb-2">📌 Rule for Next Time</div>
+                    <div id="rule-text" class="text-accent-200"></div>
                 </div>
-                {% endif %}
-
-                <!-- Rule -->
-                {% if review.rule_for_next_time %}
-                <div class="p-3 bg-blue-50 rounded-lg">
-                    <div class="text-sm text-blue-600 font-medium mb-1">📌 Rule for Next Time</div>
-                    <div class="text-blue-800">{{ review.rule_for_next_time }}</div>
-                </div>
-                {% endif %}
 
                 <!-- Grade explanation -->
-                {% if review.grade_explanation %}
-                <div class="text-sm text-gray-500 italic">
-                    {{ review.grade_explanation }}
-                </div>
-                {% endif %}
+                <div id="grade-explanation" class="text-sm text-dark-400 italic mt-4"></div>
             </div>
-            {% else %}
-            <div class="text-center py-8 text-gray-500">
-                <p>Review not available.</p>
-                <p class="text-sm">Check LLM connection settings</p>
+
+            <!-- Error State -->
+            <div id="review-error" class="hidden text-center py-12">
+                <div class="text-4xl mb-3">🤔</div>
+                <p class="text-dark-300 mb-2" id="error-message">Review not available</p>
+                <p class="text-sm text-dark-500">Check your LLM connection in Settings</p>
+                <a href="/settings" class="btn btn-secondary mt-4">⚙️ Check Settings</a>
             </div>
-            {% endif %}
         </div>
     </div>
 
+    <!-- Personal Notes Section -->
+    <div class="card">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                ✍️ My Notes & Review
+            </h2>
+            <button onclick="saveNotes()" class="btn btn-primary" id="save-notes-btn">
+                💾 Save Notes
+            </button>
+        </div>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- General Notes -->
+            <div>
+                <label class="label">📝 Trade Notes</label>
+                <textarea id="notes-field" rows="4" class="input resize-none" 
+                    placeholder="What happened during this trade? Context, thoughts, observations...">{{ trade.notes or '' }}</textarea>
+            </div>
+            
+            <!-- Entry Reason -->
+            <div>
+                <label class="label">🎯 Entry Reason</label>
+                <textarea id="entry-reason-field" rows="4" class="input resize-none" 
+                    placeholder="Why did you enter this trade? What setup did you see?">{{ trade.entry_reason or '' }}</textarea>
+            </div>
+            
+            <!-- Mistakes -->
+            <div>
+                <label class="label">❌ Mistakes Made</label>
+                <textarea id="mistakes-field" rows="3" class="input resize-none" 
+                    placeholder="What mistakes did you make? What would you do differently?">{{ trade.mistakes or '' }}</textarea>
+            </div>
+            
+            <!-- Lessons -->
+            <div>
+                <label class="label">💡 Lessons Learned</label>
+                <textarea id="lessons-field" rows="3" class="input resize-none" 
+                    placeholder="What did you learn from this trade? Any insights?">{{ trade.lessons or '' }}</textarea>
+            </div>
+        </div>
+        
+        <div id="notes-status" class="text-sm text-dark-500 mt-3 hidden"></div>
+    </div>
+
     <!-- Actions -->
-    <div class="flex space-x-4">
+    <div class="flex flex-wrap gap-3">
         <a href="/trades" class="btn btn-secondary">← Back to Trades</a>
-        <button onclick="deleteTrade({{ trade.id }})" class="btn btn-danger">Delete Trade</button>
+        <button onclick="refreshReview()" class="btn btn-primary">🔄 Refresh Review</button>
+        <button onclick="deleteTrade({{ trade.id }})" class="btn btn-ghost text-danger-400 hover:bg-danger-500/10">
+            🗑️ Delete Trade
+        </button>
     </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+const TRADE_ID = {{ trade.id }};
+
+// Load review asynchronously when page loads
+document.addEventListener('DOMContentLoaded', loadReview);
+
+async function loadReview() {
+    // Quick start toast (0.5s)
+    showStartToast('AI analysis');
+    
+    try {
+        const response = await fetch(`/api/trades/${TRADE_ID}/review`);
+        const data = await response.json();
+        
+        document.getElementById('review-loading').classList.add('hidden');
+        
+        if (data.success && data.review) {
+            displayReview(data.review);
+            // Quick finish toast with brief summary
+            const grade = data.review.grade || '?';
+            const setup = data.review.setup_classification || 'analyzed';
+            showFinishToast('AI analysis', `Grade ${grade}, ${setup}`);
+        } else {
+            document.getElementById('review-error').classList.remove('hidden');
+            document.getElementById('error-message').textContent = data.error || 'Review not available';
+            showToast(data.error || 'Review failed', 'error');
+        }
+    } catch (err) {
+        document.getElementById('review-loading').classList.add('hidden');
+        document.getElementById('review-error').classList.remove('hidden');
+        document.getElementById('error-message').textContent = 'Failed to load review: ' + err.message;
+        showToast('AI analysis failed', 'error');
+    }
+}
+
+function displayReview(review) {
+    // Show content
+    document.getElementById('review-content').classList.remove('hidden');
+    
+    // Grade
+    if (review.grade) {
+        document.getElementById('review-grade').classList.remove('hidden');
+        const gradeEl = document.getElementById('grade-value');
+        gradeEl.textContent = review.grade;
+        
+        const gradeColors = {
+            'A': 'text-success-400',
+            'B': 'text-accent-400', 
+            'C': 'text-amber-400',
+            'D': 'text-orange-400',
+            'F': 'text-danger-400'
+        };
+        gradeEl.className = 'text-3xl font-bold ' + (gradeColors[review.grade] || 'text-dark-300');
+    }
+    
+    // Context
+    document.getElementById('review-regime').textContent = review.regime || 'Unknown';
+    document.getElementById('review-always-in').textContent = 'Always-In: ' + (review.always_in || 'Neutral');
+    document.getElementById('review-context-desc').textContent = review.context_description || '';
+    
+    // Setup
+    const setupEl = document.getElementById('review-setup');
+    setupEl.textContent = `${review.setup_classification || 'Unknown'} (${review.setup_quality || 'unknown'})`;
+    
+    const qualityClasses = {
+        'good': 'badge-success',
+        'marginal': 'badge-warning',
+        'poor': 'bg-danger-500/20 text-danger-400 border border-danger-500/30'
+    };
+    setupEl.className = 'badge ' + (qualityClasses[review.setup_quality] || 'bg-dark-600');
+    
+    // What was good
+    if (review.what_was_good && review.what_was_good.length > 0) {
+        document.getElementById('good-section').classList.remove('hidden');
+        const goodList = document.getElementById('good-list');
+        goodList.innerHTML = review.what_was_good
+            .map(item => `<li class="text-success-300 text-sm">• ${item}</li>`)
+            .join('');
+    }
+    
+    // What was flawed
+    if (review.what_was_flawed && review.what_was_flawed.length > 0) {
+        document.getElementById('flawed-section').classList.remove('hidden');
+        const flawedList = document.getElementById('flawed-list');
+        flawedList.innerHTML = review.what_was_flawed
+            .map(item => `<li class="text-danger-300 text-sm">• ${item}</li>`)
+            .join('');
+    }
+    
+    // Rule
+    if (review.rule_for_next_time) {
+        document.getElementById('rule-section').classList.remove('hidden');
+        document.getElementById('rule-text').textContent = review.rule_for_next_time;
+    }
+    
+    // Grade explanation
+    if (review.grade_explanation) {
+        document.getElementById('grade-explanation').textContent = review.grade_explanation;
+    }
+}
+
+async function saveNotes() {
+    const btn = document.getElementById('save-notes-btn');
+    const status = document.getElementById('notes-status');
+    
+    btn.disabled = true;
+    btn.textContent = '⏳ Saving...';
+    
+    const data = {
+        notes: document.getElementById('notes-field').value,
+        entry_reason: document.getElementById('entry-reason-field').value,
+        mistakes: document.getElementById('mistakes-field').value,
+        lessons: document.getElementById('lessons-field').value,
+    };
+    
+    try {
+        const response = await fetch(`/api/trades/${TRADE_ID}/notes`, {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        });
+        
+        if (response.ok) {
+            showToast('Notes saved!');
+            status.textContent = '✓ Saved just now';
+            status.classList.remove('hidden');
+            setTimeout(() => status.classList.add('hidden'), 3000);
+        } else {
+            showToast('Failed to save notes', 'error');
+        }
+    } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+    }
+    
+    btn.disabled = false;
+    btn.textContent = '💾 Save Notes';
+}
+
 async function deleteTrade(id) {
     if (!confirm('Delete this trade?')) return;
     
+    showStartToast('Deleting trade');
     const response = await fetch(`/api/trades/${id}`, { method: 'DELETE' });
+    
     if (response.ok) {
-        window.location.href = '/trades';
+        showFinishToast('Trade deleted');
+        setTimeout(() => window.location.href = '/trades', 800);
+    } else {
+        showToast('Failed to delete trade', 'error');
     }
+}
+
+function refreshReview() {
+    document.getElementById('review-loading').classList.remove('hidden');
+    document.getElementById('review-content').classList.add('hidden');
+    document.getElementById('review-error').classList.add('hidden');
+    document.getElementById('review-grade').classList.add('hidden');
+    loadReview();
 }
 </script>
 {% endblock %}

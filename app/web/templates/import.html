@@ -4,40 +4,42 @@
 
 {% block content %}
 <div class="space-y-8">
-    <h1 class="text-3xl font-bold text-gray-900">Import Trades</h1>
+    <div>
+        <h1 class="text-3xl font-bold bg-gradient-to-r from-white to-dark-300 bg-clip-text text-transparent">
+            Import Trades
+        </h1>
+        <p class="text-dark-400 mt-1">Import your trade history from various sources</p>
+    </div>
 
     <!-- Robinhood Auto-Import -->
-    <div class="card border-2 border-green-200 bg-green-50">
+    <div class="card bg-gradient-to-br from-success-500/10 to-success-600/5 border-success-500/30">
         <div class="flex items-center justify-between mb-4">
-            <h2 class="text-xl font-bold text-green-800">🤖 Robinhood Auto-Import</h2>
-            <span id="rh-status" class="text-sm px-3 py-1 rounded-full bg-gray-200 text-gray-600">Not Connected</span>
+            <h2 class="text-xl font-bold text-white">🤖 Robinhood Auto-Import</h2>
+            <span id="rh-status" class="badge bg-dark-700 text-dark-300 border-dark-600">Not Connected</span>
         </div>
         
         <div id="rh-login-form">
-            <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
-                <p class="text-sm text-blue-800">
-                    <strong>📱 How it works:</strong> After clicking Connect, check your <strong>Robinhood app</strong> 
+            <div class="bg-accent-500/10 border border-accent-500/30 rounded-xl p-3 mb-4">
+                <p class="text-sm text-accent-300">
+                    <strong>📱 How it works:</strong> After clicking Connect, check your <strong class="text-white">Robinhood app</strong> 
                     to approve the login. No MFA code needed if you use app approval.
                 </p>
             </div>
             
             <div class="space-y-3">
-                <input type="email" id="rh-username" placeholder="Robinhood Email" 
-                    class="w-full px-4 py-2 border border-gray-300 rounded-lg">
-                <input type="password" id="rh-password" placeholder="Password" 
-                    class="w-full px-4 py-2 border border-gray-300 rounded-lg">
+                <input type="email" id="rh-username" placeholder="Robinhood Email" class="input">
+                <input type="password" id="rh-password" placeholder="Password" class="input">
                 
                 <!-- MFA is optional - collapsed by default -->
                 <details class="text-sm">
-                    <summary class="text-gray-500 cursor-pointer hover:text-gray-700">
+                    <summary class="text-dark-400 cursor-pointer hover:text-dark-200">
                         Using SMS/Authenticator instead of app approval? Click here
                     </summary>
-                    <input type="text" id="rh-mfa" placeholder="6-digit MFA Code" 
-                        class="w-full px-4 py-2 border border-gray-300 rounded-lg mt-2">
+                    <input type="text" id="rh-mfa" placeholder="6-digit MFA Code" class="input mt-2">
                 </details>
                 
-                <div class="flex items-center space-x-3">
-                    <select id="rh-days" class="px-4 py-2 border border-gray-300 rounded-lg">
+                <div class="flex items-center gap-3">
+                    <select id="rh-days" class="select flex-shrink-0">
                         <option value="7">Last 7 days</option>
                         <option value="30" selected>Last 30 days</option>
                         <option value="90">Last 90 days</option>
@@ -50,12 +52,12 @@
             </div>
             
             <!-- Status area for showing approval instructions -->
-            <div id="rh-instructions" class="hidden mt-4 p-4 bg-yellow-50 border border-yellow-300 rounded-lg">
-                <div class="flex items-start space-x-3">
+            <div id="rh-instructions" class="hidden mt-4 p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl">
+                <div class="flex items-start gap-3">
                     <div class="text-2xl animate-pulse">📱</div>
                     <div>
-                        <p class="font-medium text-yellow-800">Waiting for approval...</p>
-                        <p class="text-sm text-yellow-700" id="rh-instruction-text">
+                        <p class="font-medium text-amber-400">Waiting for approval...</p>
+                        <p class="text-sm text-amber-300" id="rh-instruction-text">
                             Check your Robinhood app and tap "Approve" to continue.
                         </p>
                     </div>
@@ -65,8 +67,8 @@
         
         <div id="rh-connected" class="hidden">
             <div class="flex items-center justify-between">
-                <span class="text-green-700">✓ Connected to Robinhood</span>
-                <div class="space-x-2">
+                <span class="text-success-400">✓ Connected to Robinhood</span>
+                <div class="flex gap-2">
                     <button onclick="importFromRobinhoodSession()" class="btn btn-primary">
                         📥 Import New Trades
                     </button>
@@ -78,16 +80,16 @@
         </div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Upload Form -->
         <div class="card">
-            <h2 class="text-xl font-bold mb-4">📤 Upload CSV</h2>
+            <h2 class="text-xl font-bold text-white mb-4">📤 Upload CSV</h2>
             
             <form id="upload-form" class="space-y-4">
                 <!-- Format Selector -->
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Import Format</label>
-                    <select id="format-select" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                    <label class="label">Import Format</label>
+                    <select id="format-select" class="select">
                         <option value="generic">📄 Generic CSV</option>
                         <optgroup label="TradingView">
                             <option value="tv_order_history">⭐ TradingView - Order History (RECOMMENDED)</option>
@@ -101,25 +103,45 @@
                     </select>
                 </div>
                 
-                <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-500 transition cursor-pointer"
+                <div class="border-2 border-dashed border-dark-600 rounded-xl p-8 text-center hover:border-accent-500 transition cursor-pointer bg-dark-900/50"
                      onclick="document.getElementById('file-input').click()">
                     <input type="file" id="file-input" accept=".csv" class="hidden" onchange="handleFileSelect(this)">
                     <div class="text-4xl mb-2">📁</div>
-                    <div class="text-gray-600">Click to select CSV file</div>
-                    <div class="text-sm text-gray-400">or drag and drop</div>
+                    <div class="text-dark-300">Click to select CSV file</div>
+                    <div class="text-sm text-dark-500">or drag and drop</div>
                 </div>
                 
-                <div id="file-name" class="text-center text-gray-600 hidden"></div>
+                <div id="file-name" class="text-center text-accent-400 hidden"></div>
+                
+                <!-- Balance History for cross-validation (shown only for TV Order History) -->
+                <div id="balance-file-section" class="hidden">
+                    <div class="border-t border-dark-700 pt-4 mt-2">
+                        <label class="label">
+                            📊 Balance History (for cross-validation) 
+                            <span class="text-dark-500 font-normal">- Optional</span>
+                        </label>
+                        <div class="border-2 border-dashed border-success-500/30 rounded-xl p-4 text-center hover:border-success-500 transition cursor-pointer bg-success-500/5"
+                             onclick="document.getElementById('balance-file-input').click()">
+                            <input type="file" id="balance-file-input" accept=".csv" class="hidden" onchange="handleBalanceFileSelect(this)">
+                            <div class="text-2xl mb-1">📊</div>
+                            <div class="text-dark-300 text-sm">Add Balance History for validation</div>
+                        </div>
+                        <div id="balance-file-name" class="text-center text-success-400 text-sm hidden"></div>
+                        <p class="text-xs text-dark-500 mt-1">
+                            Validates computed entry prices against TradingView's actual values
+                        </p>
+                    </div>
+                </div>
                 
                 <button type="submit" id="upload-btn" class="btn btn-primary w-full" disabled>
-                    Upload & Import
+                    📤 Upload & Import
                 </button>
             </form>
 
-            <div class="mt-6 pt-6 border-t">
-                <h3 class="font-medium mb-2">Or import from folder:</h3>
-                <p class="text-sm text-gray-600 mb-3">
-                    Drop CSV files in: <code class="bg-gray-100 px-2 py-1 rounded">{{ imports_path }}</code>
+            <div class="mt-6 pt-6 border-t border-dark-700">
+                <h3 class="font-medium text-white mb-2">Or import from folder:</h3>
+                <p class="text-sm text-dark-400 mb-3">
+                    Drop CSV files in: <code class="bg-dark-900 px-2 py-1 rounded text-accent-400">{{ imports_path }}</code>
                 </p>
                 <button onclick="bulkImport()" class="btn btn-secondary w-full">
                     📥 Import All from Folder
@@ -129,90 +151,90 @@
 
         <!-- Instructions -->
         <div class="card">
-            <h2 class="text-xl font-bold mb-4">📋 Format Instructions</h2>
+            <h2 class="text-xl font-bold text-white mb-4">📋 Format Instructions</h2>
             
             <!-- Generic Format -->
             <div id="format-info-generic" class="format-info">
-                <h3 class="font-medium text-gray-800 mb-2">Generic CSV Format</h3>
-                <div class="bg-gray-50 rounded-lg p-4 font-mono text-sm overflow-x-auto">
-                    <div class="text-gray-500">ticker,direction,entry_price,exit_price,stop_price,size,trade_date,notes</div>
+                <h3 class="font-medium text-white mb-2">Generic CSV Format</h3>
+                <div class="bg-dark-900/50 rounded-xl p-4 font-mono text-sm overflow-x-auto text-dark-300">
+                    <div class="text-dark-500">ticker,direction,entry_price,exit_price,stop_price,size,trade_date,notes</div>
                     <div>SPY,long,475.50,478.00,474.00,100,2024-01-15,Strong pullback</div>
                     <div>AAPL,short,185.00,182.50,187.00,50,2024-01-15,Failed breakout</div>
                 </div>
-                <div class="mt-3 text-sm text-gray-600">
+                <div class="mt-3 text-sm text-dark-400">
                     Required: ticker, entry_price, exit_price. Optional: stop_price, direction, size, strategy, notes.
                 </div>
             </div>
 
             <!-- TradingView Order History Format (RECOMMENDED) -->
             <div id="format-info-tv_order_history" class="format-info hidden">
-                <h3 class="font-medium text-gray-800 mb-2">⭐ TradingView - Order History (RECOMMENDED)</h3>
-                <div class="bg-green-50 rounded-lg p-4 text-sm border border-green-200">
-                    <p class="mb-2 text-green-800"><strong>✓ Best format for multi-leg trades!</strong> Handles scaling in/out with average cost basis.</p>
-                    <p class="mb-2"><strong>How to export:</strong></p>
-                    <ol class="list-decimal list-inside space-y-1 text-gray-600">
+                <h3 class="font-medium text-white mb-2">⭐ TradingView - Order History (RECOMMENDED)</h3>
+                <div class="bg-success-500/10 border border-success-500/30 rounded-xl p-4 text-sm">
+                    <p class="mb-2 text-success-400"><strong>✓ Best format for multi-leg trades!</strong> Handles scaling in/out with average cost basis.</p>
+                    <p class="mb-2 text-dark-300"><strong class="text-white">How to export:</strong></p>
+                    <ol class="list-decimal list-inside space-y-1 text-dark-300">
                         <li>Open TradingView Paper Trading panel</li>
-                        <li>Go to <strong>"Order History"</strong> tab</li>
+                        <li>Go to <strong class="text-white">"Order History"</strong> tab</li>
                         <li>Click the download/export button (↓)</li>
                         <li>Save the CSV file</li>
                     </ol>
                 </div>
-                <div class="mt-3 p-3 bg-blue-50 rounded-lg text-sm text-blue-800">
-                    <strong>Multi-leg example:</strong> Buy 300 @ $10, Buy 200 @ $11, Sell 400 @ $12, Sell 100 @ $13<br>
+                <div class="mt-3 p-3 bg-accent-500/10 border border-accent-500/30 rounded-xl text-sm text-accent-300">
+                    <strong class="text-accent-400">Multi-leg example:</strong> Buy 300 @ $10, Buy 200 @ $11, Sell 400 @ $12, Sell 100 @ $13<br>
                     → Creates 2 trades with avg entry $10.40 (each exit is a separate trade)
                 </div>
-                <div class="mt-2 font-mono text-xs bg-gray-100 p-2 rounded overflow-x-auto">
+                <div class="mt-2 font-mono text-xs bg-dark-900/50 p-2 rounded-lg overflow-x-auto text-dark-400">
                     Columns: Symbol, Side, Type, Qty, Limit Price, Stop Price, Fill Price, Status, Closing Time...
                 </div>
             </div>
 
             <!-- TradingView Balance History Format -->
             <div id="format-info-tv_balance_history" class="format-info hidden">
-                <h3 class="font-medium text-gray-800 mb-2">TradingView - Balance History</h3>
-                <div class="bg-gray-50 rounded-lg p-4 text-sm">
-                    <p class="mb-2"><strong>How to export:</strong></p>
-                    <ol class="list-decimal list-inside space-y-1 text-gray-600">
+                <h3 class="font-medium text-white mb-2">TradingView - Balance History</h3>
+                <div class="bg-dark-900/50 rounded-xl p-4 text-sm">
+                    <p class="mb-2 text-dark-300"><strong class="text-white">How to export:</strong></p>
+                    <ol class="list-decimal list-inside space-y-1 text-dark-300">
                         <li>Open TradingView Paper Trading panel</li>
-                        <li>Click on <strong>"Balance History"</strong> tab</li>
+                        <li>Click on <strong class="text-white">"Balance History"</strong> tab</li>
                         <li>Click the download/export button (↓)</li>
                         <li>Save the CSV file</li>
                     </ol>
                 </div>
-                <div class="mt-3 p-3 bg-yellow-50 rounded-lg text-sm text-yellow-800">
+                <div class="mt-3 p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-sm text-amber-300">
                     ⚠️ Balance History combines multi-leg trades into single entries. For detailed scaling in/out tracking, use Order History instead.
                 </div>
-                <div class="mt-2 font-mono text-xs bg-gray-100 p-2 rounded overflow-x-auto">
+                <div class="mt-2 font-mono text-xs bg-dark-900/50 p-2 rounded-lg overflow-x-auto text-dark-400">
                     Columns: Time, Balance Before, Balance After, Realized P&L (value), Realized P&L (currency), Action
                 </div>
             </div>
 
             <!-- ThinkOrSwim Format -->
             <div id="format-info-thinkorswim" class="format-info hidden">
-                <h3 class="font-medium text-gray-800 mb-2">TD Ameritrade ThinkOrSwim</h3>
-                <div class="bg-gray-50 rounded-lg p-4 text-sm text-gray-600">
+                <h3 class="font-medium text-white mb-2">TD Ameritrade ThinkOrSwim</h3>
+                <div class="bg-dark-900/50 rounded-xl p-4 text-sm text-dark-300">
                     Export from: Monitor → Account Statement → Trades → Export
                 </div>
             </div>
 
             <!-- Tradovate Format -->
             <div id="format-info-tradovate" class="format-info hidden">
-                <h3 class="font-medium text-gray-800 mb-2">Tradovate</h3>
-                <div class="bg-gray-50 rounded-lg p-4 text-sm text-gray-600">
+                <h3 class="font-medium text-white mb-2">Tradovate</h3>
+                <div class="bg-dark-900/50 rounded-xl p-4 text-sm text-dark-300">
                     Export from: Performance → Trade History → Download CSV
                 </div>
             </div>
 
             <!-- Interactive Brokers Format -->
             <div id="format-info-interactive_brokers" class="format-info hidden">
-                <h3 class="font-medium text-gray-800 mb-2">Interactive Brokers</h3>
-                <div class="bg-gray-50 rounded-lg p-4 text-sm text-gray-600">
+                <h3 class="font-medium text-white mb-2">Interactive Brokers</h3>
+                <div class="bg-dark-900/50 rounded-xl p-4 text-sm text-dark-300">
                     Export from: Reports → Flex Queries → Trade Confirmations
                 </div>
             </div>
 
-            <div class="mt-6 p-4 bg-blue-50 rounded-lg">
-                <div class="font-medium text-blue-800 mb-1">🧠 AI Classification</div>
-                <p class="text-sm text-blue-700">
+            <div class="mt-6 p-4 bg-accent-500/10 border border-accent-500/30 rounded-xl">
+                <div class="font-medium text-accent-400 mb-1">🧠 AI Classification</div>
+                <p class="text-sm text-accent-300">
                     The AI will automatically classify each trade into Brooks-style setups 
                     like "second_entry_buy" or "breakout_pullback_long".
                 </p>
@@ -223,12 +245,12 @@
     <!-- Files in Import Folder -->
     {% if import_files %}
     <div class="card">
-        <h2 class="text-xl font-bold mb-4">📂 Files Ready to Import</h2>
+        <h2 class="text-xl font-bold text-white mb-4">📂 Files Ready to Import</h2>
         <div class="space-y-2">
             {% for f in import_files %}
-            <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <span class="font-mono">{{ f.name }}</span>
-                <span class="text-gray-500 text-sm">{{ f.stat().st_size // 1024 }} KB</span>
+            <div class="flex items-center justify-between p-3 bg-dark-900/50 rounded-xl border border-dark-700">
+                <span class="font-mono text-dark-200">{{ f.name }}</span>
+                <span class="text-dark-500 text-sm">{{ f.stat().st_size // 1024 }} KB</span>
             </div>
             {% endfor %}
         </div>
@@ -241,31 +263,17 @@
     <!-- Recently Processed -->
     {% if processed_files %}
     <div class="card">
-        <h2 class="text-xl font-bold mb-4">✅ Recently Processed</h2>
+        <h2 class="text-xl font-bold text-white mb-4">✅ Recently Processed</h2>
         <div class="space-y-2">
             {% for f in processed_files[:5] %}
-            <div class="flex items-center justify-between p-3 bg-green-50 rounded-lg">
-                <span class="font-mono text-green-700">{{ f.name }}</span>
-                <span class="text-green-600 text-sm">✓ Imported</span>
+            <div class="flex items-center justify-between p-3 bg-success-500/10 border border-success-500/30 rounded-xl">
+                <span class="font-mono text-success-400">{{ f.name }}</span>
+                <span class="text-success-500 text-sm">✓ Imported</span>
             </div>
             {% endfor %}
         </div>
     </div>
     {% endif %}
-</div>
-
-<!-- Toast -->
-<div id="toast" class="fixed bottom-4 right-4 bg-gray-900 text-white px-6 py-3 rounded-lg shadow-lg hidden">
-    <span id="toast-message"></span>
-</div>
-
-<!-- Loading overlay -->
-<div id="loading" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
-    <div class="bg-white rounded-lg p-8 text-center">
-        <div class="animate-spin text-4xl mb-4">⏳</div>
-        <div class="text-xl font-medium">Importing trades...</div>
-        <div class="text-gray-500">AI is classifying each trade</div>
-    </div>
 </div>
 {% endblock %}
 
@@ -416,28 +424,26 @@ function closeRhAlert() {
 
 async function importFromRobinhoodSession() {
     const days = document.getElementById('rh-days').value;
-    
-    showLoading(true);
-    
+
+    showStartToast('Robinhood import');
+
     try {
         const response = await fetch('/api/robinhood/import-session', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({days_back: parseInt(days)})
         });
-        
+
         const data = await response.json();
-        showLoading(false);
-        
+
         if (data.error) {
-            showToast('Error: ' + data.error);
+            showToast('Error: ' + data.error, 'error');
         } else {
-            showToast(data.messages[0] || `Imported ${data.imported} trades`);
+            showFinishToast('Robinhood import', `${data.imported} trades`);
             setTimeout(() => window.location.reload(), 2000);
         }
     } catch (err) {
-        showLoading(false);
-        showToast('Import failed: ' + err.message);
+        showToast('Import failed: ' + err.message, 'error');
     }
 }
 
@@ -452,16 +458,7 @@ async function disconnectRobinhood() {
     }
 }
 
-function showToast(message) {
-    const toast = document.getElementById('toast');
-    document.getElementById('toast-message').textContent = message;
-    toast.classList.remove('hidden');
-    setTimeout(() => toast.classList.add('hidden'), 3000);
-}
-
-function showLoading(show) {
-    document.getElementById('loading').classList.toggle('hidden', !show);
-}
+// Using global showToast and showStartToast/showFinishToast from base.html
 
 function handleFileSelect(input) {
     if (input.files.length > 0) {
@@ -481,12 +478,30 @@ function handleFileSelect(input) {
     }
 }
 
+const balanceFileInput = document.getElementById('balance-file-input');
+const balanceFileName = document.getElementById('balance-file-name');
+const balanceFileSection = document.getElementById('balance-file-section');
+
+function handleBalanceFileSelect(input) {
+    if (input.files.length > 0) {
+        balanceFileName.textContent = '✓ ' + input.files[0].name;
+        balanceFileName.classList.remove('hidden');
+    }
+}
+
 // Show/hide format info based on selection
 function updateFormatInfo() {
     document.querySelectorAll('.format-info').forEach(el => el.classList.add('hidden'));
     const selected = formatSelect.value;
     const infoEl = document.getElementById('format-info-' + selected);
     if (infoEl) infoEl.classList.remove('hidden');
+    
+    // Show/hide balance file section for TV Order History
+    if (selected === 'tv_order_history') {
+        balanceFileSection.classList.remove('hidden');
+    } else {
+        balanceFileSection.classList.add('hidden');
+    }
 }
 
 formatSelect.addEventListener('change', updateFormatInfo);
@@ -497,11 +512,16 @@ uploadForm.addEventListener('submit', async (e) => {
     
     if (!fileInput.files.length) return;
     
-    showLoading(true);
+    showStartToast('Importing trades');
     
     const formData = new FormData();
     formData.append('file', fileInput.files[0]);
     formData.append('format', formatSelect.value);
+    
+    // Add balance file for cross-validation if provided
+    if (balanceFileInput && balanceFileInput.files.length > 0) {
+        formData.append('balance_file', balanceFileInput.files[0]);
+    }
     
     try {
         // Upload and import in one step
@@ -512,34 +532,30 @@ uploadForm.addEventListener('submit', async (e) => {
         
         const data = await response.json();
         
-        showLoading(false);
-        
         if (data.error) {
-            showToast('Error: ' + data.error);
+            showToast('Error: ' + data.error, 'error');
         } else {
-            showToast(`Imported ${data.imported} trades, ${data.errors} errors`);
+            let brief = `${data.imported} trades`;
+            if (data.cross_validated) brief += ' (validated)';
+            showFinishToast('Import', brief);
             setTimeout(() => window.location.reload(), 1500);
         }
     } catch (err) {
-        showLoading(false);
-        showToast('Import failed: ' + err.message);
+        showToast('Import failed: ' + err.message, 'error');
     }
 });
 
 async function bulkImport() {
-    showLoading(true);
+    showStartToast('Bulk import');
     
     try {
         const response = await fetch('/api/bulk-import', { method: 'POST' });
         const data = await response.json();
         
-        showLoading(false);
-        showToast(`Imported ${data.imported} trades, ${data.errors} errors`);
-        
+        showFinishToast('Bulk import', `${data.imported} trades`);
         setTimeout(() => window.location.reload(), 1500);
     } catch (err) {
-        showLoading(false);
-        showToast('Import failed');
+        showToast('Import failed', 'error');
     }
 }
 

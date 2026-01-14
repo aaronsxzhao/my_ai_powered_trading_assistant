@@ -105,37 +105,9 @@ class LLMAnalyzer:
         - confidence: low, medium, high
         - reasoning: Why this classification
         """
-        system_prompt = """You are an expert Al Brooks price action analyst. Your job is to classify trades into Brooks-style setups.
-
-Available strategies:
-WITH-TREND:
-- breakout_pullback_long/short: Entry on pullback after breakout
-- second_entry_buy/sell: 2nd attempt after failed first pullback entry
-- trend_resumption_long/short: Continuation after pause in trend
-- measured_move_long/short: Entry at measured move target
-
-COUNTERTREND:
-- failed_breakout_long/short: Fade after breakout fails
-- wedge_reversal_long/short: Reversal at 3-push wedge
-- double_top_short / double_bottom_long: Classic reversal patterns
-- climax_reversal_long/short: Reversal after exhaustion move
-
-TRADING RANGE:
-- range_fade_high/low: Fade at range extremes
-- range_scalp_long/short: Quick scalp within range
-
-SPECIAL:
-- trend_from_open_long/short: Strong directional move from open
-- opening_reversal_long/short: Reversal of opening move
-- gap_fill_long/short: Trading gap fills
-
-Respond in JSON format:
-{
-    "strategy_name": "the_strategy_name",
-    "strategy_category": "with_trend|countertrend|trading_range|special",
-    "confidence": "low|medium|high",
-    "reasoning": "Brief explanation of why this classification"
-}"""
+        # Load configurable prompt
+        from app.config_prompts import get_prompt
+        system_prompt = get_prompt('trade_classification')
 
         # Calculate R-multiple safely
         if direction == "long":
@@ -231,38 +203,9 @@ Classify this trade setup."""
         else:
             r_multiple = reward / risk
 
-        system_prompt = """You are Al Brooks, the legendary price action trader and author. 
-You are coaching a trader on their completed trade using your price action methodology.
-
-Your analysis must include:
-1. CONTEXT: What was the likely market regime? (trend up, trend down, trading range)
-2. ALWAYS-IN: What was the always-in direction? Did the trade align?
-3. SETUP QUALITY: Was this a high-probability setup or low-probability?
-4. TRADER'S EQUATION: Did the math make sense? (probability × reward vs risk)
-5. ERRORS: What Brooks-style errors were made, if any?
-6. WHAT WAS GOOD: Positive aspects of the trade
-7. WHAT WAS FLAWED: Areas for improvement
-8. RULE FOR NEXT TIME: One specific, actionable rule
-
-Be direct and specific. Use Brooks terminology (always-in, 2nd entry, breakout pullback, etc.)
-
-Respond in JSON format:
-{
-    "regime": "trend_up|trend_down|trading_range|unclear",
-    "always_in": "long|short|neutral",
-    "trade_aligned_with_context": true|false,
-    "setup_classification": "strategy_name",
-    "setup_quality": "good|marginal|poor",
-    "probability_assessment": "HIGH|MEDIUM|LOW - explanation",
-    "risk_reward_assessment": "explanation",
-    "errors": ["error1", "error2"],
-    "what_was_good": ["good1", "good2"],
-    "what_was_flawed": ["flaw1", "flaw2"],
-    "rule_for_next_time": "specific actionable rule",
-    "grade": "A|B|C|D|F",
-    "grade_explanation": "why this grade",
-    "overall_coaching": "2-3 sentence summary"
-}"""
+        # Load configurable prompt
+        from app.config_prompts import get_prompt
+        system_prompt = get_prompt('trade_analysis')
 
         user_prompt = f"""Review this completed trade:
 
@@ -313,45 +256,9 @@ Provide your Brooks-style analysis and coaching."""
         
         Returns regime, always-in, key levels, and trading plan.
         """
-        system_prompt = """You are an expert Al Brooks price action analyst preparing a premarket briefing.
-
-Analyze the OHLCV data and provide:
-1. REGIME: Is this a trend (up/down) or trading range?
-2. ALWAYS-IN: If forced to have a position, which direction?
-3. KEY LEVELS: Important support/resistance levels from the data
-4. STRENGTH: Is the current move strong or weak?
-5. PLAN A: Most likely scenario and setups to look for
-6. PLAN B: What would change your mind? What's the alternative scenario?
-7. AVOID: Conditions where trading would be low probability
-
-Use Brooks terminology. Be specific about price levels.
-
-Respond in JSON format:
-{
-    "regime": "trend_up|trend_down|trading_range",
-    "regime_confidence": "high|medium|low",
-    "always_in": "long|short|neutral",
-    "key_levels": {
-        "resistance": [{"price": 100.00, "description": "Prior high"}],
-        "support": [{"price": 95.00, "description": "Prior low"}]
-    },
-    "strength": "strong|moderate|weak",
-    "strength_reasoning": "explanation",
-    "plan_a": {
-        "scenario": "description",
-        "bias": "LONG|SHORT|NEUTRAL",
-        "setups": ["setup1", "setup2"],
-        "entry_zones": "description",
-        "targets": "description"
-    },
-    "plan_b": {
-        "trigger": "what must happen to flip",
-        "new_bias": "LONG|SHORT|NEUTRAL",
-        "action": "what to do"
-    },
-    "avoid": ["condition1", "condition2"],
-    "summary": "1-2 sentence executive summary"
-}"""
+        # Load configurable prompt
+        from app.config_prompts import get_prompt
+        system_prompt = get_prompt('market_context')
 
         user_prompt = f"""Analyze this market data for {ticker}:
 

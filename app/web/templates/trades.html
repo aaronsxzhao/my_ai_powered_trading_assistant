@@ -4,186 +4,243 @@
 
 {% block content %}
 <div class="space-y-6">
-    <div class="flex justify-between items-center">
-        <h1 class="text-3xl font-bold text-gray-900">Trades</h1>
-        <div class="flex space-x-3">
-            <a href="/add-trade" class="btn btn-primary">+ Add Trade</a>
+    <!-- Header -->
+    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+            <h1 class="text-3xl font-bold bg-gradient-to-r from-white to-dark-300 bg-clip-text text-transparent">
+                Trade Journal
+            </h1>
+            <p class="text-dark-400 text-sm mt-1">Track and review your trades</p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+            <a href="/add-trade" class="btn btn-primary">➕ Add Trade</a>
             <button onclick="recalculateMetrics()" class="btn btn-secondary">🔄 Recalculate</button>
             <button onclick="reclassifyTrades()" class="btn btn-secondary">🧠 Reclassify</button>
-            <button onclick="deleteAllTrades()" class="btn btn-secondary text-red-600">🗑️ Delete All</button>
+            <button onclick="deleteAllTrades()" class="btn btn-ghost text-danger-400 hover:bg-danger-500/10">🗑️ Delete All</button>
         </div>
     </div>
 
-    <div class="card">
-        {% if trades %}
-        <div class="overflow-x-auto">
-            <table class="w-full">
-                <thead>
-                    <tr class="text-left text-gray-500 text-sm border-b">
-                        <th class="pb-3">ID</th>
-                        <th class="pb-3">Exit Time</th>
-                        <th class="pb-3">Ticker</th>
-                        <th class="pb-3">Direction</th>
-                        <th class="pb-3">Shares</th>
-                        <th class="pb-3">Entry</th>
-                        <th class="pb-3">Exit</th>
-                        <th class="pb-3">P&L ($)</th>
-                        <th class="pb-3">R-Multiple</th>
-                        <th class="pb-3">Result</th>
-                        <th class="pb-3">Strategy</th>
-                        <th class="pb-3">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for trade in trades %}
-                    <tr class="border-b border-gray-100 hover:bg-gray-50">
-                        <td class="py-3 text-gray-500">#{{ trade.id }}</td>
-                        <td class="py-3 text-sm">
-                            {% if trade.exit_time %}
-                                {{ trade.exit_time.strftime('%Y-%m-%d %H:%M:%S') }}
-                            {% else %}
-                                {{ trade.trade_date }}
-                            {% endif %}
-                        </td>
-                        <td class="py-3 font-bold">{{ trade.ticker }}</td>
-                        <td class="py-3">
-                            {% if trade.direction.value == 'long' %}
-                                <span class="px-2 py-1 bg-green-100 text-green-700 rounded text-sm">LONG</span>
-                            {% else %}
-                                <span class="px-2 py-1 bg-red-100 text-red-700 rounded text-sm">SHORT</span>
-                            {% endif %}
-                        </td>
-                        <td class="py-3 font-mono">{{ "%.0f"|format(trade.size) if trade.size else '-' }}</td>
-                        <td class="py-3 font-mono text-sm">
-                            {% if trade.currency and trade.currency != 'USD' and trade.currency_rate %}
-                                ${{ "%.4f"|format(trade.entry_price / trade.currency_rate) }}
-                                <span class="text-xs text-gray-500">({{ trade.currency }} {{ "%.4f"|format(trade.entry_price) }})</span>
-                            {% else %}
-                                ${{ "%.4f"|format(trade.entry_price) }}
-                            {% endif %}
-                        </td>
-                        <td class="py-3 font-mono text-sm">
-                            {% if trade.exit_price %}
-                                {% if trade.currency and trade.currency != 'USD' and trade.currency_rate %}
-                                    ${{ "%.4f"|format(trade.exit_price / trade.currency_rate) }}
-                                    <span class="text-xs text-gray-500">({{ trade.currency }} {{ "%.4f"|format(trade.exit_price) }})</span>
-                                {% else %}
-                                    ${{ "%.4f"|format(trade.exit_price) }}
-                                {% endif %}
-                            {% else %}-{% endif %}
-                        </td>
-                        <td class="py-3 font-mono font-bold {% if trade.pnl_dollars and trade.pnl_dollars >= 0 %}positive{% else %}negative{% endif %}">
-                            {% if trade.pnl_dollars %}
-                                {% if trade.currency and trade.currency != 'USD' and trade.currency_rate %}
-                                    {{ "+" if trade.pnl_dollars > 0 else "" }}${{ "%.2f"|format(trade.pnl_dollars / trade.currency_rate) }}
-                                    <span class="text-xs text-gray-500">({{ trade.currency }} {{ "%.2f"|format(trade.pnl_dollars) }})</span>
-                                {% else %}
-                                    {{ "+" if trade.pnl_dollars > 0 else "" }}${{ "%.2f"|format(trade.pnl_dollars) }}
-                                {% endif %}
-                            {% else %}-{% endif %}
-                        </td>
-                        <td class="py-3 font-mono font-bold {% if trade.r_multiple and trade.r_multiple >= 0 %}positive{% else %}negative{% endif %}">
-                            {% if trade.r_multiple %}{{ "%.2f"|format(trade.r_multiple) }}R{% else %}-{% endif %}
-                        </td>
-                        <td class="py-3">
-                            {% if trade.outcome %}
-                                {% if trade.outcome.value == 'win' %}
-                                    <span class="px-2 py-1 bg-green-100 text-green-700 rounded text-sm font-bold">WIN</span>
-                                {% elif trade.outcome.value == 'loss' %}
-                                    <span class="px-2 py-1 bg-red-100 text-red-700 rounded text-sm font-bold">LOSS</span>
-                                {% else %}
-                                    <span class="px-2 py-1 bg-gray-100 text-gray-600 rounded text-sm">B/E</span>
-                                {% endif %}
-                            {% else %}
-                                <span class="text-gray-400">-</span>
-                            {% endif %}
-                        </td>
-                        <td class="py-3">
-                            <span class="px-2 py-1 bg-gray-100 rounded text-sm">
-                                {{ trade.strategy.name if trade.strategy else 'unclassified' }}
-                            </span>
-                        </td>
-                        <td class="py-3 space-x-2">
-                            <button onclick="openEditModal({{ trade.id }}, {{ trade.size or 0 }}, {{ trade.entry_price }}, {{ trade.exit_price or 0 }}, {{ trade.stop_price or 0 }}, '{{ trade.currency or "USD" }}', {{ trade.currency_rate or 1.0 }}, '{{ trade.entry_time.strftime('%Y-%m-%dT%H:%M:%S') if trade.entry_time else '' }}', '{{ trade.exit_time.strftime('%Y-%m-%dT%H:%M:%S') if trade.exit_time else '' }}')" class="text-gray-600 hover:text-blue-600">✏️</button>
-                            <a href="/trades/{{ trade.id }}" class="text-blue-600 hover:underline">Review</a>
-                            <button onclick="deleteTrade({{ trade.id }})" class="text-red-600 hover:underline">Delete</button>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+    <!-- Stats Summary -->
+    {% if trades %}
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="stat-card">
+            <div class="stat-value">{{ trades | length }}</div>
+            <div class="stat-label">Total Trades</div>
         </div>
+        <div class="stat-card">
+            <div class="stat-value positive">
+                {{ trades | selectattr('outcome') | selectattr('outcome.value', 'equalto', 'win') | list | length }}
+            </div>
+            <div class="stat-label">Wins</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value negative">
+                {{ trades | selectattr('outcome') | selectattr('outcome.value', 'equalto', 'loss') | list | length }}
+            </div>
+            <div class="stat-label">Losses</div>
+        </div>
+        <div class="stat-card">
+            {% set total_pnl = trades | sum(attribute='pnl_dollars') if trades else 0 %}
+            <div class="stat-value {% if total_pnl >= 0 %}positive{% else %}negative{% endif %}">
+                {{ "+" if total_pnl > 0 else "" }}${{ "%.2f"|format(total_pnl or 0) }}
+            </div>
+            <div class="stat-label">Total P&L</div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Trades Table -->
+    <div class="card p-0">
+        {% if trades %}
+        <table class="w-full text-sm">
+            <thead class="bg-dark-800 sticky top-0">
+                <tr class="text-dark-400 text-xs uppercase">
+                    <th class="py-3 px-2 text-left w-8"></th>
+                    <th class="py-3 px-2 text-left">Result</th>
+                    <th class="py-3 px-2 text-left">Date</th>
+                    <th class="py-3 px-2 text-left">Ticker</th>
+                    <th class="py-3 px-2 text-left">Type</th>
+                    <th class="py-3 px-2 text-right">Entry</th>
+                    <th class="py-3 px-2 text-right">Exit</th>
+                    <th class="py-3 px-2 text-right">P&L</th>
+                    <th class="py-3 px-2 text-right">%</th>
+                    <th class="py-3 px-2 text-center">Dir</th>
+                    <th class="py-3 px-2 text-right w-24">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-dark-700/50">
+                {% for trade in trades %}
+                <!-- Main Trade Row -->
+                <tr class="group hover:bg-dark-700/30 cursor-pointer trade-row" data-trade-id="{{ trade.id }}" onclick="toggleDrawer({{ trade.id }})">
+                    <td class="py-3 px-2">
+                        <span class="drawer-toggle text-dark-500 transition-transform inline-block" id="toggle-{{ trade.id }}">▶</span>
+                    </td>
+                    <td class="py-3 px-2">
+                        {% if trade.outcome %}
+                            {% if trade.outcome.value == 'win' %}
+                                <span class="win">WIN</span>
+                            {% elif trade.outcome.value == 'loss' %}
+                                <span class="loss">LOSS</span>
+                            {% else %}
+                                <span class="breakeven">B/E</span>
+                            {% endif %}
+                        {% else %}
+                            <span class="text-dark-500">-</span>
+                        {% endif %}
+                    </td>
+                    <td class="py-3 px-2 font-mono text-dark-300 text-xs">
+                        {{ trade.exit_time.strftime('%b %d, %Y') if trade.exit_time else trade.trade_date }}
+                    </td>
+                    <td class="py-3 px-2">
+                        <span class="font-bold text-white">{{ trade.ticker }}</span>
+                    </td>
+                    <td class="py-3 px-2 text-dark-400 text-xs">
+                        {{ trade.strategy.name if trade.strategy else '-' }}
+                    </td>
+                    <td class="py-3 px-2 font-mono text-right text-dark-300">${{ "%.2f"|format(trade.entry_price) }}</td>
+                    <td class="py-3 px-2 font-mono text-right text-dark-300">${{ "%.2f"|format(trade.exit_price) if trade.exit_price else '-' }}</td>
+                    <td class="py-3 px-2 font-mono text-right font-semibold {% if trade.pnl_dollars and trade.pnl_dollars >= 0 %}positive{% else %}negative{% endif %}">
+                        {% if trade.pnl_dollars %}
+                            {{ "+" if trade.pnl_dollars > 0 else "" }}${{ "%.2f"|format(trade.pnl_dollars) }}
+                        {% else %}-{% endif %}
+                    </td>
+                    <td class="py-3 px-2 font-mono text-right text-xs {% if trade.pnl_percent and trade.pnl_percent >= 0 %}positive{% else %}negative{% endif %}">
+                        {% if trade.pnl_percent %}{{ "%.1f"|format(trade.pnl_percent) }}%{% else %}-{% endif %}
+                    </td>
+                    <td class="py-3 px-2 text-center">
+                        {% if trade.direction.value == 'long' %}
+                            <span class="px-2 py-0.5 rounded text-xs font-medium bg-success-500/20 text-success-400 border border-success-500/30">LONG</span>
+                        {% else %}
+                            <span class="px-2 py-0.5 rounded text-xs font-medium bg-danger-500/20 text-danger-400 border border-danger-500/30">SHORT</span>
+                        {% endif %}
+                    </td>
+                    <td class="py-3 px-2 text-right" onclick="event.stopPropagation()">
+                        <div class="flex items-center justify-end space-x-1 opacity-60 group-hover:opacity-100">
+                            <button onclick="openEditModal({{ trade.id }}, {{ trade.size or 0 }}, {{ trade.entry_price }}, {{ trade.exit_price or 0 }}, {{ trade.stop_price or 0 }}, '{{ trade.currency or "USD" }}', {{ trade.currency_rate or 1.0 }}, '{{ trade.entry_time.strftime('%Y-%m-%dT%H:%M:%S') if trade.entry_time else '' }}', '{{ trade.exit_time.strftime('%Y-%m-%dT%H:%M:%S') if trade.exit_time else '' }}')" 
+                                    class="p-1.5 rounded hover:bg-dark-600 transition" title="Edit">✏️</button>
+                            <a href="/trades/{{ trade.id }}" class="p-1.5 rounded hover:bg-dark-600 transition" title="Review">👁️</a>
+                            <button onclick="deleteTrade({{ trade.id }})" class="p-1.5 rounded hover:bg-dark-600 transition text-danger-400" title="Delete">🗑️</button>
+                        </div>
+                    </td>
+                </tr>
+                <!-- Drawer: Child Orders -->
+                <tr class="drawer-content hidden bg-dark-900/50" id="drawer-{{ trade.id }}">
+                    <td colspan="11" class="p-0">
+                        <div class="px-8 py-4 border-l-4 border-accent-500/50">
+                            <!-- Trade Summary Header -->
+                            <div class="flex items-center justify-between mb-3">
+                                <div class="flex items-center gap-4 text-sm">
+                                    <span class="text-dark-400">Size: <span class="text-white font-mono">{{ "%.0f"|format(trade.size) if trade.size else '-' }}</span></span>
+                                    <span class="text-dark-400">Duration: <span class="text-white font-mono">{{ trade.duration_display }}</span></span>
+                                    <span class="text-dark-400">R: <span class="font-mono {% if trade.r_multiple and trade.r_multiple >= 0 %}positive{% else %}negative{% endif %}">{{ "%.2f"|format(trade.r_multiple) if trade.r_multiple else '-' }}R</span></span>
+                                    <span class="text-dark-400">Stop: <span class="text-white font-mono">${{ "%.2f"|format(trade.stop_price) if trade.stop_price else '-' }}</span></span>
+                                </div>
+                            </div>
+                            
+                            <!-- Child Orders Table -->
+                            {% if trade.orders and trade.orders|length > 0 %}
+                            <table class="w-full text-xs">
+                                <thead>
+                                    <tr class="text-dark-500 uppercase border-b border-dark-700">
+                                        <th class="py-2 px-3 text-left">Action</th>
+                                        <th class="py-2 px-3 text-left">Type</th>
+                                        <th class="py-2 px-3 text-left">Date</th>
+                                        <th class="py-2 px-3 text-left">Time</th>
+                                        <th class="py-2 px-3 text-right">Size</th>
+                                        <th class="py-2 px-3 text-right">Price</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-dark-700/30">
+                                    {% for order in trade.orders %}
+                                    <tr class="hover:bg-dark-800/50">
+                                        <td class="py-2 px-3">
+                                            {% if order.side == 'buy' %}
+                                                <span class="text-success-400 font-medium">Buy</span>
+                                            {% else %}
+                                                <span class="text-danger-400 font-medium">Sell</span>
+                                            {% endif %}
+                                        </td>
+                                        <td class="py-2 px-3 text-dark-400">{{ order.order_type or 'MARKET' }}</td>
+                                        <td class="py-2 px-3 text-dark-300 font-mono">{{ order.order_time.strftime('%b %d, %Y') if order.order_time else '-' }}</td>
+                                        <td class="py-2 px-3 text-dark-400 font-mono">{{ order.order_time.strftime('%H:%M:%S') if order.order_time else '-' }}</td>
+                                        <td class="py-2 px-3 text-right text-dark-300 font-mono">{{ "%.0f"|format(order.quantity) }}</td>
+                                        <td class="py-2 px-3 text-right text-white font-mono">${{ "%.2f"|format(order.price) }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                            {% else %}
+                            <div class="text-dark-500 text-sm py-2">No individual orders recorded for this trade.</div>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
         {% else %}
-        <div class="text-center py-12 text-gray-500">
-            <div class="text-4xl mb-4">📭</div>
-            <p class="text-xl mb-4">No trades yet</p>
-            <div class="space-x-4">
-                <a href="/add-trade" class="btn btn-primary">Add Trade</a>
-                <a href="/import" class="btn btn-secondary">Import CSV</a>
+        <div class="text-center py-16">
+            <div class="text-6xl mb-4">📭</div>
+            <h3 class="text-xl font-semibold text-white mb-2">No trades yet</h3>
+            <p class="text-dark-400 mb-6">Start tracking your trades to get AI-powered coaching</p>
+            <div class="flex justify-center gap-4">
+                <a href="/add-trade" class="btn btn-primary">➕ Add Trade</a>
+                <a href="/import" class="btn btn-secondary">📥 Import CSV</a>
             </div>
         </div>
         {% endif %}
     </div>
 </div>
 
-<!-- Toast -->
-<div id="toast" class="fixed bottom-4 right-4 bg-gray-900 text-white px-6 py-3 rounded-lg shadow-lg hidden">
-    <span id="toast-message"></span>
-</div>
-
 <!-- Edit Trade Modal -->
-<div id="edit-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center">
-    <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md mx-4">
-        <div class="flex justify-between items-center mb-2">
-            <h3 class="text-xl font-bold">Edit Trade #<span id="edit-trade-id"></span></h3>
-            <button onclick="closeEditModal()" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+<div id="edit-modal" class="fixed inset-0 bg-dark-950/80 backdrop-blur-sm hidden z-50 flex items-center justify-center p-4">
+    <div class="card w-full max-w-lg animate-fadeIn">
+        <div class="flex justify-between items-center mb-4">
+            <div>
+                <h3 class="text-xl font-bold text-white">Edit Trade #<span id="edit-trade-id"></span></h3>
+                <p id="edit-date-display" class="text-sm text-dark-400"></p>
+            </div>
+            <button onclick="closeEditModal()" class="btn btn-ghost text-2xl p-2">&times;</button>
         </div>
-        <p id="edit-date-display" class="text-sm text-gray-500 mb-4"></p>
         
         <form id="edit-form" class="space-y-4">
             <input type="hidden" id="edit-id">
             
-            <div class="grid grid-cols-2 gap-3">
+            <div class="grid grid-cols-2 gap-4">
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Entry Time</label>
-                    <input type="datetime-local" id="edit-entry-time" step="1"
-                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm">
+                    <label class="label">Entry Time</label>
+                    <input type="datetime-local" id="edit-entry-time" step="1" class="input text-sm">
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Exit Time</label>
-                    <input type="datetime-local" id="edit-exit-time" step="1"
-                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm">
+                    <label class="label">Exit Time</label>
+                    <input type="datetime-local" id="edit-exit-time" step="1" class="input text-sm">
                 </div>
             </div>
 
             <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Shares</label>
-                <input type="number" id="edit-shares" step="1" min="1" 
-                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                <label class="label">Shares</label>
+                <input type="number" id="edit-shares" step="1" min="1" class="input">
             </div>
             
-            <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Entry Price</label>
-                <input type="number" id="edit-entry" step="0.0001" min="0" 
-                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
-            </div>
-            
-            <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Exit Price</label>
-                <input type="number" id="edit-exit" step="0.0001" min="0" 
-                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
-            </div>
-            
-            <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Stop Price</label>
-                <input type="number" id="edit-stop" step="0.0001" min="0" 
-                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
-            </div>
-            
-            <div class="grid grid-cols-2 gap-3">
+            <div class="grid grid-cols-3 gap-4">
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Currency</label>
-                    <select id="edit-currency" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                    <label class="label">Entry Price</label>
+                    <input type="number" id="edit-entry" step="0.0001" min="0" class="input">
+                </div>
+                <div>
+                    <label class="label">Exit Price</label>
+                    <input type="number" id="edit-exit" step="0.0001" min="0" class="input">
+                </div>
+                <div>
+                    <label class="label">Stop Price</label>
+                    <input type="number" id="edit-stop" step="0.0001" min="0" class="input">
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="label">Currency</label>
+                    <select id="edit-currency" class="select">
                         <option value="USD">USD ($)</option>
                         <option value="HKD">HKD (HK$)</option>
                         <option value="EUR">EUR (€)</option>
@@ -195,22 +252,17 @@
                     </select>
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Rate to USD</label>
+                    <label class="label">Rate to USD</label>
                     <div class="flex space-x-2">
-                        <input type="number" id="edit-rate" step="0.0001" min="0" placeholder="e.g. 7.78 for HKD"
-                            class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
-                        <button type="button" onclick="fetchHistoricalRate(document.getElementById('edit-currency').value)" 
-                            class="px-3 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200" title="Fetch historical rate">
-                            🔄
-                        </button>
+                        <input type="number" id="edit-rate" step="0.0001" min="0" class="input flex-1">
+                        <button type="button" onclick="fetchHistoricalRate()" class="btn btn-secondary">🔄</button>
                     </div>
-                    <p class="text-xs text-gray-500 mt-1">1 USD = X currency (auto-fetches for trade date)</p>
                 </div>
             </div>
             
-            <div class="flex space-x-3 pt-4">
-                <button type="button" onclick="closeEditModal()" class="btn btn-secondary flex-1">Cancel</button>
-                <button type="submit" class="btn btn-primary flex-1">Save Changes</button>
+            <div class="flex justify-end gap-3 pt-4 border-t border-dark-700">
+                <button type="button" onclick="closeEditModal()" class="btn btn-secondary">Cancel</button>
+                <button type="submit" class="btn btn-primary">💾 Save Changes</button>
             </div>
         </form>
     </div>
@@ -219,177 +271,160 @@
 
 {% block scripts %}
 <script>
-function showToast(message) {
-    const toast = document.getElementById('toast');
-    document.getElementById('toast-message').textContent = message;
-    toast.classList.remove('hidden');
-    setTimeout(() => toast.classList.add('hidden'), 3000);
-}
-
-async function deleteTrade(id) {
-    if (!confirm('Delete this trade?')) return;
-    
-    const response = await fetch(`/api/trades/${id}`, { method: 'DELETE' });
-    if (response.ok) {
-        window.location.reload();
-    } else {
-        showToast('Failed to delete trade');
-    }
-}
-
-async function reclassifyTrades() {
-    showToast('Reclassifying trades with LLM...');
-    const response = await fetch('/api/reclassify', { method: 'POST' });
-    const data = await response.json();
-    showToast(`Reclassified ${data.reclassified} trades`);
-    setTimeout(() => window.location.reload(), 1500);
-}
-
-async function recalculateMetrics() {
-    showToast('Recalculating R-multiple, P&L for all trades...');
-    const response = await fetch('/api/recalculate-metrics', { method: 'POST' });
-    const data = await response.json();
-    showToast(data.message);
-    setTimeout(() => window.location.reload(), 1500);
-}
-
-async function deleteAllTrades() {
-    if (!confirm('⚠️ Delete ALL trades? This cannot be undone!\n\nClick OK to delete all trades.')) return;
-    if (!confirm('Are you REALLY sure? All trade history will be lost!')) return;
-    
-    const response = await fetch('/api/trades', { method: 'DELETE' });
-    const data = await response.json();
-    showToast(data.message);
-    setTimeout(() => window.location.reload(), 1500);
-}
-
-// Store trade date for rate fetching
+let currentTradeId = null;
 let currentTradeDate = null;
 
-// Edit Modal Functions
+// Toggle drawer to show/hide child orders
+function toggleDrawer(tradeId) {
+    const drawer = document.getElementById(`drawer-${tradeId}`);
+    const toggle = document.getElementById(`toggle-${tradeId}`);
+    
+    if (drawer.classList.contains('hidden')) {
+        drawer.classList.remove('hidden');
+        toggle.style.transform = 'rotate(90deg)';
+    } else {
+        drawer.classList.add('hidden');
+        toggle.style.transform = 'rotate(0deg)';
+    }
+}
+
 function openEditModal(id, shares, entry, exit, stop, currency, rate, entryTime, exitTime) {
-    document.getElementById('edit-id').value = id;
-    document.getElementById('edit-trade-id').textContent = id;
-    document.getElementById('edit-shares').value = shares || '';
-    document.getElementById('edit-entry').value = entry || '';
-    document.getElementById('edit-exit').value = exit || '';
-    document.getElementById('edit-stop').value = stop || '';
-    document.getElementById('edit-currency').value = currency || 'USD';
-    document.getElementById('edit-rate').value = rate && rate !== 1 ? rate : '';
-    
-    // Set datetime fields
-    document.getElementById('edit-entry-time').value = entryTime || '';
-    document.getElementById('edit-exit-time').value = exitTime || '';
-    
+    currentTradeId = id;
     currentTradeDate = exitTime || entryTime;
+    
+    document.getElementById('edit-trade-id').textContent = id;
+    document.getElementById('edit-id').value = id;
+    document.getElementById('edit-shares').value = shares;
+    document.getElementById('edit-entry').value = entry;
+    document.getElementById('edit-exit').value = exit;
+    document.getElementById('edit-stop').value = stop;
+    document.getElementById('edit-currency').value = currency || 'USD';
+    document.getElementById('edit-rate').value = rate;
+    
+    if (entryTime) document.getElementById('edit-entry-time').value = entryTime;
+    if (exitTime) document.getElementById('edit-exit-time').value = exitTime;
+    
+    document.getElementById('edit-date-display').textContent = 
+        currentTradeDate ? `Trade date: ${currentTradeDate.split('T')[0]}` : '';
+    
     document.getElementById('edit-modal').classList.remove('hidden');
-    
-    // Show trade date in the modal
-    if (exitTime) {
-        const dateDisplay = document.getElementById('edit-date-display');
-        if (dateDisplay) {
-            dateDisplay.textContent = `Exit: ${exitTime.replace('T', ' ')}`;
-        }
-    }
 }
-
-// Fetch historical exchange rate from API
-async function fetchHistoricalRate(currency) {
-    if (currency === 'USD') {
-        document.getElementById('edit-rate').value = '';
-        return;
-    }
-    
-    const rateInput = document.getElementById('edit-rate');
-    rateInput.placeholder = 'Fetching...';
-    
-    try {
-        let url = `/api/exchange-rate?currency=${currency}`;
-        if (currentTradeDate) {
-            // Extract date part if it's a datetime
-            const dateOnly = currentTradeDate.split('T')[0].split(' ')[0];
-            url += `&date=${dateOnly}`;
-        }
-        
-        const response = await fetch(url);
-        const data = await response.json();
-        
-        if (data.rate) {
-            rateInput.value = data.rate.toFixed(4);
-            const source = data.source === 'frankfurter' ? '(historical)' : '(fallback)';
-            showToast(`Rate for ${data.date}: 1 USD = ${data.rate.toFixed(4)} ${currency} ${source}`);
-        }
-    } catch (err) {
-        console.error('Failed to fetch rate:', err);
-        // Use fallback rates
-        const fallbackRates = {
-            'HKD': 7.78, 'EUR': 0.92, 'GBP': 0.79, 'JPY': 149.5,
-            'CNY': 7.24, 'CAD': 1.36, 'AUD': 1.53
-        };
-        if (fallbackRates[currency]) {
-            rateInput.value = fallbackRates[currency];
-        }
-    }
-    rateInput.placeholder = 'e.g. 7.78 for HKD';
-}
-
-// Fetch rate when currency changes
-document.getElementById('edit-currency').addEventListener('change', function() {
-    fetchHistoricalRate(this.value);
-});
 
 function closeEditModal() {
     document.getElementById('edit-modal').classList.add('hidden');
+    currentTradeId = null;
 }
 
-// Close modal on escape key
-document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeEditModal();
-});
+async function fetchHistoricalRate() {
+    const currency = document.getElementById('edit-currency').value;
+    if (currency === 'USD') {
+        document.getElementById('edit-rate').value = 1.0;
+        return;
+    }
+    
+    const date = currentTradeDate ? currentTradeDate.split('T')[0] : new Date().toISOString().split('T')[0];
+    
+    try {
+        const response = await fetch(`/api/exchange-rate?currency=${currency}&date=${date}`);
+        const data = await response.json();
+        
+        if (data.rate) {
+            document.getElementById('edit-rate').value = data.rate;
+            showToast(`Rate fetched: 1 USD = ${data.rate} ${currency}`);
+        } else {
+            showToast('Could not fetch rate', 'error');
+        }
+    } catch (err) {
+        showToast('Error fetching rate', 'error');
+    }
+}
 
-// Close modal on backdrop click
-document.getElementById('edit-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'edit-modal') closeEditModal();
-});
+document.getElementById('edit-currency').addEventListener('change', fetchHistoricalRate);
 
-// Handle form submission
 document.getElementById('edit-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     
     const id = document.getElementById('edit-id').value;
-    const currency = document.getElementById('edit-currency').value;
-    const entryTime = document.getElementById('edit-entry-time').value;
-    const exitTime = document.getElementById('edit-exit-time').value;
-    
     const data = {
-        size: parseFloat(document.getElementById('edit-shares').value) || null,
-        entry_price: parseFloat(document.getElementById('edit-entry').value) || null,
-        exit_price: parseFloat(document.getElementById('edit-exit').value) || null,
-        stop_price: parseFloat(document.getElementById('edit-stop').value) || null,
-        currency: currency,
-        currency_rate: currency === 'USD' ? 1.0 : (parseFloat(document.getElementById('edit-rate').value) || 1.0),
-        entry_time: entryTime || null,
-        exit_time: exitTime || null,
+        size: parseFloat(document.getElementById('edit-shares').value),
+        entry_price: parseFloat(document.getElementById('edit-entry').value),
+        exit_price: parseFloat(document.getElementById('edit-exit').value),
+        stop_price: parseFloat(document.getElementById('edit-stop').value),
+        currency: document.getElementById('edit-currency').value,
+        currency_rate: parseFloat(document.getElementById('edit-rate').value),
+        entry_time: document.getElementById('edit-entry-time').value || null,
+        exit_time: document.getElementById('edit-exit-time').value || null,
     };
     
     try {
         const response = await fetch(`/api/trades/${id}`, {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(data)
         });
         
         if (response.ok) {
-            showToast('Trade updated successfully');
+            showToast('Trade updated!');
             closeEditModal();
-            setTimeout(() => window.location.reload(), 500);
+            setTimeout(() => window.location.reload(), 1000);
         } else {
-            const err = await response.json();
-            showToast('Error: ' + (err.detail || 'Failed to update'));
+            showToast('Failed to update trade', 'error');
         }
     } catch (err) {
-        showToast('Error: ' + err.message);
+        showToast('Error: ' + err.message, 'error');
     }
 });
+
+async function deleteTrade(id) {
+    if (!confirm('Delete this trade?')) return;
+    
+    try {
+        const response = await fetch(`/api/trades/${id}`, { method: 'DELETE' });
+        if (response.ok) {
+            showToast('Trade deleted');
+            setTimeout(() => window.location.reload(), 500);
+        }
+    } catch (err) {
+        showToast('Error deleting trade', 'error');
+    }
+}
+
+async function recalculateMetrics() {
+    showStartToast('Recalculating metrics');
+    try {
+        const response = await fetch('/api/recalculate-metrics', { method: 'POST' });
+        const data = await response.json();
+        showFinishToast('Metrics recalculated', `${data.count || 'all'} trades updated`);
+        setTimeout(() => window.location.reload(), 1500);
+    } catch (err) {
+        showToast('Recalculation failed', 'error');
+    }
+}
+
+async function reclassifyTrades() {
+    showStartToast('AI reclassification');
+    try {
+        const response = await fetch('/api/reclassify-trades', { method: 'POST' });
+        const data = await response.json();
+        showFinishToast('AI reclassification', `${data.count || 'all'} trades classified`);
+        setTimeout(() => window.location.reload(), 1500);
+    } catch (err) {
+        showToast('Reclassification failed', 'error');
+    }
+}
+
+async function deleteAllTrades() {
+    if (!confirm('⚠️ Delete ALL trades? This cannot be undone!')) return;
+    if (!confirm('Are you REALLY sure? This will delete your entire trade history!')) return;
+    
+    showStartToast('Deleting all trades');
+    try {
+        await fetch('/api/trades', { method: 'DELETE' });
+        showFinishToast('All trades deleted');
+        setTimeout(() => window.location.reload(), 1000);
+    } catch (err) {
+        showToast('Delete failed', 'error');
+    }
+}
 </script>
 {% endblock %}

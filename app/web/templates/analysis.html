@@ -1,0 +1,279 @@
+{% extends "base.html" %}
+
+{% block title %}Bulk Analysis - Brooks Trading Coach{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header -->
+    <div>
+        <h1 class="text-3xl font-bold bg-gradient-to-r from-white to-dark-300 bg-clip-text text-transparent">
+            📊 Bulk Trade Analysis
+        </h1>
+        <p class="text-dark-400 text-sm mt-1">Analyze multiple trades at once to find patterns and insights</p>
+    </div>
+
+    <!-- Analysis Options -->
+    <div class="card">
+        <h2 class="text-xl font-bold text-white mb-4">🎯 Select Trades to Analyze</h2>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Option 1: Latest X trades -->
+            <div class="p-4 bg-dark-900/50 rounded-xl border border-dark-700">
+                <h3 class="font-medium text-white mb-3">📈 Latest Trades</h3>
+                <div class="flex items-center gap-3">
+                    <label class="text-dark-300 text-sm">Analyze last</label>
+                    <select id="trade-count" class="select w-24">
+                        <option value="5">5</option>
+                        <option value="10" selected>10</option>
+                        <option value="20">20</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                    <label class="text-dark-300 text-sm">trades</label>
+                </div>
+                <button onclick="analyzeByCount()" class="btn btn-primary w-full mt-4">
+                    🧠 Analyze Trades
+                </button>
+            </div>
+
+            <!-- Option 2: Latest X days -->
+            <div class="p-4 bg-dark-900/50 rounded-xl border border-dark-700">
+                <h3 class="font-medium text-white mb-3">📅 By Time Period</h3>
+                <div class="flex items-center gap-3">
+                    <label class="text-dark-300 text-sm">Analyze last</label>
+                    <select id="day-count" class="select w-24">
+                        <option value="1">1</option>
+                        <option value="3">3</option>
+                        <option value="7" selected>7</option>
+                        <option value="14">14</option>
+                        <option value="30">30</option>
+                        <option value="90">90</option>
+                    </select>
+                    <label class="text-dark-300 text-sm">days</label>
+                </div>
+                <button onclick="analyzeByDays()" class="btn btn-primary w-full mt-4">
+                    🧠 Analyze Period
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Analysis Results -->
+    <div id="analysis-section" class="hidden">
+        <!-- Loading State -->
+        <div id="analysis-loading" class="card text-center py-12">
+            <div class="loading-spinner w-10 h-10 border-4 border-accent-500 border-t-transparent mx-auto mb-4"></div>
+            <p class="text-dark-300">Analyzing <span id="loading-count">0</span> trades with AI...</p>
+            <p class="text-sm text-dark-500 mt-1">This may take 30-60 seconds for comprehensive analysis</p>
+        </div>
+
+        <!-- Results -->
+        <div id="analysis-results" class="hidden space-y-6">
+            <!-- Summary Stats -->
+            <div class="card">
+                <h2 class="text-xl font-bold text-white mb-4">📈 Analysis Summary</h2>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="summary-stats">
+                    <!-- Filled by JS -->
+                </div>
+            </div>
+
+            <!-- AI Insights -->
+            <div class="card">
+                <h2 class="text-xl font-bold text-white mb-4">🧠 AI Insights</h2>
+                
+                <!-- Patterns -->
+                <div class="mb-6">
+                    <h3 class="font-medium text-accent-400 mb-2">🔍 Patterns Identified</h3>
+                    <div id="patterns-list" class="space-y-2">
+                        <!-- Filled by JS -->
+                    </div>
+                </div>
+
+                <!-- Strengths -->
+                <div class="mb-6">
+                    <h3 class="font-medium text-success-400 mb-2">✅ Strengths</h3>
+                    <div id="strengths-list" class="bg-success-500/10 border border-success-500/30 rounded-xl p-4">
+                        <!-- Filled by JS -->
+                    </div>
+                </div>
+
+                <!-- Weaknesses -->
+                <div class="mb-6">
+                    <h3 class="font-medium text-danger-400 mb-2">⚠️ Areas to Improve</h3>
+                    <div id="weaknesses-list" class="bg-danger-500/10 border border-danger-500/30 rounded-xl p-4">
+                        <!-- Filled by JS -->
+                    </div>
+                </div>
+
+                <!-- Recommendations -->
+                <div class="mb-6">
+                    <h3 class="font-medium text-amber-400 mb-2">💡 Recommendations</h3>
+                    <div id="recommendations-list" class="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
+                        <!-- Filled by JS -->
+                    </div>
+                </div>
+
+                <!-- Strategy Analysis -->
+                <div>
+                    <h3 class="font-medium text-purple-400 mb-2">📊 Strategy Breakdown</h3>
+                    <div id="strategy-breakdown" class="bg-purple-500/10 border border-purple-500/30 rounded-xl p-4">
+                        <!-- Filled by JS -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Full Analysis Text -->
+            <div class="card">
+                <h2 class="text-xl font-bold text-white mb-4">📝 Full Analysis</h2>
+                <div id="full-analysis" class="prose prose-invert max-w-none text-dark-200 whitespace-pre-wrap">
+                    <!-- Filled by JS -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Error State -->
+        <div id="analysis-error" class="hidden card text-center py-12">
+            <div class="text-4xl mb-3">⚠️</div>
+            <p class="text-dark-300 mb-2" id="error-message">Analysis failed</p>
+            <button onclick="hideAnalysis()" class="btn btn-secondary mt-4">Try Again</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function analyzeByCount() {
+    const count = document.getElementById('trade-count').value;
+    runAnalysis('count', count);
+}
+
+function analyzeByDays() {
+    const days = document.getElementById('day-count').value;
+    runAnalysis('days', days);
+}
+
+async function runAnalysis(type, value) {
+    // Show loading
+    document.getElementById('analysis-section').classList.remove('hidden');
+    document.getElementById('analysis-loading').classList.remove('hidden');
+    document.getElementById('analysis-results').classList.add('hidden');
+    document.getElementById('analysis-error').classList.add('hidden');
+    
+    showStartToast('Bulk analysis');
+    
+    try {
+        const response = await fetch('/api/bulk-analysis', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ type, value: parseInt(value) })
+        });
+        
+        const data = await response.json();
+        
+        document.getElementById('analysis-loading').classList.add('hidden');
+        
+        if (data.error) {
+            document.getElementById('analysis-error').classList.remove('hidden');
+            document.getElementById('error-message').textContent = data.error;
+            showToast('Analysis failed', 'error');
+        } else {
+            displayResults(data);
+            showFinishToast('Bulk analysis', `${data.trade_count} trades analyzed`);
+        }
+    } catch (err) {
+        document.getElementById('analysis-loading').classList.add('hidden');
+        document.getElementById('analysis-error').classList.remove('hidden');
+        document.getElementById('error-message').textContent = err.message;
+        showToast('Analysis failed', 'error');
+    }
+}
+
+function displayResults(data) {
+    document.getElementById('analysis-results').classList.remove('hidden');
+    document.getElementById('loading-count').textContent = data.trade_count;
+    
+    // Summary stats
+    const statsHtml = `
+        <div class="stat-card">
+            <div class="stat-value">${data.trade_count}</div>
+            <div class="stat-label">Trades Analyzed</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value ${data.stats.win_rate >= 50 ? 'positive' : 'negative'}">${data.stats.win_rate.toFixed(1)}%</div>
+            <div class="stat-label">Win Rate</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value ${data.stats.total_r >= 0 ? 'positive' : 'negative'}">${data.stats.total_r >= 0 ? '+' : ''}${data.stats.total_r.toFixed(2)}R</div>
+            <div class="stat-label">Total R</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value ${data.stats.avg_r >= 0 ? 'positive' : 'negative'}">${data.stats.avg_r >= 0 ? '+' : ''}${data.stats.avg_r.toFixed(2)}R</div>
+            <div class="stat-label">Avg R/Trade</div>
+        </div>
+    `;
+    document.getElementById('summary-stats').innerHTML = statsHtml;
+    
+    // Patterns
+    if (data.analysis.patterns && data.analysis.patterns.length) {
+        document.getElementById('patterns-list').innerHTML = data.analysis.patterns
+            .map(p => `<div class="p-2 bg-accent-500/10 rounded-lg text-accent-300 text-sm">• ${p}</div>`)
+            .join('');
+    } else {
+        document.getElementById('patterns-list').innerHTML = '<p class="text-dark-500">No significant patterns identified</p>';
+    }
+    
+    // Strengths
+    if (data.analysis.strengths && data.analysis.strengths.length) {
+        document.getElementById('strengths-list').innerHTML = data.analysis.strengths
+            .map(s => `<div class="text-success-300 text-sm mb-1">• ${s}</div>`)
+            .join('');
+    } else {
+        document.getElementById('strengths-list').innerHTML = '<p class="text-dark-500">No specific strengths identified</p>';
+    }
+    
+    // Weaknesses
+    if (data.analysis.weaknesses && data.analysis.weaknesses.length) {
+        document.getElementById('weaknesses-list').innerHTML = data.analysis.weaknesses
+            .map(w => `<div class="text-danger-300 text-sm mb-1">• ${w}</div>`)
+            .join('');
+    } else {
+        document.getElementById('weaknesses-list').innerHTML = '<p class="text-dark-500">No specific weaknesses identified</p>';
+    }
+    
+    // Recommendations
+    if (data.analysis.recommendations && data.analysis.recommendations.length) {
+        document.getElementById('recommendations-list').innerHTML = data.analysis.recommendations
+            .map((r, i) => `<div class="text-amber-300 text-sm mb-2"><strong>${i+1}.</strong> ${r}</div>`)
+            .join('');
+    } else {
+        document.getElementById('recommendations-list').innerHTML = '<p class="text-dark-500">No recommendations at this time</p>';
+    }
+    
+    // Strategy breakdown
+    if (data.analysis.strategy_breakdown) {
+        let breakdownHtml = '';
+        for (const [strategy, stats] of Object.entries(data.analysis.strategy_breakdown)) {
+            breakdownHtml += `
+                <div class="flex justify-between items-center py-2 border-b border-purple-500/20 last:border-0">
+                    <span class="text-purple-300">${strategy}</span>
+                    <span class="font-mono text-sm">
+                        ${stats.count} trades, 
+                        <span class="${stats.win_rate >= 50 ? 'text-success-400' : 'text-danger-400'}">${stats.win_rate.toFixed(0)}% win</span>,
+                        <span class="${stats.total_r >= 0 ? 'text-success-400' : 'text-danger-400'}">${stats.total_r >= 0 ? '+' : ''}${stats.total_r.toFixed(2)}R</span>
+                    </span>
+                </div>
+            `;
+        }
+        document.getElementById('strategy-breakdown').innerHTML = breakdownHtml || '<p class="text-dark-500">No strategy data</p>';
+    }
+    
+    // Full analysis
+    document.getElementById('full-analysis').textContent = data.analysis.full_analysis || 'No detailed analysis available.';
+}
+
+function hideAnalysis() {
+    document.getElementById('analysis-section').classList.add('hidden');
+}
+</script>
+{% endblock %}

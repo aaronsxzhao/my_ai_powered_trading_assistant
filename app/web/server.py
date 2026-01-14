@@ -21,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.config import (
-    settings, IMPORTS_DIR, OUTPUTS_DIR, PROJECT_ROOT,
+    settings, IMPORTS_DIR, OUTPUTS_DIR, PROJECT_ROOT, MATERIALS_DIR,
     load_tickers_from_file, save_tickers_to_file, get_llm_api_key,
     get_polygon_api_key
 )
@@ -62,7 +62,7 @@ async def dashboard(request: Request):
     try:
         recent_trades = (
             session.query(Trade)
-            .order_by(Trade.trade_date.desc(), Trade.id.desc())
+            .order_by(Trade.exit_time.desc(), Trade.id.desc())
             .limit(10)
             .all()
         )
@@ -115,7 +115,7 @@ async def trades_page(request: Request):
     try:
         trades = (
             session.query(Trade)
-            .order_by(Trade.trade_date.desc(), Trade.id.desc())
+            .order_by(Trade.exit_time.desc(), Trade.id.desc())
             .limit(100)
             .all()
         )
@@ -135,26 +135,82 @@ async def trades_page(request: Request):
 
 @app.get("/trades/{trade_id}", response_class=HTMLResponse)
 async def trade_detail(request: Request, trade_id: int):
-    """Trade detail and review page."""
+    """Trade detail page - loads instantly, review fetched via AJAX."""
+    session = get_session()
+    try:
+        trade = session.query(Trade).filter(Trade.id == trade_id).first()
+        if not trade:
+            raise HTTPException(status_code=404, detail="Trade not found")
+
+        # Don't block on LLM - page loads instantly, review fetched async
+        return templates.TemplateResponse("trade_detail.html", {
+            "request": request,
+            "trade": trade,
+            "review": None,  # Will be loaded via AJAX
+            "data_provider": settings.data_provider,
+            "llm_available": get_llm_api_key() is not None,
+        })
+    finally:
+        session.close()
+
+
+@app.patch("/api/trades/{trade_id}/notes")
+async def update_trade_notes(trade_id: int, request: Request):
+    """Update trade notes and personal review."""
+    data = await request.json()
+    
     session = get_session()
     try:
         trade = session.query(Trade).filter(Trade.id == trade_id).first()
         if not trade:
             raise HTTPException(status_code=404, detail="Trade not found")
         
-        # Get coaching review
+        # Update note fields
+        if 'notes' in data:
+            trade.notes = data['notes']
+        if 'entry_reason' in data:
+            trade.entry_reason = data['entry_reason']
+        if 'mistakes' in data:
+            trade.mistakes = data['mistakes']
+        if 'lessons' in data:
+            trade.lessons = data['lessons']
+        
+        session.commit()
+        
+        return JSONResponse({"success": True, "message": "Notes saved"})
+    finally:
+        session.close()
+
+
+@app.get("/api/trades/{trade_id}/review")
+async def get_trade_review(trade_id: int):
+    """Get AI review for a trade (async endpoint)."""
+    try:
         coach = TradeCoach()
         review = coach.review_trade(trade_id)
         
-        return templates.TemplateResponse("trade_detail.html", {
-            "request": request,
-            "trade": trade,
-            "review": review,
-            "data_provider": settings.data_provider,
-            "llm_available": get_llm_api_key() is not None,
-        })
-    finally:
-        session.close()
+        if review:
+            return JSONResponse({
+                "success": True,
+                "review": {
+                    "grade": review.grade,
+                    "grade_explanation": review.grade_explanation,
+                    "regime": review.regime,
+                    "always_in": review.always_in,
+                    "context_description": review.context_description,
+                    "setup_classification": review.setup_classification,
+                    "setup_quality": review.setup_quality,
+                    "what_was_good": review.what_was_good if isinstance(review.what_was_good, list) else [review.what_was_good] if review.what_was_good else [],
+                    "what_was_flawed": review.what_was_flawed if isinstance(review.what_was_flawed, list) else [review.what_was_flawed] if review.what_was_flawed else [],
+                    "errors_detected": review.errors_detected if isinstance(review.errors_detected, list) else [review.errors_detected] if review.errors_detected else [],
+                    "rule_for_next_time": review.rule_for_next_time,
+                }
+            })
+        else:
+            return JSONResponse({"success": False, "error": "Review not available"})
+    except Exception as e:
+        logger.error(f"Error getting trade review: {e}")
+        return JSONResponse({"success": False, "error": str(e)})
 
 
 @app.get("/add-trade", response_class=HTMLResponse)
@@ -311,8 +367,12 @@ async def upload_csv(file: UploadFile = File(...)):
 async def import_csv(
     file: UploadFile = File(...),
     format: str = Form("generic"),
+    balance_file: Optional[UploadFile] = File(None),
 ):
-    """Upload and import a CSV file with specified format."""
+    """Upload and import a CSV file with specified format.
+    
+    For TradingView order history, optionally include balance_file for cross-validation.
+    """
     if not file.filename.endswith('.csv'):
         return JSONResponse({"error": "Only CSV files allowed", "imported": 0, "errors": 1})
     
@@ -321,26 +381,50 @@ async def import_csv(
     import os
     
     try:
+        # Save main file
         with tempfile.NamedTemporaryFile(mode='wb', suffix='.csv', delete=False) as tmp:
             content = await file.read()
             tmp.write(content)
             tmp_path = tmp.name
         
+        # Save balance file if provided
+        balance_path = None
+        if balance_file and balance_file.filename:
+            with tempfile.NamedTemporaryFile(mode='wb', suffix='.csv', delete=False) as bal_tmp:
+                bal_content = await balance_file.read()
+                bal_tmp.write(bal_content)
+                balance_path = bal_tmp.name
+        
         # Import with specified format
         ingester = TradeIngester()
-        imported, errors, messages = ingester.import_csv(tmp_path, format=format)
         
-        # Clean up temp file
+        # Pass balance file for cross-validation if TV order history
+        if format == 'tv_order_history' and balance_path:
+            from pathlib import Path
+            imported, errors, messages = ingester._import_tv_order_history(
+                Path(tmp_path), 
+                skip_errors=True,
+                balance_file_path=Path(balance_path)
+            )
+        else:
+            imported, errors, messages = ingester.import_csv(tmp_path, format=format)
+        
+        # Clean up temp files
         os.unlink(tmp_path)
+        if balance_path:
+            os.unlink(balance_path)
         
         return JSONResponse({
             "imported": imported,
             "errors": errors,
             "messages": messages[:10],
             "format": format,
+            "cross_validated": balance_path is not None,
         })
         
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return JSONResponse({
             "error": str(e),
             "imported": 0,
@@ -448,11 +532,120 @@ async def recalculate_all_metrics():
             trade.compute_metrics()
             updated += 1
         session.commit()
-    
+
     return JSONResponse({
         "updated": updated,
         "message": f"Recalculated metrics for {updated} trades"
     })
+
+
+@app.post("/api/reclassify-trades")
+async def reclassify_all_trades():
+    """Reclassify all trades using LLM with 20 concurrent workers."""
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+    from app.llm.analyzer import LLMAnalyzer
+    from app.journal.models import Strategy
+    
+    analyzer = LLMAnalyzer()
+    
+    if not analyzer.is_available:
+        return JSONResponse({
+            "error": "LLM not available. Check your API key in settings.",
+            "classified": 0
+        })
+    
+    session = get_session()
+    try:
+        trades = session.query(Trade).all()
+        trade_data = []
+        
+        # Prepare trade data for concurrent processing
+        for trade in trades:
+            trade_data.append({
+                "id": trade.id,
+                "ticker": trade.ticker,
+                "direction": trade.direction.value,
+                "entry_price": trade.entry_price,
+                "exit_price": trade.exit_price or trade.entry_price,
+                "stop_price": trade.stop_price or trade.entry_price * 0.98,
+                "entry_reason": trade.entry_reason,
+                "notes": trade.notes,
+            })
+        
+        # Function to classify a single trade
+        def classify_single(data):
+            try:
+                result = analyzer.classify_trade_setup(
+                    ticker=data["ticker"],
+                    direction=data["direction"],
+                    entry_price=data["entry_price"],
+                    exit_price=data["exit_price"],
+                    stop_price=data["stop_price"],
+                    entry_reason=data["entry_reason"],
+                    notes=data["notes"],
+                )
+                return {"id": data["id"], "result": result, "error": None}
+            except Exception as e:
+                return {"id": data["id"], "result": None, "error": str(e)}
+        
+        # Run with 20 concurrent workers
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor(max_workers=20) as executor:
+            results = await loop.run_in_executor(
+                None,
+                lambda: list(executor.map(classify_single, trade_data))
+            )
+        
+        # Process results and update database
+        classified = 0
+        errors = 0
+        
+        for res in results:
+            trade_id = res["id"]
+            result = res["result"]
+            
+            if res["error"] or not result or "error" in result:
+                errors += 1
+                continue
+            
+            try:
+                trade = session.query(Trade).get(trade_id)
+                if not trade:
+                    continue
+                
+                strategy_name = result.get("strategy_name", "unclassified")
+                
+                # Find or create strategy
+                strategy = session.query(Strategy).filter(
+                    Strategy.name == strategy_name
+                ).first()
+                
+                if not strategy:
+                    strategy = Strategy(
+                        name=strategy_name,
+                        category=result.get("strategy_category", "unknown"),
+                        description=result.get("reasoning", ""),
+                    )
+                    session.add(strategy)
+                    session.flush()
+                
+                trade.strategy_id = strategy.id
+                classified += 1
+            except Exception as e:
+                logger.error(f"Error updating trade {trade_id}: {e}")
+                errors += 1
+        
+        session.commit()
+        
+        return JSONResponse({
+            "count": classified,
+            "classified": classified,
+            "errors": errors,
+            "message": f"Classified {classified} trades, {errors} errors"
+        })
+    finally:
+        session.close()
 
 
 @app.delete("/api/trades/{trade_id}")
@@ -521,6 +714,71 @@ async def update_trade(trade_id: int, request: Request):
             "r_multiple": trade.r_multiple,
             "pnl_dollars": trade.pnl_dollars,
         })
+
+
+@app.get("/settings")
+async def settings_page(request: Request):
+    """Settings page for prompts and candle counts."""
+    from app.config_prompts import load_settings, SETTINGS_FILE
+    
+    current_settings = load_settings()
+    
+    return templates.TemplateResponse("settings.html", {
+        "request": request,
+        "candles": current_settings.get('candles', {}),
+        "prompts": current_settings.get('prompts', {}),
+        "settings_file": str(SETTINGS_FILE),
+        "data_provider": settings.data_provider,
+        "llm_available": get_llm_api_key() is not None,
+    })
+
+
+@app.post("/api/settings/candles")
+async def update_candle_settings(request: Request):
+    """Update candle count settings."""
+    from app.config_prompts import update_candles
+    
+    data = await request.json()
+    success = update_candles(
+        daily=data.get('daily'),
+        hourly=data.get('hourly'),
+        five_min=data.get('5min')
+    )
+    
+    if success:
+        return JSONResponse({"message": "Candle settings saved"})
+    raise HTTPException(status_code=500, detail="Failed to save settings")
+
+
+@app.post("/api/settings/prompts")
+async def update_prompt_settings(request: Request):
+    """Update a specific prompt."""
+    from app.config_prompts import update_prompt
+    
+    data = await request.json()
+    prompt_type = data.get('prompt_type')
+    prompt_text = data.get('prompt_text')
+    
+    if not prompt_type or not prompt_text:
+        raise HTTPException(status_code=400, detail="Missing prompt_type or prompt_text")
+    
+    success = update_prompt(prompt_type, prompt_text)
+    
+    if success:
+        return JSONResponse({"message": f"Prompt '{prompt_type}' saved"})
+    raise HTTPException(status_code=500, detail="Failed to save prompt")
+
+
+@app.post("/api/settings/reset")
+async def reset_settings():
+    """Reset all settings to defaults."""
+    from app.config_prompts import save_settings, DEFAULT_SETTINGS
+    
+    success = save_settings(DEFAULT_SETTINGS.copy())
+    
+    if success:
+        return JSONResponse({"message": "Settings reset to defaults"})
+    raise HTTPException(status_code=500, detail="Failed to reset settings")
 
 
 @app.get("/api/status")
@@ -679,6 +937,291 @@ async def robinhood_disconnect():
     ingester = TradeIngester()
     ingester.robinhood_clear_session()
     return JSONResponse({"message": "Disconnected"})
+
+
+# ==================== MATERIALS ====================
+
+@app.get("/materials", response_class=HTMLResponse)
+async def materials_page(request: Request):
+    """Training materials management page."""
+    materials = []
+    
+    if MATERIALS_DIR.exists():
+        for f in sorted(MATERIALS_DIR.iterdir()):
+            if f.is_file() and not f.name.startswith('.'):
+                materials.append({
+                    "name": f.name,
+                    "path": str(f),
+                    "size_kb": round(f.stat().st_size / 1024, 1),
+                })
+    
+    return templates.TemplateResponse("materials.html", {
+        "request": request,
+        "materials": materials,
+        "llm_available": get_llm_api_key() is not None,
+        "data_provider": settings.data_provider,
+    })
+
+
+@app.post("/api/materials")
+async def upload_materials(files: list[UploadFile] = File(...)):
+    """Upload training materials (PDFs, text files)."""
+    uploaded = 0
+    errors = 0
+    
+    MATERIALS_DIR.mkdir(exist_ok=True)
+    
+    for file in files:
+        try:
+            # Validate file type
+            allowed_extensions = {'.pdf', '.txt', '.md', '.doc', '.docx'}
+            ext = Path(file.filename).suffix.lower()
+            
+            if ext not in allowed_extensions:
+                errors += 1
+                continue
+            
+            # Save file
+            file_path = MATERIALS_DIR / file.filename
+            
+            with open(file_path, 'wb') as f:
+                content = await file.read()
+                f.write(content)
+            
+            uploaded += 1
+            
+        except Exception as e:
+            logger.error(f"Error uploading {file.filename}: {e}")
+            errors += 1
+    
+    return JSONResponse({
+        "uploaded": uploaded,
+        "errors": errors,
+        "message": f"Uploaded {uploaded} files"
+    })
+
+
+@app.delete("/api/materials/{filename:path}")
+async def delete_material(filename: str):
+    """Delete a training material file."""
+    import urllib.parse
+    filename = urllib.parse.unquote(filename)
+    file_path = MATERIALS_DIR / filename
+    
+    if file_path.exists() and file_path.is_file():
+        file_path.unlink()
+        return JSONResponse({"message": f"Deleted {filename}"})
+    
+    raise HTTPException(status_code=404, detail="File not found")
+
+
+@app.delete("/api/materials")
+async def delete_all_materials():
+    """Delete all training materials."""
+    deleted = 0
+    
+    if MATERIALS_DIR.exists():
+        for f in MATERIALS_DIR.iterdir():
+            if f.is_file() and not f.name.startswith('.'):
+                f.unlink()
+                deleted += 1
+    
+    return JSONResponse({"deleted": deleted, "message": f"Deleted {deleted} files"})
+
+
+# ==================== BULK ANALYSIS ====================
+
+@app.get("/analysis", response_class=HTMLResponse)
+async def analysis_page(request: Request):
+    """Bulk trade analysis page."""
+    return templates.TemplateResponse("analysis.html", {
+        "request": request,
+        "llm_available": get_llm_api_key() is not None,
+        "data_provider": settings.data_provider,
+    })
+
+
+@app.post("/api/bulk-analysis")
+async def bulk_analysis(request: Request):
+    """Analyze multiple trades using LLM."""
+    from datetime import timedelta
+    from app.llm.analyzer import LLMAnalyzer
+    from app.config_prompts import get_prompt
+    
+    analyzer = LLMAnalyzer()
+    
+    if not analyzer.is_available:
+        return JSONResponse({
+            "error": "LLM not available. Check your API key in settings.",
+            "trade_count": 0
+        })
+    
+    data = await request.json()
+    analysis_type = data.get('type', 'count')  # 'count' or 'days'
+    value = data.get('value', 10)
+    
+    session = get_session()
+    try:
+        # Get trades based on selection
+        if analysis_type == 'days':
+            cutoff_date = date.today() - timedelta(days=value)
+            trades = (
+                session.query(Trade)
+                .filter(Trade.trade_date >= cutoff_date)
+                .order_by(Trade.exit_time.desc())
+                .all()
+            )
+        else:  # count
+            trades = (
+                session.query(Trade)
+                .order_by(Trade.exit_time.desc())
+                .limit(value)
+                .all()
+            )
+        
+        if not trades:
+            return JSONResponse({
+                "error": "No trades found for the selected criteria.",
+                "trade_count": 0
+            })
+        
+        # Calculate stats
+        wins = sum(1 for t in trades if t.outcome and t.outcome.value == 'win')
+        losses = sum(1 for t in trades if t.outcome and t.outcome.value == 'loss')
+        r_values = [t.r_multiple for t in trades if t.r_multiple]
+        total_r = sum(r_values) if r_values else 0
+        avg_r = total_r / len(r_values) if r_values else 0
+        win_rate = (wins / len(trades) * 100) if trades else 0
+        
+        # Strategy breakdown
+        strategy_stats = {}
+        for trade in trades:
+            strategy_name = trade.strategy.name if trade.strategy else 'Unclassified'
+            if strategy_name not in strategy_stats:
+                strategy_stats[strategy_name] = {'count': 0, 'wins': 0, 'r_values': []}
+            strategy_stats[strategy_name]['count'] += 1
+            if trade.outcome and trade.outcome.value == 'win':
+                strategy_stats[strategy_name]['wins'] += 1
+            if trade.r_multiple:
+                strategy_stats[strategy_name]['r_values'].append(trade.r_multiple)
+        
+        strategy_breakdown = {}
+        for name, stats in strategy_stats.items():
+            strategy_breakdown[name] = {
+                'count': stats['count'],
+                'win_rate': (stats['wins'] / stats['count'] * 100) if stats['count'] > 0 else 0,
+                'total_r': sum(stats['r_values']) if stats['r_values'] else 0
+            }
+        
+        # Build trade summary for LLM
+        trade_summaries = []
+        for t in trades[:50]:  # Limit to 50 trades for LLM context
+            summary = (
+                f"#{t.id}: {t.ticker} {t.direction.value.upper()} "
+                f"Entry=${t.entry_price:.2f} Exit=${t.exit_price:.2f if t.exit_price else 0:.2f} "
+                f"R={t.r_multiple:.2f if t.r_multiple else 0:.2f} "
+                f"Result={t.outcome.value.upper() if t.outcome else 'UNKNOWN'} "
+                f"Strategy={t.strategy.name if t.strategy else 'unclassified'} "
+                f"Duration={t.duration_display}"
+            )
+            if t.notes:
+                summary += f" Notes: {t.notes[:100]}"
+            trade_summaries.append(summary)
+        
+        # Build LLM prompt
+        system_prompt = """You are an expert Al Brooks price action trading coach analyzing a trader's recent performance.
+
+Analyze the provided trades and identify:
+1. PATTERNS: Recurring patterns in wins and losses
+2. STRENGTHS: What the trader is doing well
+3. WEAKNESSES: Areas that need improvement
+4. RECOMMENDATIONS: Specific, actionable advice
+5. STRATEGY ANALYSIS: Which strategies are working and which aren't
+
+Be specific, use Brooks terminology, and provide actionable insights.
+
+Respond in JSON format:
+{
+    "patterns": ["list of patterns identified"],
+    "strengths": ["list of strengths"],
+    "weaknesses": ["list of weaknesses"],
+    "recommendations": ["list of specific recommendations"],
+    "full_analysis": "A detailed 2-3 paragraph analysis of the trader's performance"
+}"""
+        
+        user_prompt = f"""Analyze these {len(trades)} recent trades:
+
+SUMMARY STATS:
+- Win Rate: {win_rate:.1f}%
+- Total R: {total_r:.2f}R
+- Average R per trade: {avg_r:.2f}R
+- Wins: {wins}, Losses: {losses}
+
+TRADES:
+{chr(10).join(trade_summaries)}
+
+STRATEGY BREAKDOWN:
+{chr(10).join(f"- {name}: {stats['count']} trades, {stats['win_rate']:.0f}% win rate, {stats['total_r']:.2f}R" for name, stats in strategy_breakdown.items())}
+
+Provide a comprehensive analysis of this trader's performance with specific patterns, strengths, weaknesses, and recommendations."""
+
+        # Call LLM
+        import json
+        result_text = analyzer._call_llm(system_prompt, user_prompt, max_tokens=3000)
+        
+        if not result_text:
+            return JSONResponse({
+                "error": "LLM analysis failed. Please try again.",
+                "trade_count": len(trades)
+            })
+        
+        # Parse LLM response
+        try:
+            # Try to extract JSON from response
+            json_start = result_text.find('{')
+            json_end = result_text.rfind('}') + 1
+            if json_start >= 0 and json_end > json_start:
+                analysis = json.loads(result_text[json_start:json_end])
+            else:
+                analysis = {
+                    "patterns": [],
+                    "strengths": [],
+                    "weaknesses": [],
+                    "recommendations": [],
+                    "full_analysis": result_text
+                }
+        except json.JSONDecodeError:
+            analysis = {
+                "patterns": [],
+                "strengths": [],
+                "weaknesses": [],
+                "recommendations": [],
+                "full_analysis": result_text
+            }
+        
+        # Add strategy breakdown to analysis
+        analysis['strategy_breakdown'] = strategy_breakdown
+        
+        return JSONResponse({
+            "trade_count": len(trades),
+            "stats": {
+                "win_rate": win_rate,
+                "total_r": total_r,
+                "avg_r": avg_r,
+                "wins": wins,
+                "losses": losses
+            },
+            "analysis": analysis
+        })
+        
+    except Exception as e:
+        logger.error(f"Bulk analysis error: {e}")
+        return JSONResponse({
+            "error": str(e),
+            "trade_count": 0
+        })
+    finally:
+        session.close()
 
 
 # ==================== RUN SERVER ====================

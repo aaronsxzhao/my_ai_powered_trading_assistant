@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - Brooks Trading Coach{% endblock %}
+
+{% block content %}
+<div class="space-y-8">
+    <div class="flex justify-between items-center">
+        <h1 class="text-3xl font-bold text-gray-900">⚙️ Settings</h1>
+        <button onclick="resetToDefaults()" class="btn btn-secondary">🔄 Reset to Defaults</button>
+    </div>
+
+    <!-- Candle Settings -->
+    <div class="card">
+        <h2 class="text-xl font-bold mb-4">📊 Candle Settings</h2>
+        <p class="text-gray-600 mb-4">Configure how many candles to fetch for market analysis.</p>
+        
+        <form id="candle-form" class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Daily Candles</label>
+                <input type="number" id="candles-daily" min="1" max="365" value="{{ candles.daily }}"
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                <p class="text-xs text-gray-500 mt-1">Number of daily bars (default: 30)</p>
+            </div>
+            
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Hourly Candles</label>
+                <input type="number" id="candles-hourly" min="1" max="500" value="{{ candles.hourly }}"
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                <p class="text-xs text-gray-500 mt-1">Number of hourly bars (default: 48)</p>
+            </div>
+            
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">5-Minute Candles</label>
+                <input type="number" id="candles-5min" min="1" max="1000" value="{{ candles['5min'] }}"
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                <p class="text-xs text-gray-500 mt-1">Number of 5-min bars (default: 78 = 1 day)</p>
+            </div>
+            
+            <div class="md:col-span-3">
+                <button type="submit" class="btn btn-primary">💾 Save Candle Settings</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- LLM Prompts -->
+    <div class="card">
+        <h2 class="text-xl font-bold mb-4">🧠 LLM Prompts</h2>
+        <p class="text-gray-600 mb-4">Customize the prompts used for AI analysis. Use JSON response format specifications.</p>
+        
+        <!-- Prompt Tabs -->
+        <div class="border-b border-gray-200 mb-4">
+            <nav class="flex space-x-4">
+                <button onclick="showPromptTab('classification')" id="tab-classification" 
+                    class="prompt-tab px-4 py-2 text-sm font-medium border-b-2 border-blue-500 text-blue-600">
+                    Trade Classification
+                </button>
+                <button onclick="showPromptTab('analysis')" id="tab-analysis"
+                    class="prompt-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
+                    Trade Analysis
+                </button>
+                <button onclick="showPromptTab('market')" id="tab-market"
+                    class="prompt-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
+                    Market Context
+                </button>
+            </nav>
+        </div>
+        
+        <!-- Trade Classification Prompt -->
+        <div id="prompt-classification" class="prompt-panel">
+            <div class="mb-2 flex justify-between items-center">
+                <label class="text-sm font-medium text-gray-700">Trade Classification Prompt</label>
+                <span class="text-xs text-gray-500">Used when classifying trade setups</span>
+            </div>
+            <textarea id="prompt-trade_classification" rows="15" 
+                class="w-full px-4 py-3 border border-gray-300 rounded-lg font-mono text-sm focus:ring-2 focus:ring-blue-500">{{ prompts.trade_classification }}</textarea>
+            <button onclick="savePrompt('trade_classification')" class="btn btn-primary mt-3">💾 Save Classification Prompt</button>
+        </div>
+        
+        <!-- Trade Analysis Prompt -->
+        <div id="prompt-analysis" class="prompt-panel hidden">
+            <div class="mb-2 flex justify-between items-center">
+                <label class="text-sm font-medium text-gray-700">Trade Analysis Prompt</label>
+                <span class="text-xs text-gray-500">Used when reviewing completed trades</span>
+            </div>
+            <textarea id="prompt-trade_analysis" rows="15"
+                class="w-full px-4 py-3 border border-gray-300 rounded-lg font-mono text-sm focus:ring-2 focus:ring-blue-500">{{ prompts.trade_analysis }}</textarea>
+            <button onclick="savePrompt('trade_analysis')" class="btn btn-primary mt-3">💾 Save Analysis Prompt</button>
+        </div>
+        
+        <!-- Market Context Prompt -->
+        <div id="prompt-market" class="prompt-panel hidden">
+            <div class="mb-2 flex justify-between items-center">
+                <label class="text-sm font-medium text-gray-700">Market Context Prompt</label>
+                <span class="text-xs text-gray-500">Used for premarket analysis</span>
+            </div>
+            <textarea id="prompt-market_context" rows="15"
+                class="w-full px-4 py-3 border border-gray-300 rounded-lg font-mono text-sm focus:ring-2 focus:ring-blue-500">{{ prompts.market_context }}</textarea>
+            <button onclick="savePrompt('market_context')" class="btn btn-primary mt-3">💾 Save Market Prompt</button>
+        </div>
+    </div>
+
+    <!-- Current Settings File -->
+    <div class="card bg-gray-50">
+        <h3 class="font-medium text-gray-700 mb-2">📁 Settings File Location</h3>
+        <code class="text-sm text-gray-600">{{ settings_file }}</code>
+    </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="fixed bottom-4 right-4 bg-gray-900 text-white px-6 py-3 rounded-lg shadow-lg hidden">
+    <span id="toast-message"></span>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showToast(message) {
+    const toast = document.getElementById('toast');
+    document.getElementById('toast-message').textContent = message;
+    toast.classList.remove('hidden');
+    setTimeout(() => toast.classList.add('hidden'), 3000);
+}
+
+function showPromptTab(tab) {
+    // Hide all panels
+    document.querySelectorAll('.prompt-panel').forEach(p => p.classList.add('hidden'));
+    // Deactivate all tabs
+    document.querySelectorAll('.prompt-tab').forEach(t => {
+        t.classList.remove('border-blue-500', 'text-blue-600');
+        t.classList.add('border-transparent', 'text-gray-500');
+    });
+    
+    // Show selected panel
+    const panelMap = {
+        'classification': 'prompt-classification',
+        'analysis': 'prompt-analysis',
+        'market': 'prompt-market'
+    };
+    document.getElementById(panelMap[tab]).classList.remove('hidden');
+    
+    // Activate selected tab
+    const tabEl = document.getElementById('tab-' + tab);
+    tabEl.classList.add('border-blue-500', 'text-blue-600');
+    tabEl.classList.remove('border-transparent', 'text-gray-500');
+}
+
+// Save candle settings
+document.getElementById('candle-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const data = {
+        daily: parseInt(document.getElementById('candles-daily').value),
+        hourly: parseInt(document.getElementById('candles-hourly').value),
+        '5min': parseInt(document.getElementById('candles-5min').value)
+    };
+    
+    try {
+        const response = await fetch('/api/settings/candles', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        });
+        
+        if (response.ok) {
+            showToast('Candle settings saved!');
+        } else {
+            showToast('Failed to save settings');
+        }
+    } catch (err) {
+        showToast('Error: ' + err.message);
+    }
+});
+
+// Save prompt
+async function savePrompt(promptType) {
+    const textarea = document.getElementById('prompt-' + promptType);
+    const promptText = textarea.value;
+    
+    try {
+        const response = await fetch('/api/settings/prompts', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                prompt_type: promptType,
+                prompt_text: promptText
+            })
+        });
+        
+        if (response.ok) {
+            showToast(`${promptType} prompt saved!`);
+        } else {
+            showToast('Failed to save prompt');
+        }
+    } catch (err) {
+        showToast('Error: ' + err.message);
+    }
+}
+
+// Reset to defaults
+async function resetToDefaults() {
+    if (!confirm('Reset all settings to defaults? This cannot be undone.')) return;
+    
+    try {
+        const response = await fetch('/api/settings/reset', { method: 'POST' });
+        if (response.ok) {
+            showToast('Settings reset to defaults!');
+            setTimeout(() => window.location.reload(), 1000);
+        } else {
+            showToast('Failed to reset settings');
+        }
+    } catch (err) {
+        showToast('Error: ' + err.message);
+    }
+}
+</script>
+{% endblock %}

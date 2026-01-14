@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+
+{% block title %}Training Materials - Brooks Trading Coach{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+            <h1 class="text-3xl font-bold bg-gradient-to-r from-white to-dark-300 bg-clip-text text-transparent">
+                📚 Training Materials
+            </h1>
+            <p class="text-dark-400 text-sm mt-1">Upload PDFs and documents to train the AI with your preferred strategies</p>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Upload Section -->
+        <div class="card">
+            <h2 class="text-xl font-bold text-white mb-4">📤 Upload Materials</h2>
+            
+            <form id="upload-form" class="space-y-4">
+                <div class="border-2 border-dashed border-dark-600 rounded-xl p-8 text-center hover:border-accent-500 transition cursor-pointer bg-dark-900/50"
+                     onclick="document.getElementById('file-input').click()">
+                    <input type="file" id="file-input" accept=".pdf,.txt,.md,.doc,.docx" class="hidden" onchange="handleFileSelect(this)" multiple>
+                    <div class="text-4xl mb-2">📁</div>
+                    <div class="text-dark-300">Click to select files</div>
+                    <div class="text-sm text-dark-500">PDF, TXT, MD supported</div>
+                </div>
+                
+                <div id="selected-files" class="space-y-2 hidden"></div>
+                
+                <button type="submit" id="upload-btn" class="btn btn-primary w-full" disabled>
+                    📤 Upload Files
+                </button>
+            </form>
+            
+            <div class="mt-6 pt-6 border-t border-dark-700">
+                <h3 class="font-medium text-white mb-2">💡 What to Upload</h3>
+                <ul class="text-sm text-dark-400 space-y-2">
+                    <li>• <strong class="text-dark-300">Al Brooks books</strong> - Trading guides and methodology</li>
+                    <li>• <strong class="text-dark-300">Your trading rules</strong> - Personal strategy notes</li>
+                    <li>• <strong class="text-dark-300">Setup definitions</strong> - Descriptions of patterns you trade</li>
+                    <li>• <strong class="text-dark-300">Market analysis templates</strong> - How you analyze charts</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Materials List -->
+        <div class="card">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-white">📂 Uploaded Materials</h2>
+                <span class="badge bg-dark-700 text-dark-300 border-dark-600">{{ materials|length }} files</span>
+            </div>
+            
+            {% if materials %}
+            <div class="space-y-2 max-h-96 overflow-y-auto">
+                {% for mat in materials %}
+                <div class="flex items-center justify-between p-3 bg-dark-900/50 rounded-xl border border-dark-700 group">
+                    <div class="flex items-center gap-3">
+                        <span class="text-2xl">
+                            {% if mat.name.endswith('.pdf') %}📕{% elif mat.name.endswith('.md') %}📝{% else %}📄{% endif %}
+                        </span>
+                        <div>
+                            <div class="font-medium text-dark-200">{{ mat.name }}</div>
+                            <div class="text-xs text-dark-500">{{ mat.size_kb }} KB</div>
+                        </div>
+                    </div>
+                    <button onclick="deleteMaterial('{{ mat.name }}')" 
+                            class="btn btn-ghost p-2 text-danger-400 opacity-50 group-hover:opacity-100">
+                        🗑️
+                    </button>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="text-center py-12">
+                <div class="text-4xl mb-3">📭</div>
+                <p class="text-dark-400">No materials uploaded yet</p>
+                <p class="text-sm text-dark-500 mt-1">Upload PDFs or text files to enhance AI analysis</p>
+            </div>
+            {% endif %}
+            
+            {% if materials %}
+            <div class="mt-4 pt-4 border-t border-dark-700">
+                <button onclick="deleteAllMaterials()" class="btn btn-ghost text-danger-400 w-full">
+                    🗑️ Delete All Materials
+                </button>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- How It Works -->
+    <div class="card">
+        <h2 class="text-xl font-bold text-white mb-4">🧠 How Materials Enhance AI Analysis</h2>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="p-4 bg-dark-900/50 rounded-xl border border-dark-700">
+                <div class="text-2xl mb-2">📖</div>
+                <h3 class="font-medium text-white mb-1">Strategy Context</h3>
+                <p class="text-sm text-dark-400">AI reads your materials to understand your specific trading methodology</p>
+            </div>
+            <div class="p-4 bg-dark-900/50 rounded-xl border border-dark-700">
+                <div class="text-2xl mb-2">🎯</div>
+                <h3 class="font-medium text-white mb-1">Better Classifications</h3>
+                <p class="text-sm text-dark-400">Trade setups are classified using terminology from your uploaded materials</p>
+            </div>
+            <div class="p-4 bg-dark-900/50 rounded-xl border border-dark-700">
+                <div class="text-2xl mb-2">💬</div>
+                <h3 class="font-medium text-white mb-1">Personalized Coaching</h3>
+                <p class="text-sm text-dark-400">Reviews use insights from your strategy guides for relevant feedback</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const fileInput = document.getElementById('file-input');
+const selectedFiles = document.getElementById('selected-files');
+const uploadBtn = document.getElementById('upload-btn');
+const uploadForm = document.getElementById('upload-form');
+
+function handleFileSelect(input) {
+    if (input.files.length > 0) {
+        selectedFiles.classList.remove('hidden');
+        selectedFiles.innerHTML = '';
+        
+        for (const file of input.files) {
+            const div = document.createElement('div');
+            div.className = 'flex items-center justify-between p-2 bg-accent-500/10 rounded-lg border border-accent-500/30';
+            div.innerHTML = `
+                <span class="text-accent-300">${file.name}</span>
+                <span class="text-xs text-dark-500">${Math.round(file.size / 1024)} KB</span>
+            `;
+            selectedFiles.appendChild(div);
+        }
+        
+        uploadBtn.disabled = false;
+    }
+}
+
+uploadForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    if (!fileInput.files.length) return;
+    
+    showStartToast('Uploading materials');
+    
+    const formData = new FormData();
+    for (const file of fileInput.files) {
+        formData.append('files', file);
+    }
+    
+    try {
+        const response = await fetch('/api/materials', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            showToast('Error: ' + data.error, 'error');
+        } else {
+            showFinishToast('Upload', `${data.uploaded} files`);
+            setTimeout(() => window.location.reload(), 1000);
+        }
+    } catch (err) {
+        showToast('Upload failed: ' + err.message, 'error');
+    }
+});
+
+async function deleteMaterial(filename) {
+    if (!confirm(`Delete ${filename}?`)) return;
+    
+    showStartToast('Deleting');
+    
+    try {
+        const response = await fetch(`/api/materials/${encodeURIComponent(filename)}`, {
+            method: 'DELETE'
+        });
+        
+        if (response.ok) {
+            showFinishToast('Deleted', filename);
+            setTimeout(() => window.location.reload(), 800);
+        } else {
+            showToast('Delete failed', 'error');
+        }
+    } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+    }
+}
+
+async function deleteAllMaterials() {
+    if (!confirm('Delete ALL materials?')) return;
+    if (!confirm('Are you sure? This cannot be undone.')) return;
+    
+    showStartToast('Deleting all materials');
+    
+    try {
+        const response = await fetch('/api/materials', { method: 'DELETE' });
+        
+        if (response.ok) {
+            showFinishToast('All materials deleted');
+            setTimeout(() => window.location.reload(), 800);
+        } else {
+            showToast('Delete failed', 'error');
+        }
+    } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+    }
+}
+
+// Drag and drop
+const dropZone = document.querySelector('.border-dashed');
+
+dropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropZone.classList.add('border-accent-500', 'bg-accent-500/10');
+});
+
+dropZone.addEventListener('dragleave', () => {
+    dropZone.classList.remove('border-accent-500', 'bg-accent-500/10');
+});
+
+dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('border-accent-500', 'bg-accent-500/10');
+    
+    if (e.dataTransfer.files.length > 0) {
+        fileInput.files = e.dataTransfer.files;
+        handleFileSelect(fileInput);
+    }
+});
+</script>
+{% endblock %}

@@ -7,23 +7,41 @@ A decision-support, journaling, analytics, and premarket briefing system for dis
 ## 🚀 Quick Start
 
 ```bash
-# 1. Install dependencies
+# 1. Create virtual environment (recommended)
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# 2. Install dependencies
 pip install -r requirements.txt
 
-# 2. LLM is pre-configured with default API (no setup needed!)
-# Or optionally customize in .env:
-# LLM_API_KEY=your_key
-# LLM_BASE_URL=https://your-proxy.com/v1
-# LLM_MODEL=claude-sonnet-4.5
+# 3. Set up .env file
+cp env.example .env
+# Then edit .env with your settings:
+nano .env  # or use any text editor
 
-# 3. Start the web interface
+# 4. Start the web interface
 python -m app.main web
 
-# 4. Open http://localhost:8000 in your browser
+# 5. Open http://localhost:8000 in your browser
 
-# 5. To stop the application:
+# 6. To stop the application:
 #    Press Ctrl+C in the terminal, or run:
 pkill -f "python -m app.main web"
+```
+
+### Environment Variables (.env)
+
+Create a `.env` file in the project root:
+
+```bash
+# LLM Configuration (for AI-powered analysis)
+LLM_API_KEY=your_api_key_here
+LLM_BASE_URL=https://your-llm-proxy.com/v1
+LLM_MODEL=claude-sonnet-4.5
+
+# Data Provider (optional - defaults to yfinance)
+DATA_PROVIDER=polygon  # or yfinance
+POLYGON_API_KEY=your_polygon_key_here
 ```
 
 That's it! The web interface lets you:
