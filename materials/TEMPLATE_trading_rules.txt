@@ -1,0 +1,75 @@
+# MY TRADING RULES & METHODOLOGY
+# ================================
+# Delete this template and replace with your own rules.
+# Keep this file focused (~5-20KB is ideal for AI context).
+# The AI will use this to analyze your trades.
+
+## SETUPS I TRADE
+# List the specific setups you trade with your definitions
+
+### With-Trend Setups:
+- High/Low 1, 2, 3: Pullback entries after trend bars
+- Breakout Pullback (BP): First pullback after a breakout
+- Wedge Bull/Bear Flag: Three-push pullback in a trend
+
+### Countertrend Setups:
+- Major Trend Reversal (MTR): Need strong reversal bar + break of trendline + test
+- Wedge Reversal: Three-push climax pattern
+- Double Bottom/Top: At key support/resistance
+
+### Trading Range Setups:
+- Failed Breakout: Fade moves to range extremes
+- Second Entry at Range Boundary: Wait for failed breakout first
+
+
+## MY ENTRY RULES
+# When do I enter?
+
+1. Only enter when I have a clear stop location
+2. Need 2:1 minimum reward-to-risk for scalps
+3. With-trend trades: Stop below signal bar low
+4. Counter-trend: Need multiple confirming factors
+
+
+## MY EXIT RULES
+# When do I exit?
+
+1. First target at measured move or prior swing
+2. Trail stop below prior swing in trends
+3. Exit at first sign of reversal in trading ranges
+
+
+## POSITION SIZING
+# How much do I risk?
+
+- Risk 1% of account per trade
+- Reduce size in choppy markets
+- Never add to losers
+
+
+## MY COMMON MISTAKES
+# What do I need to watch for?
+
+1. Trading in the middle of ranges
+2. Fighting strong trends
+3. Not waiting for second entries
+4. Moving stops to breakeven too early
+
+
+## MARKET CONTEXT RULES
+# How do I read the market?
+
+- Always identify daily chart structure first
+- Know if we're in trend or trading range
+- Know the always-in direction
+- Check prior day's high, low, close
+
+
+## NOTES FROM AL BROOKS
+# Key concepts I want the AI to apply
+
+- "The trend is your friend until it ends"
+- Wait for second entries in trading ranges
+- First breakout usually fails in trading range
+- 80% of reversals fail - trade with the trend
+- Signal bars need follow-through

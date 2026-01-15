@@ -91,6 +91,30 @@
         </div>
     </div>
 
+    <!-- RAG Index Status Card -->
+    <div id="rag-status-card" class="card bg-dark-900/50 border-dark-700">
+        <div class="flex items-start justify-between gap-4">
+            <div class="flex items-start gap-4">
+                <div class="text-3xl" id="rag-status-icon">⏳</div>
+                <div>
+                    <h3 class="font-semibold text-white mb-1" id="rag-status-title">Checking RAG Status...</h3>
+                    <p class="text-sm text-dark-400" id="rag-status-text">
+                        Retrieval-Augmented Generation (RAG) allows the AI to search through your entire materials and find relevant sections for each trade.
+                    </p>
+                    <div id="rag-stats" class="mt-2 text-xs text-dark-500 hidden">
+                        <span id="rag-chunks">0 chunks</span> indexed from <span id="rag-files">0 files</span>
+                        <span id="rag-indexed-at" class="ml-2"></span>
+                    </div>
+                </div>
+            </div>
+            <div class="flex flex-col gap-2">
+                <button onclick="reindexMaterials()" id="reindex-btn" class="btn btn-secondary text-sm whitespace-nowrap">
+                    🔄 Re-index
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- How It Works -->
     <div class="card">
         <h2 class="text-xl font-bold text-white mb-4">🧠 How Materials Enhance AI Analysis</h2>
@@ -110,6 +134,20 @@
                 <h3 class="font-medium text-white mb-1">Personalized Coaching</h3>
                 <p class="text-sm text-dark-400">Reviews use insights from your strategy guides for relevant feedback</p>
             </div>
+        </div>
+        
+        <div class="mt-4 p-4 bg-accent-500/10 rounded-xl border border-accent-500/30">
+            <h4 class="font-medium text-accent-400 mb-2">🚀 Smart Retrieval (RAG)</h4>
+            <p class="text-sm text-dark-300 mb-3">
+                This system uses <strong>Retrieval-Augmented Generation</strong> - your materials are split into chunks and indexed. 
+                For each trade, the AI automatically finds and uses the <strong>most relevant sections</strong> rather than the whole document.
+            </p>
+            <ul class="text-sm text-dark-300 space-y-1">
+                <li>• <strong>Upload full books</strong> - RAG will find relevant pages per trade</li>
+                <li>• <strong>Add your own rules</strong> - Text files get priority in retrieval</li>
+                <li>• <strong>Automatic indexing</strong> - Materials are processed on upload</li>
+                <li>• <strong>Smart matching</strong> - Long/short, timeframe, setups match to relevant content</li>
+            </ul>
         </div>
     </div>
 </div>
@@ -234,5 +272,95 @@ dropZone.addEventListener('drop', (e) => {
         handleFileSelect(fileInput);
     }
 });
+
+// RAG Status
+async function checkRagStatus() {
+    try {
+        const response = await fetch('/api/materials/rag-status');
+        const data = await response.json();
+        
+        const card = document.getElementById('rag-status-card');
+        const icon = document.getElementById('rag-status-icon');
+        const title = document.getElementById('rag-status-title');
+        const text = document.getElementById('rag-status-text');
+        const stats = document.getElementById('rag-stats');
+        const reindexBtn = document.getElementById('reindex-btn');
+        
+        if (!data.available) {
+            // RAG not available
+            icon.textContent = '⚠️';
+            title.textContent = 'RAG Not Available';
+            text.textContent = data.error || 'Install dependencies: pip install chromadb sentence-transformers';
+            card.className = 'card bg-yellow-500/5 border-yellow-500/30';
+            reindexBtn.classList.add('hidden');
+        } else if (data.total_chunks > 0) {
+            // RAG indexed and ready
+            icon.textContent = '✅';
+            title.textContent = 'RAG Active - Smart Retrieval Enabled';
+            text.textContent = 'Your materials are indexed. The AI will find relevant sections for each trade automatically.';
+            card.className = 'card bg-green-500/5 border-green-500/30';
+            
+            stats.classList.remove('hidden');
+            document.getElementById('rag-chunks').textContent = `${data.total_chunks} chunks`;
+            document.getElementById('rag-files').textContent = `${data.files?.length || 0} files`;
+            
+            if (data.indexed_at) {
+                const date = new Date(data.indexed_at);
+                document.getElementById('rag-indexed-at').textContent = `• Last indexed: ${date.toLocaleString()}`;
+            }
+            
+            if (data.needs_reindex) {
+                reindexBtn.textContent = '🔄 Update Index';
+                reindexBtn.classList.remove('hidden');
+            }
+        } else if (data.needs_reindex) {
+            // Materials exist but not indexed
+            icon.textContent = '⏳';
+            title.textContent = 'Indexing Needed';
+            text.textContent = 'Materials detected but not indexed. Click "Index Now" to enable smart retrieval.';
+            card.className = 'card bg-yellow-500/5 border-yellow-500/30';
+            reindexBtn.textContent = '📚 Index Now';
+            reindexBtn.classList.remove('hidden');
+        } else {
+            // No materials
+            icon.textContent = '📭';
+            title.textContent = 'No Materials Indexed';
+            text.textContent = 'Upload materials above to enable smart retrieval.';
+            card.className = 'card bg-dark-900/50 border-dark-700';
+            reindexBtn.classList.add('hidden');
+        }
+    } catch (err) {
+        console.error('Failed to check RAG status:', err);
+    }
+}
+
+async function reindexMaterials() {
+    const btn = document.getElementById('reindex-btn');
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Indexing...';
+    
+    showStartToast('Indexing materials (this may take a few minutes for large files)');
+    
+    try {
+        const response = await fetch('/api/materials/index?force=true', { method: 'POST' });
+        const data = await response.json();
+        
+        if (data.error) {
+            showToast('Error: ' + data.error, 'error');
+        } else {
+            showFinishToast('Indexed', `${data.chunks} chunks from ${data.files?.length || 0} files`);
+            checkRagStatus();
+        }
+    } catch (err) {
+        showToast('Indexing failed: ' + err.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
+}
+
+// Check RAG status on page load
+document.addEventListener('DOMContentLoaded', checkRagStatus);
 </script>
 {% endblock %}

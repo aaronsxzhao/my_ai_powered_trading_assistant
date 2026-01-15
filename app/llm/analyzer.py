@@ -18,6 +18,70 @@ from app.config import settings, get_llm_api_key, get_llm_base_url, get_llm_mode
 logger = logging.getLogger(__name__)
 
 
+def _get_materials_for_trade(
+    direction: str,
+    timeframe: str = "5m",
+    entry_reason: str = "",
+    setup_type: str = "",
+    ticker: str = "",
+) -> str:
+    """Get relevant training materials using RAG, with fallback to simple reader."""
+    try:
+        # Try RAG first (smarter retrieval)
+        from app.materials_rag import get_relevant_materials, get_materials_rag
+        
+        rag = get_materials_rag()
+        status = rag.get_status()
+        
+        if status.get("available") and status.get("total_chunks", 0) > 0:
+            materials = get_relevant_materials(
+                ticker=ticker,
+                direction=direction,
+                timeframe=timeframe,
+                entry_reason=entry_reason,
+                setup_type=setup_type,
+                n_chunks=5,
+                max_chars=8000
+            )
+            if materials:
+                logger.info(f"📚 Retrieved relevant materials via RAG")
+                return materials
+        
+        # If RAG not ready but materials exist, try to index them
+        if status.get("needs_reindex") or status.get("total_chunks", 0) == 0:
+            from app.materials_reader import has_materials
+            if has_materials():
+                logger.info("📚 Indexing materials for RAG...")
+                rag.index_materials()
+                # Try again
+                materials = get_relevant_materials(
+                    ticker=ticker,
+                    direction=direction,
+                    timeframe=timeframe,
+                    entry_reason=entry_reason,
+                    setup_type=setup_type,
+                    n_chunks=5,
+                    max_chars=8000
+                )
+                if materials:
+                    return materials
+        
+    except ImportError:
+        logger.debug("RAG dependencies not available, using simple reader")
+    except Exception as e:
+        logger.warning(f"RAG retrieval failed: {e}, falling back to simple reader")
+    
+    # Fallback to simple materials reader
+    try:
+        from app.materials_reader import get_materials_context, has_materials
+        if has_materials():
+            return get_materials_context(max_chars=15000)
+    except Exception as e:
+        logger.warning(f"Simple materials reader failed: {e}")
+    
+    return ""
+
+
 class LLMAnalyzer:
     """
     LLM-powered analyzer for trades and market context.
@@ -127,6 +191,17 @@ class LLMAnalyzer:
         # Load configurable prompts
         from app.config_prompts import get_system_prompt, get_user_prompt
         system_prompt = get_system_prompt('trade_classification')
+        
+        # Get relevant training materials using RAG
+        materials_context = _get_materials_for_trade(
+            direction=direction,
+            timeframe=timeframe or "5m",
+            entry_reason=entry_reason or "",
+            setup_type=trade_type or "",
+            ticker=ticker,
+        )
+        if materials_context:
+            system_prompt = f"{system_prompt}\n\n{materials_context}"
 
         # Calculate R-multiple safely (only if SL is provided)
         stop_loss = stop_price  # Use clearer name internally
@@ -305,6 +380,18 @@ Classify this trade. If you cannot classify with confidence, explain what specif
         # Load configurable prompts
         from app.config_prompts import get_system_prompt, get_user_prompt
         system_prompt = get_system_prompt('trade_analysis')
+        
+        # Get relevant training materials using RAG
+        materials_context = _get_materials_for_trade(
+            direction=direction,
+            timeframe=timeframe or "5m",
+            entry_reason=entry_reason or "",
+            setup_type=trade_type or "",
+            ticker=ticker,
+        )
+        if materials_context:
+            system_prompt = f"{system_prompt}\n\n{materials_context}"
+            logger.info(f"📚 Added {len(materials_context)} chars of relevant training materials")
 
         # Format hold time
         hold_time_str = "-"

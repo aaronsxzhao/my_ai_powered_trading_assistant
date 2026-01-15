@@ -71,7 +71,7 @@ async def dashboard(request: Request):
     try:
         recent_trades = (
             session.query(Trade)
-            .order_by(Trade.exit_time.desc(), Trade.id.desc())
+            .order_by(Trade.id.desc())  # Newest first
             .limit(10)
             .all()
         )
@@ -124,8 +124,7 @@ async def trades_page(request: Request):
     try:
         trades = (
             session.query(Trade)
-            .order_by(Trade.exit_time.desc(), Trade.id.desc())
-            .limit(100)
+            .order_by(Trade.id.desc())  # Newest first
             .all()
         )
         
@@ -145,6 +144,8 @@ async def trades_page(request: Request):
 @app.get("/trades/{trade_id}", response_class=HTMLResponse)
 async def trade_detail(request: Request, trade_id: int):
     """Trade detail page - loads instantly, review fetched via AJAX."""
+    from app.materials_reader import has_materials
+    
     session = get_session()
     try:
         trade = session.query(Trade).filter(Trade.id == trade_id).first()
@@ -158,6 +159,7 @@ async def trade_detail(request: Request, trade_id: int):
             "review": None,  # Will be loaded via AJAX
             "data_provider": settings.data_provider,
             "llm_available": get_llm_api_key() is not None,
+            "has_materials": has_materials(),
         })
     finally:
         session.close()
@@ -1436,37 +1438,94 @@ async def upload_materials(files: list[UploadFile] = File(...)):
     """Upload training materials (PDFs, text files)."""
     uploaded = 0
     errors = 0
-    
+
     MATERIALS_DIR.mkdir(exist_ok=True)
-    
+
     for file in files:
         try:
             # Validate file type
             allowed_extensions = {'.pdf', '.txt', '.md', '.doc', '.docx'}
             ext = Path(file.filename).suffix.lower()
-            
+
             if ext not in allowed_extensions:
                 errors += 1
                 continue
-            
+
             # Save file
             file_path = MATERIALS_DIR / file.filename
-            
+
             with open(file_path, 'wb') as f:
                 content = await file.read()
                 f.write(content)
-            
+
             uploaded += 1
-            
+
         except Exception as e:
             logger.error(f"Error uploading {file.filename}: {e}")
             errors += 1
-    
+
+    # Trigger RAG indexing in background
+    if uploaded > 0:
+        try:
+            from app.materials_rag import get_materials_rag
+            import asyncio
+            
+            async def index_async():
+                rag = get_materials_rag()
+                await asyncio.to_thread(rag.index_materials, True)
+            
+            asyncio.create_task(index_async())
+            logger.info("📚 RAG indexing triggered after upload")
+        except Exception as e:
+            logger.warning(f"Could not trigger RAG indexing: {e}")
+
     return JSONResponse({
         "uploaded": uploaded,
         "errors": errors,
         "message": f"Uploaded {uploaded} files"
     })
+
+
+@app.get("/api/materials/rag-status")
+async def get_rag_status():
+    """Get RAG indexing status."""
+    try:
+        from app.materials_rag import get_materials_rag
+        rag = get_materials_rag()
+        status = rag.get_status()
+        return JSONResponse(status)
+    except ImportError:
+        return JSONResponse({
+            "available": False,
+            "error": "RAG dependencies not installed. Run: pip install chromadb sentence-transformers"
+        })
+    except Exception as e:
+        return JSONResponse({
+            "available": False,
+            "error": str(e)
+        })
+
+
+@app.post("/api/materials/index")
+async def index_materials(force: bool = False):
+    """Manually trigger RAG indexing of materials."""
+    import asyncio
+    
+    try:
+        from app.materials_rag import get_materials_rag
+        rag = get_materials_rag()
+        
+        # Run indexing in thread to not block
+        result = await asyncio.to_thread(rag.index_materials, force)
+        return JSONResponse(result)
+    except ImportError:
+        return JSONResponse({
+            "error": "RAG dependencies not installed. Run: pip install chromadb sentence-transformers"
+        })
+    except Exception as e:
+        return JSONResponse({
+            "error": str(e)
+        })
 
 
 @app.delete("/api/materials/{filename:path}")
@@ -1536,13 +1595,13 @@ async def bulk_analysis(request: Request):
             trades = (
                 session.query(Trade)
                 .filter(Trade.trade_date >= cutoff_date)
-                .order_by(Trade.exit_time.desc())
+                .order_by(Trade.id.desc())  # Newest first
                 .all()
             )
         else:  # count
             trades = (
                 session.query(Trade)
-                .order_by(Trade.exit_time.desc())
+                .order_by(Trade.id.desc())  # Newest first
                 .limit(value)
                 .all()
             )

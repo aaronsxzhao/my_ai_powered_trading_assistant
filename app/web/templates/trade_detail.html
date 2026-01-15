@@ -207,9 +207,17 @@
                 <p class="text-dark-400 text-sm mb-6 max-w-sm mx-auto">
                     Get Brooks-style analysis of your trade including setup classification, execution review, and coaching advice.
                 </p>
-                <button onclick="loadReview(false)" class="btn btn-primary text-lg px-8 py-3">
-                    ✨ Generate Review
-                </button>
+                {% if has_materials %}
+                <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-500/10 border border-green-500/30 text-green-400 text-xs mb-4">
+                    <span>📚</span>
+                    <span>Training materials active</span>
+                </div>
+                {% endif %}
+                <div>
+                    <button onclick="loadReview(false)" class="btn btn-primary text-lg px-8 py-3">
+                        ✨ Generate Review
+                    </button>
+                </div>
                 <p class="text-dark-500 text-xs mt-3">Uses cached review if available</p>
             </div>
 

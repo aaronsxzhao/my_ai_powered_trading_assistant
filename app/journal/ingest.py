@@ -300,6 +300,17 @@ class TradeIngester:
         # Map columns based on format
         column_map = self._get_column_map(format)
         df = df.rename(columns=column_map)
+        
+        # Sort by date/time so oldest trade gets lowest ID
+        date_cols = ['trade_date', 'date', 'entry_time', 'exit_time', 'time']
+        for col in date_cols:
+            if col in df.columns:
+                try:
+                    df[col] = pd.to_datetime(df[col], errors='coerce')
+                    df = df.sort_values(col, ascending=True)
+                    break
+                except:
+                    pass
 
         imported = 0
         errors = 0
@@ -348,7 +359,10 @@ class TradeIngester:
         """
         df = pd.read_csv(file_path)
         
-        logger.info(f"TradingView Balance History: {len(df)} entries")
+        # Sort by Time so oldest trade gets lowest ID
+        if 'Time' in df.columns:
+            df['Time'] = pd.to_datetime(df['Time'], errors='coerce')
+            df = df.sort_values('Time', ascending=True)
         
         imported = 0
         errors = 0
@@ -690,6 +704,9 @@ class TradeIngester:
                 for o in pending_orders[-5:]:  # Only show last 5
                     logger.info(f"     - {o['side'].upper()} {int(o['qty'])} @ {o['price']:.4f}")
                 unmatched_count += len(pending_orders)
+        
+        # Sort trades by entry time (oldest first) so IDs are in chronological order
+        trades_data.sort(key=lambda x: x.get('entry_time') or x.get('exit_time') or datetime.min)
         
         # Import the matched trades
         imported = 0

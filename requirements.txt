@@ -36,6 +36,10 @@ openai>=1.12.0
 # PDF reading for training materials
 PyMuPDF>=1.24.0
 
+# RAG (Retrieval-Augmented Generation) for training materials
+chromadb>=0.4.22
+sentence-transformers>=2.3.0
+
 # Robinhood API
 robin_stocks>=3.0.0
 

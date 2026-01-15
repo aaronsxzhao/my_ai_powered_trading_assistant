@@ -103,6 +103,16 @@ Features:
 - **Currency Conversion** - Automatic USD conversion with historical rates
 - **Duration Tracking** - Human-readable hold time display
 
+### Training Materials (RAG)
+
+Upload your trading books and rules - the AI uses **Retrieval-Augmented Generation** to find relevant sections for each trade:
+
+- **Smart Retrieval** - Chunks materials and finds relevant sections per trade
+- **Full Book Support** - Upload entire Al Brooks books; RAG finds relevant pages
+- **Vector Search** - Uses ChromaDB + sentence-transformers for semantic matching
+- **Auto-Indexing** - Materials are indexed on upload
+- **Prioritizes Text** - Your `.txt` rules files are weighted higher than PDFs
+
 ### Bulk Import
 
 Supports multiple formats:
@@ -219,7 +229,7 @@ The web interface Settings page allows you to:
 - **Manage Tickers** - Add/remove favorite tickers
 - **AI Prompts** - Customize system and user prompts for trade analysis
 - **Cache Settings** - Enable/disable review caching
-- **Training Materials** - Upload PDFs and documents for LLM context
+- **Training Materials (RAG)** - Upload PDFs and documents; smart retrieval finds relevant sections per trade
 - **Strategy Management** - Edit, merge, categorize strategies
 
 ## Project Structure
