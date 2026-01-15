@@ -97,8 +97,8 @@ class TradeCoach:
     def data_provider(self):
         """Lazy load data provider."""
         if self._data_provider is None:
-            from app.data.providers import get_data_provider
-            self._data_provider = get_data_provider()
+            from app.data.providers import get_provider
+            self._data_provider = get_provider()
         return self._data_provider
 
     def review_trade(self, trade_id: int) -> Optional[TradeReview]:

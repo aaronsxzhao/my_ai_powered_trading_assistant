@@ -3,286 +3,389 @@
 {% block title %}Settings - Brooks Trading Coach{% endblock %}
 
 {% block content %}
-<div class="space-y-8">
-    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+<div class="max-w-6xl mx-auto">
+    <!-- Header -->
+    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
         <div>
-            <h1 class="text-3xl font-bold bg-gradient-to-r from-white to-dark-300 bg-clip-text text-transparent">
-                ⚙️ Settings
-            </h1>
-            <p class="text-dark-400 text-sm mt-1">Configure AI analysis, prompts, and manage resources</p>
+            <h1 class="text-3xl font-bold text-white">Settings</h1>
+            <p class="text-dark-400 text-sm mt-1">Configure your trading coach</p>
         </div>
-        <button onclick="resetToDefaults()" class="btn btn-secondary">🔄 Reset to Defaults</button>
+        <div class="flex gap-2">
+            <span class="px-3 py-1.5 rounded-full text-xs font-medium {% if llm_available %}bg-green-500/20 text-green-400{% else %}bg-red-500/20 text-red-400{% endif %}">
+                LLM: {% if llm_available %}Connected{% else %}Not Connected{% endif %}
+            </span>
+            <span class="px-3 py-1.5 rounded-full text-xs font-medium bg-accent-500/20 text-accent-400">
+                {{ data_provider|upper }}
+            </span>
+        </div>
     </div>
 
-    <!-- Quick Links -->
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <a href="/tickers" class="card hover:border-accent-500/50 transition-all group cursor-pointer">
-            <div class="flex flex-col items-center text-center py-2">
-                <span class="text-3xl mb-2 group-hover:scale-110 transition-transform">🎯</span>
-                <span class="font-medium text-white">Manage Tickers</span>
-                <span class="text-xs text-dark-500 mt-1">Watchlist symbols</span>
-            </div>
-        </a>
-        <a href="/materials" class="card hover:border-accent-500/50 transition-all group cursor-pointer">
-            <div class="flex flex-col items-center text-center py-2">
-                <span class="text-3xl mb-2 group-hover:scale-110 transition-transform">📚</span>
-                <span class="font-medium text-white">Training Materials</span>
-                <span class="text-xs text-dark-500 mt-1">LLM knowledge base</span>
-            </div>
-        </a>
-        <a href="/reports" class="card hover:border-accent-500/50 transition-all group cursor-pointer">
-            <div class="flex flex-col items-center text-center py-2">
-                <span class="text-3xl mb-2 group-hover:scale-110 transition-transform">📋</span>
-                <span class="font-medium text-white">Reports</span>
-                <span class="text-xs text-dark-500 mt-1">Premarket & EOD</span>
-            </div>
-        </a>
-        <a href="/analysis" class="card hover:border-accent-500/50 transition-all group cursor-pointer">
-            <div class="flex flex-col items-center text-center py-2">
-                <span class="text-3xl mb-2 group-hover:scale-110 transition-transform">🔍</span>
-                <span class="font-medium text-white">Bulk Trade Analysis</span>
-                <span class="text-xs text-dark-500 mt-1">AI pattern discovery</span>
-            </div>
-        </a>
-        <a href="/strategies" class="card hover:border-accent-500/50 transition-all group cursor-pointer">
-            <div class="flex flex-col items-center text-center py-2">
-                <span class="text-3xl mb-2 group-hover:scale-110 transition-transform">🏷️</span>
-                <span class="font-medium text-white">Manage Strategies</span>
-                <span class="text-xs text-dark-500 mt-1">Edit & categorize</span>
-            </div>
-        </a>
-    </div>
-
-    <!-- Candle Settings -->
-    <div class="card">
-        <h2 class="text-xl font-bold mb-4 text-white">📊 Candle Settings</h2>
-        <p class="text-dark-400 mb-4">Configure how many candles to fetch for market analysis.</p>
-        
-        <form id="candle-form" class="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div>
-                <label class="label">Daily Candles</label>
-                <input type="number" id="candles-daily" min="1" max="365" value="{{ candles.daily }}" class="input">
-                <p class="text-xs text-dark-500 mt-1">Number of daily bars (default: 30)</p>
-            </div>
-            
-            <div>
-                <label class="label">Hourly Candles</label>
-                <input type="number" id="candles-hourly" min="1" max="500" value="{{ candles.hourly }}" class="input">
-                <p class="text-xs text-dark-500 mt-1">Number of hourly bars (default: 48)</p>
-            </div>
-            
-            <div>
-                <label class="label">5-Minute Candles</label>
-                <input type="number" id="candles-5min" min="1" max="1000" value="{{ candles['5min'] }}" class="input">
-                <p class="text-xs text-dark-500 mt-1">Number of 5-min bars (default: 78 = 1 day)</p>
-            </div>
-            
-            <div class="md:col-span-3">
-                <button type="submit" class="btn btn-primary">💾 Save Candle Settings</button>
-            </div>
-        </form>
-    </div>
-
-    <!-- Cache Settings -->
-    <div class="card">
-        <h2 class="text-xl font-bold mb-4 text-white">💾 Cache Settings</h2>
-        <p class="text-dark-400 mb-4">Control how AI reviews are cached to avoid repeated LLM calls.</p>
-        
-        <form id="cache-form" class="space-y-4">
-            <div class="flex items-center gap-3">
-                <input type="checkbox" id="enable-review-cache" class="w-5 h-5 rounded bg-dark-700 border-dark-600 text-accent-500 focus:ring-accent-500"
-                    {{ 'checked' if cache_settings.enable_review_cache else '' }}>
-                <div>
-                    <label for="enable-review-cache" class="font-medium text-white cursor-pointer">Enable Review Cache</label>
-                    <p class="text-xs text-dark-500">When enabled, AI reviews are saved and reused. Disable to always fetch fresh reviews.</p>
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <!-- Sidebar Navigation -->
+        <div class="lg:col-span-1">
+            <nav class="sticky top-4 space-y-1">
+                <div class="text-xs font-semibold text-dark-500 uppercase tracking-wider mb-3 px-3">Navigation</div>
+                <a href="#quick-actions" class="nav-settings-link active">Quick Actions</a>
+                <a href="#data-settings" class="nav-settings-link">Data Settings</a>
+                <a href="#ai-prompts" class="nav-settings-link">AI Prompts</a>
+                <a href="#system-info" class="nav-settings-link">System Info</a>
+                
+                <div class="border-t border-dark-700 my-4 pt-4">
+                    <button onclick="resetToDefaults()" class="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 rounded-lg transition-colors">
+                        Reset All Settings
+                    </button>
                 </div>
-            </div>
-            
-            <div class="flex items-center gap-3">
-                <input type="checkbox" id="auto-regenerate" class="w-5 h-5 rounded bg-dark-700 border-dark-600 text-accent-500 focus:ring-accent-500"
-                    {{ 'checked' if cache_settings.auto_regenerate else '' }}>
-                <div>
-                    <label for="auto-regenerate" class="font-medium text-white cursor-pointer">Auto-Regenerate Reviews</label>
-                    <p class="text-xs text-dark-500">When enabled, always regenerate reviews (ignores cache). Useful for testing prompts.</p>
-                </div>
-            </div>
-            
-            <button type="submit" class="btn btn-primary">💾 Save Cache Settings</button>
-        </form>
-    </div>
-
-    <!-- System Prompts -->
-    <div class="card">
-        <h2 class="text-xl font-bold mb-2 text-white">🧠 System Prompts</h2>
-        <p class="text-dark-400 mb-4">AI persona and instructions. Defines how the AI should behave and respond.</p>
-        
-        <!-- System Prompt Tabs -->
-        <div class="border-b border-dark-700 mb-4">
-            <nav class="flex space-x-4">
-                <button onclick="showSystemTab('analysis')" id="sys-tab-analysis"
-                    class="sys-tab px-4 py-2 text-sm font-medium border-b-2 border-accent-500 text-accent-400">
-                    Trade Review
-                </button>
-                <button onclick="showSystemTab('market')" id="sys-tab-market"
-                    class="sys-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-dark-400 hover:text-dark-200">
-                    Market Context
-                </button>
             </nav>
         </div>
-        
-        <!-- System: Trade Analysis -->
-        <div id="sys-analysis" class="sys-panel">
-            <div class="mb-2 flex justify-between items-center">
-                <label class="text-sm font-medium text-dark-300">System: Trade Analysis</label>
-                <span class="text-xs text-dark-500">AI persona for reviewing trades</span>
-            </div>
-            <textarea id="system-trade_analysis" rows="12"
-                class="input font-mono text-sm">{{ system_prompts.trade_analysis }}</textarea>
-            <button onclick="savePrompt('trade_analysis', false)" class="btn btn-primary mt-3">💾 Save</button>
-        </div>
-        
-        <!-- System: Market Context -->
-        <div id="sys-market" class="sys-panel hidden">
-            <div class="mb-2 flex justify-between items-center">
-                <label class="text-sm font-medium text-dark-300">System: Market Context</label>
-                <span class="text-xs text-dark-500">AI persona for premarket analysis</span>
-            </div>
-            <textarea id="system-market_context" rows="12"
-                class="input font-mono text-sm">{{ system_prompts.market_context }}</textarea>
-            <button onclick="savePrompt('market_context', false)" class="btn btn-primary mt-3">💾 Save</button>
-        </div>
-    </div>
 
-    <!-- User Prompts -->
-    <div class="card">
-        <h2 class="text-xl font-bold mb-2 text-white">📝 User Prompts</h2>
-        <p class="text-dark-400 mb-4">
-            Templates for trade data sent to AI. Use <code class="text-accent-400">{variable}</code> placeholders for dynamic values.
-        </p>
-        <div class="bg-dark-900/50 border border-dark-700 rounded-lg p-3 mb-4">
-            <div class="text-xs text-dark-400 mb-2">Available placeholders for <span class="text-purple-400">Trade Review</span>:</div>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
-                <div>
-                    <div class="text-dark-500 mb-1">Trade Identity:</div>
-                    <code class="text-accent-300">{ticker} {market} {timezone} {trade_date} {timeframe} {tf_traded} {direction}</code>
+        <!-- Main Content -->
+        <div class="lg:col-span-3 space-y-6">
+            <!-- Quick Actions -->
+            <section id="quick-actions" class="scroll-mt-4">
+                <h2 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                    <span class="w-8 h-8 rounded-lg bg-accent-500/20 flex items-center justify-center text-accent-400">1</span>
+                    Quick Actions
+                </h2>
+                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                    <a href="/tickers" class="settings-action-card">
+                        <span class="text-2xl">🎯</span>
+                        <span class="text-sm font-medium">Tickers</span>
+                    </a>
+                    <a href="/strategies" class="settings-action-card">
+                        <span class="text-2xl">🏷️</span>
+                        <span class="text-sm font-medium">Strategies</span>
+                    </a>
+                    <a href="/materials" class="settings-action-card">
+                        <span class="text-2xl">📚</span>
+                        <span class="text-sm font-medium">Materials</span>
+                    </a>
+                    <a href="/reports" class="settings-action-card">
+                        <span class="text-2xl">📋</span>
+                        <span class="text-sm font-medium">Reports</span>
+                    </a>
+                    <a href="/analysis" class="settings-action-card">
+                        <span class="text-2xl">🔍</span>
+                        <span class="text-sm font-medium">Bulk Analysis</span>
+                    </a>
                 </div>
-                <div>
-                    <div class="text-dark-500 mb-1">Execution:</div>
-                    <code class="text-accent-300">{entry_time} {entry_price} {exit_time} {exit_price} {size} {position_size} {order_type} {stop_price} {target_price}</code>
-                </div>
-                <div>
-                    <div class="text-dark-500 mb-1">Performance:</div>
-                    <code class="text-accent-300">{r_multiple} {outcome} {mae} {mfe} {exit_breakdown} {fees} {slippage}</code>
-                </div>
-                <div>
-                    <div class="text-dark-500 mb-1">Trader Intent:</div>
-                    <code class="text-accent-300">{intended_setup} {trade_type} {intended_trade_type} {entry_reason} {invalidation} {management_plan} {notes}</code>
-                </div>
-                <div>
-                    <div class="text-dark-500 mb-1">Session Context:</div>
-                    <code class="text-accent-300">{today_open} {pd_high} {pd_low} {pd_close} {news_flag} {env_note}</code>
-                </div>
-                <div>
-                    <div class="text-dark-500 mb-1">OHLCV Data:</div>
-                    <code class="text-accent-300">{daily_bars} {daily_60} {twohour_bars} {twohour_120} {fivemin_bars} {fivemin_234} {local_window} {local_window_101} {ohlcv_context}</code>
-                </div>
-                <div>
-                    <div class="text-dark-500 mb-1">Optional:</div>
-                    <code class="text-accent-300">{chart_notes}</code>
-                </div>
-            </div>
-            <div class="text-xs text-dark-500 mt-3 border-t border-dark-700 pt-2">
-                <span class="text-dark-400">Market Context placeholders:</span>
-                <code class="text-accent-300 ml-1">{ticker} {date} {timeframe} {ohlcv_context}</code>
-            </div>
-        </div>
-        
-        <!-- User Prompt Tabs -->
-        <div class="border-b border-dark-700 mb-4">
-            <nav class="flex space-x-4">
-                <button onclick="showUserTab('analysis')" id="user-tab-analysis"
-                    class="user-tab px-4 py-2 text-sm font-medium border-b-2 border-purple-500 text-purple-400">
-                    Trade Review
-                </button>
-                <button onclick="showUserTab('market')" id="user-tab-market"
-                    class="user-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-dark-400 hover:text-dark-200">
-                    Market Context
-                </button>
-            </nav>
-        </div>
-        
-        <!-- User: Trade Analysis -->
-        <div id="user-analysis" class="user-panel">
-            <div class="mb-2 flex justify-between items-center">
-                <label class="text-sm font-medium text-dark-300">User: Trade Analysis</label>
-                <span class="text-xs text-dark-500">Data template for trade review</span>
-            </div>
-            <textarea id="user-trade_analysis" rows="10"
-                class="input font-mono text-sm">{{ user_prompts.trade_analysis }}</textarea>
-            <button onclick="savePrompt('trade_analysis', true)" class="btn bg-purple-600 hover:bg-purple-700 text-white mt-3">💾 Save</button>
-        </div>
-        
-        <!-- User: Market Context -->
-        <div id="user-market" class="user-panel hidden">
-            <div class="mb-2 flex justify-between items-center">
-                <label class="text-sm font-medium text-dark-300">User: Market Context</label>
-                <span class="text-xs text-dark-500">Data template for premarket</span>
-            </div>
-            <textarea id="user-market_context" rows="10"
-                class="input font-mono text-sm">{{ user_prompts.market_context }}</textarea>
-            <button onclick="savePrompt('market_context', true)" class="btn bg-purple-600 hover:bg-purple-700 text-white mt-3">💾 Save</button>
-        </div>
-    </div>
+            </section>
 
-    <!-- Current Settings File -->
-    <div class="card bg-dark-900/50 border border-dark-700">
-        <h3 class="font-medium text-white mb-2">📁 Settings File Location</h3>
-        <code class="text-sm text-accent-400">{{ settings_file }}</code>
+            <!-- Data Settings -->
+            <section id="data-settings" class="scroll-mt-4">
+                <h2 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                    <span class="w-8 h-8 rounded-lg bg-accent-500/20 flex items-center justify-center text-accent-400">2</span>
+                    Data Settings
+                </h2>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <!-- Candle Settings -->
+                    <div class="settings-card">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="font-medium text-white">OHLCV Bar Counts</h3>
+                            <span class="text-xs text-dark-500">For AI context</span>
+                        </div>
+                        <form id="candle-form" class="space-y-3">
+                            <div class="grid grid-cols-3 gap-3">
+                                <div>
+                                    <label class="text-xs text-dark-400 block mb-1">Daily</label>
+                                    <input type="number" id="candles-daily" min="1" max="365" value="{{ candles.daily }}" class="input text-center py-2">
+                                </div>
+                                <div>
+                                    <label class="text-xs text-dark-400 block mb-1">2-Hour</label>
+                                    <input type="number" id="candles-hourly" min="1" max="500" value="{{ candles.hourly }}" class="input text-center py-2">
+                                </div>
+                                <div>
+                                    <label class="text-xs text-dark-400 block mb-1">5-Min</label>
+                                    <input type="number" id="candles-5min" min="1" max="1000" value="{{ candles['5min'] }}" class="input text-center py-2">
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-primary w-full py-2 text-sm">Save</button>
+                        </form>
+                    </div>
+
+                    <!-- Cache Settings -->
+                    <div class="settings-card">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="font-medium text-white">AI Cache</h3>
+                            <span class="text-xs px-2 py-0.5 rounded-full {% if cache_settings.enable_review_cache %}bg-green-500/20 text-green-400{% else %}bg-dark-600 text-dark-400{% endif %}">
+                                {% if cache_settings.enable_review_cache %}Enabled{% else %}Disabled{% endif %}
+                            </span>
+                        </div>
+                        <form id="cache-form" class="space-y-3">
+                            <label class="flex items-center gap-3 p-2 rounded-lg hover:bg-dark-700/50 cursor-pointer transition-colors">
+                                <input type="checkbox" id="enable-review-cache" class="w-4 h-4 rounded bg-dark-700 border-dark-600 text-accent-500 focus:ring-accent-500"
+                                    {{ 'checked' if cache_settings.enable_review_cache else '' }}>
+                                <div class="flex-1">
+                                    <span class="text-sm text-white">Enable Cache</span>
+                                    <p class="text-xs text-dark-500">Reuse AI reviews</p>
+                                </div>
+                            </label>
+                            <label class="flex items-center gap-3 p-2 rounded-lg hover:bg-dark-700/50 cursor-pointer transition-colors">
+                                <input type="checkbox" id="auto-regenerate" class="w-4 h-4 rounded bg-dark-700 border-dark-600 text-accent-500 focus:ring-accent-500"
+                                    {{ 'checked' if cache_settings.auto_regenerate else '' }}>
+                                <div class="flex-1">
+                                    <span class="text-sm text-white">Force Regenerate</span>
+                                    <p class="text-xs text-dark-500">Always fresh (testing)</p>
+                                </div>
+                            </label>
+                            <button type="submit" class="btn btn-primary w-full py-2 text-sm">Save</button>
+                        </form>
+                    </div>
+                </div>
+            </section>
+
+            <!-- AI Prompts -->
+            <section id="ai-prompts" class="scroll-mt-4">
+                <h2 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                    <span class="w-8 h-8 rounded-lg bg-accent-500/20 flex items-center justify-center text-accent-400">3</span>
+                    AI Prompts
+                </h2>
+
+                <!-- Prompt Type Selector -->
+                <div class="settings-card">
+                    <div class="flex flex-wrap gap-2 mb-4">
+                        <button onclick="selectPromptType('trade_analysis')" id="prompt-btn-trade_analysis" class="prompt-type-btn active">
+                            Trade Review
+                        </button>
+                        <button onclick="selectPromptType('market_context')" id="prompt-btn-market_context" class="prompt-type-btn">
+                            Market Context
+                        </button>
+                    </div>
+
+                    <!-- Trade Analysis Prompts -->
+                    <div id="prompt-section-trade_analysis" class="prompt-section space-y-4">
+                        <!-- Placeholders Reference -->
+                        <details class="bg-dark-800/50 rounded-lg border border-dark-700">
+                            <summary class="px-4 py-3 cursor-pointer text-sm font-medium text-dark-300 hover:text-white transition-colors">
+                                📋 Available Placeholders
+                            </summary>
+                            <div class="px-4 pb-4 pt-2 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs border-t border-dark-700">
+                                <div>
+                                    <div class="text-dark-500 mb-1 font-medium">Trade Identity</div>
+                                    <code class="text-accent-400 text-xs">{ticker} {market} {timezone} {trade_date} {timeframe} {tf_traded} {direction}</code>
+                                </div>
+                                <div>
+                                    <div class="text-dark-500 mb-1 font-medium">Execution</div>
+                                    <code class="text-accent-400 text-xs">{entry_time} {entry_price} {exit_time} {exit_price} {size} {order_type} {stop_price} {target_price}</code>
+                                </div>
+                                <div>
+                                    <div class="text-dark-500 mb-1 font-medium">Performance</div>
+                                    <code class="text-accent-400 text-xs">{r_multiple} {outcome} {mae} {mfe} {fees} {slippage}</code>
+                                </div>
+                                <div>
+                                    <div class="text-dark-500 mb-1 font-medium">Intent</div>
+                                    <code class="text-accent-400 text-xs">{intended_setup} {trade_type} {entry_reason} {invalidation} {management_plan}</code>
+                                </div>
+                                <div>
+                                    <div class="text-dark-500 mb-1 font-medium">Session</div>
+                                    <code class="text-accent-400 text-xs">{today_open} {pd_high} {pd_low} {pd_close} {news_flag} {env_note}</code>
+                                </div>
+                                <div>
+                                    <div class="text-dark-500 mb-1 font-medium">OHLCV Data</div>
+                                    <code class="text-accent-400 text-xs">{daily_bars} {twohour_bars} {fivemin_bars} {local_window} {ohlcv_context}</code>
+                                </div>
+                            </div>
+                        </details>
+
+                        <!-- System Prompt -->
+                        <div>
+                            <div class="flex items-center justify-between mb-2">
+                                <label class="text-sm font-medium text-accent-400">System Prompt</label>
+                                <span class="text-xs text-dark-500">AI persona & instructions</span>
+                            </div>
+                            <textarea id="system-trade_analysis" rows="10" class="input font-mono text-xs leading-relaxed">{{ system_prompts.trade_analysis }}</textarea>
+                            <button onclick="savePrompt('trade_analysis', false)" class="btn btn-primary mt-2 text-sm">Save System Prompt</button>
+                        </div>
+
+                        <!-- User Prompt -->
+                        <div>
+                            <div class="flex items-center justify-between mb-2">
+                                <label class="text-sm font-medium text-purple-400">User Prompt</label>
+                                <span class="text-xs text-dark-500">Data template with placeholders</span>
+                            </div>
+                            <textarea id="user-trade_analysis" rows="10" class="input font-mono text-xs leading-relaxed">{{ user_prompts.trade_analysis }}</textarea>
+                            <button onclick="savePrompt('trade_analysis', true)" class="btn bg-purple-600 hover:bg-purple-700 text-white mt-2 text-sm">Save User Prompt</button>
+                        </div>
+                    </div>
+
+                    <!-- Market Context Prompts -->
+                    <div id="prompt-section-market_context" class="prompt-section hidden space-y-4">
+                        <!-- Placeholders Reference -->
+                        <details class="bg-dark-800/50 rounded-lg border border-dark-700">
+                            <summary class="px-4 py-3 cursor-pointer text-sm font-medium text-dark-300 hover:text-white transition-colors">
+                                📋 Available Placeholders
+                            </summary>
+                            <div class="px-4 pb-4 pt-2 text-xs border-t border-dark-700">
+                                <code class="text-accent-400">{ticker} {date} {timeframe} {ohlcv_context}</code>
+                            </div>
+                        </details>
+
+                        <!-- System Prompt -->
+                        <div>
+                            <div class="flex items-center justify-between mb-2">
+                                <label class="text-sm font-medium text-accent-400">System Prompt</label>
+                                <span class="text-xs text-dark-500">AI persona & instructions</span>
+                            </div>
+                            <textarea id="system-market_context" rows="10" class="input font-mono text-xs leading-relaxed">{{ system_prompts.market_context }}</textarea>
+                            <button onclick="savePrompt('market_context', false)" class="btn btn-primary mt-2 text-sm">Save System Prompt</button>
+                        </div>
+
+                        <!-- User Prompt -->
+                        <div>
+                            <div class="flex items-center justify-between mb-2">
+                                <label class="text-sm font-medium text-purple-400">User Prompt</label>
+                                <span class="text-xs text-dark-500">Data template with placeholders</span>
+                            </div>
+                            <textarea id="user-market_context" rows="10" class="input font-mono text-xs leading-relaxed">{{ user_prompts.market_context }}</textarea>
+                            <button onclick="savePrompt('market_context', true)" class="btn bg-purple-600 hover:bg-purple-700 text-white mt-2 text-sm">Save User Prompt</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- System Info -->
+            <section id="system-info" class="scroll-mt-4">
+                <h2 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                    <span class="w-8 h-8 rounded-lg bg-accent-500/20 flex items-center justify-center text-accent-400">4</span>
+                    System Info
+                </h2>
+                <div class="settings-card">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                        <div>
+                            <span class="text-dark-500">Settings File:</span>
+                            <code class="text-accent-400 ml-2 text-xs break-all">{{ settings_file }}</code>
+                        </div>
+                        <div>
+                            <span class="text-dark-500">Data Provider:</span>
+                            <span class="text-white ml-2">{{ data_provider }}</span>
+                        </div>
+                        <div>
+                            <span class="text-dark-500">LLM Status:</span>
+                            <span class="ml-2 {% if llm_available %}text-green-400{% else %}text-red-400{% endif %}">
+                                {% if llm_available %}Connected{% else %}Not Connected{% endif %}
+                            </span>
+                        </div>
+                        <div>
+                            <span class="text-dark-500">Cache Status:</span>
+                            <span class="ml-2 {% if cache_settings.enable_review_cache %}text-green-400{% else %}text-dark-400{% endif %}">
+                                {% if cache_settings.enable_review_cache %}Enabled{% else %}Disabled{% endif %}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
     </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
-<script>
-// System prompt tabs
-function showSystemTab(tab) {
-    document.querySelectorAll('.sys-panel').forEach(p => p.classList.add('hidden'));
-    document.querySelectorAll('.sys-tab').forEach(t => {
-        t.classList.remove('border-accent-500', 'text-accent-400');
-        t.classList.add('border-transparent', 'text-dark-400');
-    });
-    
-    document.getElementById('sys-' + tab).classList.remove('hidden');
-    const tabEl = document.getElementById('sys-tab-' + tab);
-    tabEl.classList.add('border-accent-500', 'text-accent-400');
-    tabEl.classList.remove('border-transparent', 'text-dark-400');
+<style>
+.nav-settings-link {
+    display: block;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    color: #9ca3af;
+    border-radius: 0.5rem;
+    transition: all 0.15s ease;
+}
+.nav-settings-link:hover {
+    color: #fff;
+    background: rgba(55, 65, 81, 0.5);
+}
+.nav-settings-link.active {
+    color: #06b6d4;
+    background: rgba(6, 182, 212, 0.1);
+}
+.settings-card {
+    background: rgba(31, 41, 55, 0.5);
+    border: 1px solid #374151;
+    border-radius: 0.75rem;
+    padding: 1rem;
+}
+.settings-action-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 1rem;
+    background: rgba(31, 41, 55, 0.5);
+    border: 1px solid #374151;
+    border-radius: 0.75rem;
+    transition: all 0.15s ease;
+    cursor: pointer;
+    text-align: center;
+    color: #d1d5db;
+}
+.settings-action-card:hover {
+    border-color: rgba(6, 182, 212, 0.5);
+    background: rgba(55, 65, 81, 0.5);
+}
+.prompt-type-btn {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    border-radius: 0.5rem;
+    border: 1px solid #4b5563;
+    color: #9ca3af;
+    background: transparent;
+    transition: all 0.15s ease;
+    cursor: pointer;
+}
+.prompt-type-btn:hover {
+    color: #fff;
+    border-color: #6b7280;
+}
+.prompt-type-btn.active {
+    background: rgba(6, 182, 212, 0.2);
+    border-color: rgba(6, 182, 212, 0.5);
+    color: #06b6d4;
 }
 
-// User prompt tabs
-function showUserTab(tab) {
-    document.querySelectorAll('.user-panel').forEach(p => p.classList.add('hidden'));
-    document.querySelectorAll('.user-tab').forEach(t => {
-        t.classList.remove('border-purple-500', 'text-purple-400');
-        t.classList.add('border-transparent', 'text-dark-400');
-    });
+/* Light mode support */
+:root:not(.dark) .nav-settings-link { color: #6b7280; background: transparent; }
+:root:not(.dark) .nav-settings-link:hover { color: #111827; background: #f8fafc; }
+:root:not(.dark) .nav-settings-link.active { color: #0891b2; background: rgba(6, 182, 212, 0.06); }
+:root:not(.dark) .settings-card { background: #ffffff !important; border-color: #e5e7eb !important; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }
+:root:not(.dark) .settings-action-card { background: #ffffff !important; border-color: #e5e7eb !important; color: #374151; box-shadow: 0 1px 2px rgba(0,0,0,0.02); }
+:root:not(.dark) .settings-action-card:hover { border-color: #0891b2 !important; background: #fafbfc !important; }
+:root:not(.dark) .prompt-type-btn { border-color: #e5e7eb; color: #6b7280; background: #ffffff; }
+:root:not(.dark) .prompt-type-btn:hover { color: #111827; border-color: #d1d5db; background: #fafbfc; }
+:root:not(.dark) .prompt-type-btn.active { background: rgba(6, 182, 212, 0.06) !important; border-color: #0891b2 !important; color: #0891b2; }
+
+/* Additional light mode fixes for settings */
+:root:not(.dark) details { background: #ffffff !important; border-color: #e5e7eb !important; }
+:root:not(.dark) details summary { color: #4b5563 !important; }
+:root:not(.dark) details[open] > div { background: #fafbfc !important; }
+</style>
+
+<script>
+// Prompt type selection
+function selectPromptType(type) {
+    document.querySelectorAll('.prompt-type-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.prompt-section').forEach(sec => sec.classList.add('hidden'));
     
-    document.getElementById('user-' + tab).classList.remove('hidden');
-    const tabEl = document.getElementById('user-tab-' + tab);
-    tabEl.classList.add('border-purple-500', 'text-purple-400');
-    tabEl.classList.remove('border-transparent', 'text-dark-400');
+    document.getElementById('prompt-btn-' + type).classList.add('active');
+    document.getElementById('prompt-section-' + type).classList.remove('hidden');
 }
+
+// Sidebar navigation highlighting
+document.querySelectorAll('.nav-settings-link').forEach(link => {
+    link.addEventListener('click', function() {
+        document.querySelectorAll('.nav-settings-link').forEach(l => l.classList.remove('active'));
+        this.classList.add('active');
+    });
+});
 
 // Save candle settings
 document.getElementById('candle-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    
     const data = {
         daily: parseInt(document.getElementById('candles-daily').value),
         hourly: parseInt(document.getElementById('candles-hourly').value),
         '5min': parseInt(document.getElementById('candles-5min').value)
     };
-    
-    showStartToast('Saving candle settings');
     
     try {
         const response = await fetch('/api/settings/candles', {
@@ -290,11 +393,10 @@ document.getElementById('candle-form').addEventListener('submit', async (e) => {
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(data)
         });
-        
         if (response.ok) {
-            showFinishToast('Candle settings saved');
+            showToast('Candle settings saved', 'success');
         } else {
-            showToast('Failed to save settings', 'error');
+            showToast('Failed to save', 'error');
         }
     } catch (err) {
         showToast('Error: ' + err.message, 'error');
@@ -304,13 +406,10 @@ document.getElementById('candle-form').addEventListener('submit', async (e) => {
 // Save cache settings
 document.getElementById('cache-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    
     const data = {
         enable_review_cache: document.getElementById('enable-review-cache').checked,
         auto_regenerate: document.getElementById('auto-regenerate').checked
     };
-    
-    showStartToast('Saving cache settings');
     
     try {
         const response = await fetch('/api/settings/cache', {
@@ -318,25 +417,23 @@ document.getElementById('cache-form').addEventListener('submit', async (e) => {
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(data)
         });
-        
         if (response.ok) {
-            showFinishToast('Cache settings saved', 'Cache: ' + (data.enable_review_cache ? 'ON' : 'OFF') + ', Auto-regen: ' + (data.auto_regenerate ? 'ON' : 'OFF'));
+            showToast('Cache settings saved', 'success');
+            setTimeout(() => window.location.reload(), 500);
         } else {
-            showToast('Failed to save settings', 'error');
+            showToast('Failed to save', 'error');
         }
     } catch (err) {
         showToast('Error: ' + err.message, 'error');
     }
 });
 
-// Save prompt (system or user)
+// Save prompt
 async function savePrompt(promptType, isUserPrompt) {
     const prefix = isUserPrompt ? 'user-' : 'system-';
     const textarea = document.getElementById(prefix + promptType);
     const promptText = textarea.value;
-    
-    const promptLabel = isUserPrompt ? 'User' : 'System';
-    showStartToast(`Saving ${promptLabel} prompt`);
+    const label = isUserPrompt ? 'User' : 'System';
     
     try {
         const response = await fetch('/api/settings/prompts', {
@@ -348,11 +445,10 @@ async function savePrompt(promptType, isUserPrompt) {
                 is_user_prompt: isUserPrompt
             })
         });
-        
         if (response.ok) {
-            showFinishToast(`${promptLabel} ${promptType} saved`);
+            showToast(`${label} prompt saved`, 'success');
         } else {
-            showToast('Failed to save prompt', 'error');
+            showToast('Failed to save', 'error');
         }
     } catch (err) {
         showToast('Error: ' + err.message, 'error');
@@ -363,15 +459,13 @@ async function savePrompt(promptType, isUserPrompt) {
 async function resetToDefaults() {
     if (!confirm('Reset all settings to defaults? This cannot be undone.')) return;
     
-    showStartToast('Resetting settings');
-    
     try {
         const response = await fetch('/api/settings/reset', { method: 'POST' });
         if (response.ok) {
-            showFinishToast('Settings reset to defaults');
+            showToast('Settings reset', 'success');
             setTimeout(() => window.location.reload(), 1000);
         } else {
-            showToast('Failed to reset settings', 'error');
+            showToast('Failed to reset', 'error');
         }
     } catch (err) {
         showToast('Error: ' + err.message, 'error');

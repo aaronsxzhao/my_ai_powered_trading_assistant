@@ -200,12 +200,19 @@
             color: #0f172a;
         }
         
-        :root:not(.dark) .bg-dark-950 { background-color: #f8fafc !important; }
-        :root:not(.dark) .bg-dark-900 { background-color: #f1f5f9 !important; }
+        /* Light mode backgrounds - all should be white or near-white */
+        :root:not(.dark) .bg-dark-950 { background-color: #fafbfc !important; }
+        :root:not(.dark) .bg-dark-900 { background-color: #ffffff !important; }
         :root:not(.dark) .bg-dark-800 { background-color: #ffffff !important; }
-        :root:not(.dark) .bg-dark-700 { background-color: #e2e8f0 !important; }
-        :root:not(.dark) .bg-dark-900\/50, :root:not(.dark) .bg-dark-800\/50 { background-color: rgba(255,255,255,0.8) !important; }
-        :root:not(.dark) .bg-dark-900\/80, :root:not(.dark) .bg-dark-800\/80 { background-color: rgba(255,255,255,0.9) !important; }
+        :root:not(.dark) .bg-dark-700 { background-color: #ffffff !important; }
+        :root:not(.dark) .bg-dark-600 { background-color: #f8fafc !important; }
+        :root:not(.dark) .bg-dark-900\/50, :root:not(.dark) .bg-dark-800\/50, :root:not(.dark) .bg-dark-700\/50 { background-color: #ffffff !important; }
+        :root:not(.dark) .bg-dark-900\/80, :root:not(.dark) .bg-dark-800\/80 { background-color: #ffffff !important; }
+        :root:not(.dark) .bg-dark-700\/30, :root:not(.dark) .bg-dark-800\/30 { background-color: #ffffff !important; }
+        :root:not(.dark) .hover\:bg-dark-700\/50:hover, :root:not(.dark) .hover\:bg-dark-700\/30:hover { background-color: #f8fafc !important; }
+        :root:not(.dark) .hover\:bg-dark-600:hover { background-color: #f1f5f9 !important; }
+        :root:not(.dark) .hover\:bg-dark-800\/50:hover { background-color: #f8fafc !important; }
+        :root:not(.dark) .from-dark-700\/50, :root:not(.dark) .to-dark-800\/50 { background: #ffffff !important; }
         
         :root:not(.dark) .text-white { color: #0f172a !important; }
         :root:not(.dark) .text-dark-200 { color: #334155 !important; }
@@ -224,8 +231,9 @@
         }
         
         :root:not(.dark) .stat-card {
-            background: linear-gradient(135deg, #f1f5f9 0%, #ffffff 100%) !important;
+            background: #ffffff !important;
             border-color: #e2e8f0 !important;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
         }
         
         :root:not(.dark) .stat-value {
@@ -234,10 +242,26 @@
             background-clip: text !important;
         }
         
-        :root:not(.dark) .input, :root:not(.dark) .select {
-            background-color: #f1f5f9 !important;
-            border-color: #cbd5e1 !important;
+        :root:not(.dark) .input, :root:not(.dark) .select,
+        :root:not(.dark) input[type="text"], :root:not(.dark) input[type="number"],
+        :root:not(.dark) input[type="email"], :root:not(.dark) input[type="password"],
+        :root:not(.dark) input[type="date"], :root:not(.dark) input[type="datetime-local"],
+        :root:not(.dark) textarea, :root:not(.dark) select {
+            background-color: #ffffff !important;
+            border-color: #d1d5db !important;
             color: #0f172a !important;
+        }
+        :root:not(.dark) .input:focus, :root:not(.dark) input:focus, 
+        :root:not(.dark) textarea:focus, :root:not(.dark) select:focus {
+            border-color: #2563eb !important;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1) !important;
+        }
+        :root:not(.dark) .input::placeholder, :root:not(.dark) input::placeholder,
+        :root:not(.dark) textarea::placeholder {
+            color: #9ca3af !important;
+        }
+        :root:not(.dark) label {
+            color: #374151 !important;
         }
         
         :root:not(.dark) .nav-link {
@@ -252,14 +276,14 @@
             background: linear-gradient(135deg, rgba(59,130,246,0.1), rgba(59,130,246,0.05)) !important;
         }
         
-        :root:not(.dark) .table-modern thead {
-            background-color: #f1f5f9 !important;
+        :root:not(.dark) .table-modern thead, :root:not(.dark) thead {
+            background-color: #fafbfc !important;
         }
-        :root:not(.dark) .table-modern tbody tr {
-            border-color: #e2e8f0 !important;
+        :root:not(.dark) .table-modern tbody tr, :root:not(.dark) tbody tr {
+            border-color: #e5e7eb !important;
         }
-        :root:not(.dark) .table-modern tbody tr:hover {
-            background-color: rgba(241,245,249,0.5) !important;
+        :root:not(.dark) .table-modern tbody tr:hover, :root:not(.dark) tbody tr:hover {
+            background-color: #fafbfc !important;
         }
         
         :root:not(.dark) #toast {
@@ -322,13 +346,14 @@
         }
         
         :root:not(.dark) .badge.bg-dark-700 {
-            background-color: #e2e8f0 !important;
+            background-color: #f1f5f9 !important;
             color: #475569 !important;
+            border-color: #e2e8f0 !important;
         }
         
         /* Fix footer */
         :root:not(.dark) footer {
-            background-color: rgba(241,245,249,0.5) !important;
+            background-color: #ffffff !important;
             border-color: #e2e8f0 !important;
         }
         
@@ -336,9 +361,33 @@
             color: #64748b !important;
         }
         
-        /* Fix background gradient div */
+        /* Fix background gradient div - use very light background */
         :root:not(.dark) .fixed.inset-0.bg-gradient-to-br {
-            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%) !important;
+            background: #f8fafc !important;
+        }
+        :root:not(.dark) .fixed.inset-0[class*="radial-gradient"] {
+            background: transparent !important;
+        }
+        
+        /* Fix modals and overlays */
+        :root:not(.dark) #loading > div,
+        :root:not(.dark) [class*="modal"] > div,
+        :root:not(.dark) .bg-dark-800.rounded-2xl,
+        :root:not(.dark) [id$="-modal"] > div {
+            background: #ffffff !important;
+            border-color: #e2e8f0 !important;
+        }
+        :root:not(.dark) .bg-dark-950\/80 {
+            background: rgba(15, 23, 42, 0.5) !important;
+        }
+        :root:not(.dark) #loading {
+            background: rgba(15, 23, 42, 0.4) !important;
+        }
+        
+        /* Fix all inline bg-dark styles */
+        :root:not(.dark) [style*="background: rgba(31"],
+        :root:not(.dark) [style*="background-color: rgba(31"] {
+            background: #ffffff !important;
         }
         
         /* Fix positive/negative colors in light mode - keep them visible */
@@ -352,13 +401,117 @@
         :root:not(.dark) .text-accent-400, :root:not(.dark) .text-accent-300 { color: #2563eb !important; }
         :root:not(.dark) .text-success-400, :root:not(.dark) .text-success-300 { color: #16a34a !important; }
         :root:not(.dark) .text-danger-400, :root:not(.dark) .text-danger-300 { color: #dc2626 !important; }
-        
+
         /* Fix cards with colored backgrounds */
         :root:not(.dark) .bg-success-500\/10 { background-color: rgba(22, 163, 74, 0.1) !important; }
         :root:not(.dark) .bg-danger-500\/10 { background-color: rgba(220, 38, 38, 0.1) !important; }
         :root:not(.dark) .bg-accent-500\/10 { background-color: rgba(59, 130, 246, 0.1) !important; }
         :root:not(.dark) .bg-amber-500\/10 { background-color: rgba(245, 158, 11, 0.1) !important; }
         :root:not(.dark) .bg-purple-500\/10 { background-color: rgba(168, 85, 247, 0.1) !important; }
+
+        /* Fix stat cards and general cards in light mode */
+        :root:not(.dark) .stat-card {
+            background: #ffffff !important;
+            border-color: #e2e8f0 !important;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05) !important;
+        }
+        :root:not(.dark) .card,
+        :root:not(.dark) [class*="rounded-2xl"][class*="border"] {
+            background: #ffffff !important;
+            border-color: #e2e8f0 !important;
+        }
+        :root:not(.dark) .border-dark-700,
+        :root:not(.dark) .border-dark-600,
+        :root:not(.dark) .border-dark-600\/30 {
+            border-color: #e5e7eb !important;
+        }
+        :root:not(.dark) .stat-value {
+            background: linear-gradient(135deg, #1f2937, #4b5563) !important;
+            -webkit-background-clip: text !important;
+            background-clip: text !important;
+            -webkit-text-fill-color: transparent !important;
+        }
+        :root:not(.dark) code {
+            color: #0891b2 !important;
+        }
+        :root:not(.dark) details summary {
+            color: #4b5563 !important;
+        }
+        :root:not(.dark) details summary:hover {
+            color: #1f2937 !important;
+        }
+
+        /* Fix navigation in light mode */
+        :root:not(.dark) nav.sticky {
+            background: rgba(255, 255, 255, 0.95) !important;
+            border-color: #e2e8f0 !important;
+        }
+        :root:not(.dark) nav a {
+            color: #4b5563 !important;
+        }
+        :root:not(.dark) nav a:hover {
+            color: #1f2937 !important;
+        }
+        :root:not(.dark) nav a.text-accent-400 {
+            color: #2563eb !important;
+        }
+        
+        /* Fix tables in light mode */
+        :root:not(.dark) .table-modern thead,
+        :root:not(.dark) thead {
+            background: #f8fafc !important;
+        }
+        :root:not(.dark) .table-modern tbody tr,
+        :root:not(.dark) tbody tr {
+            border-color: #e2e8f0 !important;
+        }
+        :root:not(.dark) .table-modern tbody tr:hover,
+        :root:not(.dark) tbody tr:hover {
+            background: #f8fafc !important;
+        }
+        
+        /* Fix details/summary elements */
+        :root:not(.dark) details {
+            background: #ffffff !important;
+            border-color: #e2e8f0 !important;
+        }
+        :root:not(.dark) details[open] {
+            background: #ffffff !important;
+        }
+        
+        /* Fix all dark gradient backgrounds */
+        :root:not(.dark) .from-dark-700\/50,
+        :root:not(.dark) .to-dark-800\/50,
+        :root:not(.dark) .bg-gradient-to-br.from-dark-700\/50 {
+            background: #ffffff !important;
+        }
+        
+        /* Fix toast notifications */
+        :root:not(.dark) #toast {
+            background: #1f2937 !important;
+            color: #ffffff !important;
+        }
+        
+        /* Fix checkboxes */
+        :root:not(.dark) input[type="checkbox"] {
+            background-color: #ffffff !important;
+            border-color: #d1d5db !important;
+        }
+        :root:not(.dark) input[type="checkbox"]:checked {
+            background-color: #0891b2 !important;
+            border-color: #0891b2 !important;
+        }
+        
+        /* Fix code blocks inside details */
+        :root:not(.dark) code {
+            background-color: #f1f5f9 !important;
+            color: #0891b2 !important;
+        }
+        
+        /* Ensure body background is light */
+        :root:not(.dark) body {
+            background-color: #f8fafc !important;
+        }
     </style>
 </head>
 <body class="bg-dark-950 dark:bg-dark-950 text-white dark:text-white font-sans min-h-screen antialiased transition-colors duration-300">

@@ -425,22 +425,113 @@ Classify this trade. If you cannot classify with confidence, explain what specif
         logger.info("=" * 60)
         # === END DEBUG ===
 
-        response = self._call_llm(system_prompt, user_prompt, max_tokens=2500)
-        
+        response = self._call_llm(system_prompt, user_prompt, max_tokens=20000)
+
         if response:
             try:
-                json_str = response
-                if "```json" in response:
-                    json_str = response.split("```json")[1].split("```")[0]
-                elif "```" in response:
-                    json_str = response.split("```")[1].split("```")[0]
-                
-                return json.loads(json_str.strip())
-            except json.JSONDecodeError:
-                logger.warning(f"Failed to parse trade analysis as JSON")
+                result = self._parse_json_response(response)
+                if result:
+                    return result
+                else:
+                    logger.warning(f"Failed to parse trade analysis as JSON, returning raw")
+                    return {"raw_analysis": response}
+            except Exception as e:
+                logger.warning(f"Error parsing trade analysis: {e}")
                 return {"raw_analysis": response}
-        
+
         return {"error": "LLM analysis unavailable"}
+    
+    def _parse_json_response(self, response: str) -> Optional[dict]:
+        """Robustly parse JSON from LLM response, handling various formats."""
+        import re
+
+        if not response:
+            logger.warning("Empty response from LLM")
+            return None
+
+        def try_parse(json_str: str) -> Optional[dict]:
+            """Try to parse JSON with various fixes."""
+            if not json_str or not json_str.strip():
+                return None
+            json_str = json_str.strip()
+            
+            # Try direct parse
+            try:
+                result = json.loads(json_str)
+                if isinstance(result, dict):
+                    return result
+            except json.JSONDecodeError:
+                pass
+            
+            # Fix common issues: trailing commas before } or ]
+            fixed = re.sub(r',\s*}', '}', json_str)
+            fixed = re.sub(r',\s*]', ']', fixed)
+            try:
+                result = json.loads(fixed)
+                if isinstance(result, dict):
+                    return result
+            except json.JSONDecodeError:
+                pass
+            
+            # Try to fix truncated JSON by closing open braces/brackets
+            # Count open vs close braces
+            open_braces = json_str.count('{') - json_str.count('}')
+            open_brackets = json_str.count('[') - json_str.count(']')
+            
+            if open_braces > 0 or open_brackets > 0:
+                # Try to close the JSON - remove trailing comma first
+                fixed = re.sub(r',\s*$', '', json_str)
+                # Remove incomplete string values
+                fixed = re.sub(r':\s*"[^"]*$', ': ""', fixed)
+                # Add closing brackets and braces
+                fixed += ']' * open_brackets + '}' * open_braces
+                try:
+                    result = json.loads(fixed)
+                    if isinstance(result, dict):
+                        logger.info("Fixed truncated JSON by closing braces")
+                        return result
+                except json.JSONDecodeError:
+                    pass
+            
+            return None
+
+        # Try direct parse first
+        result = try_parse(response)
+        if result:
+            return result
+
+        # Try extracting from markdown code blocks
+        patterns = [
+            r'```json\s*([\s\S]*?)\s*```',  # ```json ... ```
+            r'```\s*([\s\S]*?)\s*```',       # ``` ... ```
+        ]
+
+        for pattern in patterns:
+            matches = re.findall(pattern, response, re.DOTALL)
+            for match in matches:
+                result = try_parse(match)
+                if result:
+                    logger.debug("Parsed JSON from markdown code block")
+                    return result
+
+        # Try to find JSON object anywhere in the response
+        start = response.find('{')
+        end = response.rfind('}')
+        if start != -1 and end != -1 and end > start:
+            json_str = response[start:end+1]
+            result = try_parse(json_str)
+            if result:
+                logger.debug("Parsed JSON by finding braces")
+                return result
+
+        # Log the response for debugging
+        logger.warning(f"Could not parse JSON. Response length: {len(response)}")
+        if len(response) < 500:
+            logger.warning(f"Full response: {response}")
+        else:
+            logger.warning(f"Response preview (first 300 chars): {response[:300]}")
+            logger.warning(f"Response preview (last 200 chars): {response[-200:]}")
+        return None
 
     def analyze_market_context(
         self,
@@ -469,16 +560,10 @@ Provide your Brooks-style premarket analysis."""
         response = self._call_llm(system_prompt, user_prompt, max_tokens=2000)
         
         if response:
-            try:
-                json_str = response
-                if "```json" in response:
-                    json_str = response.split("```json")[1].split("```")[0]
-                elif "```" in response:
-                    json_str = response.split("```")[1].split("```")[0]
-                
-                return json.loads(json_str.strip())
-            except json.JSONDecodeError:
-                return {"raw_analysis": response}
+            result = self._parse_json_response(response)
+            if result:
+                return result
+            return {"raw_analysis": response}
         
         return {"error": "LLM analysis unavailable"}
 
@@ -531,16 +616,10 @@ Provide your coaching analysis."""
         response = self._call_llm(system_prompt, user_prompt, max_tokens=1500)
         
         if response:
-            try:
-                json_str = response
-                if "```json" in response:
-                    json_str = response.split("```json")[1].split("```")[0]
-                elif "```" in response:
-                    json_str = response.split("```")[1].split("```")[0]
-                
-                return json.loads(json_str.strip())
-            except json.JSONDecodeError:
-                return {"raw_analysis": response}
+            result = self._parse_json_response(response)
+            if result:
+                return result
+            return {"raw_analysis": response}
         
         return {"error": "LLM analysis unavailable"}
 

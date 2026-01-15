@@ -178,6 +178,7 @@ class Trade(Base):
     # Cached AI review (JSON string)
     cached_review = Column(Text)  # Stores JSON of TradeReview
     review_generated_at = Column(DateTime)  # When the review was generated
+    review_in_progress = Column(Boolean, default=False)  # True while regenerating
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -414,6 +415,16 @@ def init_db() -> None:
             try:
                 conn.execute(text("ALTER TABLE trades ADD COLUMN cached_review TEXT"))
                 conn.execute(text("ALTER TABLE trades ADD COLUMN review_generated_at DATETIME"))
+                conn.commit()
+            except Exception:
+                pass
+        
+        # Review in progress flag
+        try:
+            conn.execute(text("SELECT review_in_progress FROM trades LIMIT 1"))
+        except Exception:
+            try:
+                conn.execute(text("ALTER TABLE trades ADD COLUMN review_in_progress BOOLEAN DEFAULT 0"))
                 conn.commit()
             except Exception:
                 pass

@@ -209,34 +209,43 @@ async def update_trade_notes(trade_id: int, request: Request):
 async def get_trade_review(trade_id: int, force: bool = False):
     """
     Get AI review for a trade (non-blocking async endpoint).
-    
+
     Uses cached review if available and trade hasn't been modified.
     Set force=true to regenerate the review.
     """
     import asyncio
     import json
     from datetime import datetime
-    
+
     session = get_session()
     try:
         trade = session.query(Trade).filter(Trade.id == trade_id).first()
         if not trade:
             return JSONResponse({"success": False, "error": "Trade not found"})
-        
+
+        # Check if a regeneration is already in progress
+        if trade.review_in_progress and not force:
+            logger.info(f"⏳ Review generation already in progress for trade {trade_id}")
+            return JSONResponse({
+                "success": True,
+                "in_progress": True,
+                "message": "Review generation in progress..."
+            })
+
         # Get cache settings
         from app.config_prompts import get_cache_settings
         cache_settings = get_cache_settings()
-        
+
         # Debug: Log cache state
         logger.info(f"📋 Trade {trade_id} cache check: force={force}, enable_cache={cache_settings.get('enable_review_cache', True)}, auto_regen={cache_settings.get('auto_regenerate', False)}")
-        logger.info(f"   cached_review={'YES' if trade.cached_review else 'NO'}, review_generated_at={trade.review_generated_at}")
-        
+        logger.info(f"   cached_review={'YES' if trade.cached_review else 'NO'}, review_generated_at={trade.review_generated_at}, in_progress={trade.review_in_progress}")
+
         # Check if auto-regenerate is enabled (always force new review)
         if cache_settings.get('auto_regenerate', False):
             logger.info(f"Auto-regenerate enabled, forcing new review for trade {trade_id}")
             force = True
-        
-        # Check for cached review
+
+        # Check for cached review (only if not forcing and not in progress)
         # Note: We don't compare with updated_at because saving cache also triggers updated_at
         # Cache is explicitly cleared when trade content is modified (in the notes endpoint)
         if not force and cache_settings.get('enable_review_cache', True) and trade.cached_review and trade.review_generated_at:
@@ -252,7 +261,12 @@ async def get_trade_review(trade_id: int, force: bool = False):
                 })
             except json.JSONDecodeError:
                 logger.warning(f"Failed to parse cached review for trade {trade_id}")
-        
+
+        # Mark as in progress before starting generation
+        trade.review_in_progress = True
+        session.commit()
+        logger.info(f"🔄 Starting AI review generation for trade {trade_id}...")
+
         # Generate new review
         logger.info(f"Generating new AI review for trade {trade_id}...")
         
@@ -307,11 +321,12 @@ async def get_trade_review(trade_id: int, force: bool = False):
                 "rule_for_next_time": review.rule_for_next_time,
             }
             
-            # Cache the review
+            # Cache the review and clear in_progress flag
             trade.cached_review = json.dumps(review_dict)
             trade.review_generated_at = datetime.utcnow()
+            trade.review_in_progress = False
             session.commit()
-            
+
             # Verify cache was saved
             logger.info(f"✅ Cached new review for trade {trade_id}")
             logger.info(f"   cached_review length: {len(trade.cached_review) if trade.cached_review else 0}")
@@ -324,9 +339,20 @@ async def get_trade_review(trade_id: int, force: bool = False):
                 "review": review_dict
             })
         else:
+            # Clear in_progress flag on failure
+            trade.review_in_progress = False
+            session.commit()
             return JSONResponse({"success": False, "error": "Review not available"})
     except Exception as e:
         logger.error(f"Error getting trade review: {e}")
+        # Clear in_progress flag on error
+        try:
+            trade = session.query(Trade).filter(Trade.id == trade_id).first()
+            if trade:
+                trade.review_in_progress = False
+                session.commit()
+        except:
+            pass
         return JSONResponse({"success": False, "error": str(e)})
     finally:
         session.close()

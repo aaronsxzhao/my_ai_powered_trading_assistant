@@ -385,10 +385,15 @@ const TRADE_ID = {{ trade.id }};
 // Load review asynchronously when page loads
 document.addEventListener('DOMContentLoaded', () => loadReview(false));
 
+let pollingInterval = null;
+
 async function loadReview(force = false) {
     // Reset and show loading
     resetLoadingSteps();
-    
+    document.getElementById('review-loading').classList.remove('hidden');
+    document.getElementById('review-content').classList.add('hidden');
+    document.getElementById('review-error').classList.add('hidden');
+
     // Quick start toast only if generating new
     if (force) {
         showStartToast('Regenerating AI analysis');
@@ -397,23 +402,42 @@ async function loadReview(force = false) {
         showStartToast('Loading review');
         updateStep(1, 'active', 'Checking cached review...');
     }
-    
+
     try {
         // Simulate progress for better UX
         setTimeout(() => updateStep(1, 'done'), 300);
         setTimeout(() => updateStep(2, 'active', 'Fetching OHLCV data...'), 500);
-        
-        const url = force 
+
+        const url = force
             ? `/api/trades/${TRADE_ID}/review?force=true`
             : `/api/trades/${TRADE_ID}/review`;
         const response = await fetch(url);
         const data = await response.json();
-        
+
+        // Handle "in progress" status - start polling
+        if (data.success && data.in_progress) {
+            updateStep(2, 'done');
+            updateStep(3, 'active', 'AI analysis in progress...');
+            showToast('Review generation in progress...', 'info', 5000);
+            
+            // Start polling every 3 seconds
+            if (!pollingInterval) {
+                pollingInterval = setInterval(() => pollForReview(), 3000);
+            }
+            return;
+        }
+
+        // Clear polling if we got a result
+        if (pollingInterval) {
+            clearInterval(pollingInterval);
+            pollingInterval = null;
+        }
+
         document.getElementById('review-loading').classList.add('hidden');
-        
+
         if (data.success && data.review) {
             displayReview(data.review);
-            
+
             // Show cache status
             if (data.cached) {
                 document.getElementById('cache-badge').classList.remove('hidden');
@@ -424,7 +448,7 @@ async function loadReview(force = false) {
                 const setup = data.review.setup_classification || 'analyzed';
                 showFinishToast('AI analysis complete', `Grade ${grade}, ${setup}`);
             }
-            
+
             // Show generated time
             if (data.generated_at) {
                 document.getElementById('review-meta').classList.remove('hidden');
@@ -437,10 +461,55 @@ async function loadReview(force = false) {
             showToast(data.error || 'Review failed', 'error');
         }
     } catch (err) {
+        if (pollingInterval) {
+            clearInterval(pollingInterval);
+            pollingInterval = null;
+        }
         document.getElementById('review-loading').classList.add('hidden');
         document.getElementById('review-error').classList.remove('hidden');
         document.getElementById('error-message').textContent = 'Failed to load review: ' + err.message;
         showToast('AI analysis failed', 'error');
+    }
+}
+
+async function pollForReview() {
+    try {
+        const response = await fetch(`/api/trades/${TRADE_ID}/review`);
+        const data = await response.json();
+
+        // Still in progress - keep polling
+        if (data.success && data.in_progress) {
+            updateStep(3, 'active', 'Still generating... please wait');
+            return;
+        }
+
+        // Clear polling
+        if (pollingInterval) {
+            clearInterval(pollingInterval);
+            pollingInterval = null;
+        }
+
+        document.getElementById('review-loading').classList.add('hidden');
+
+        if (data.success && data.review) {
+            displayReview(data.review);
+            document.getElementById('cache-badge').classList.add('hidden');
+            const grade = data.review.grade || '?';
+            const setup = data.review.setup_classification || 'analyzed';
+            showFinishToast('AI analysis complete', `Grade ${grade}, ${setup}`);
+
+            if (data.generated_at) {
+                document.getElementById('review-meta').classList.remove('hidden');
+                const genDate = new Date(data.generated_at);
+                document.getElementById('generated-at').textContent = genDate.toLocaleString();
+            }
+        } else {
+            document.getElementById('review-error').classList.remove('hidden');
+            document.getElementById('error-message').textContent = data.error || 'Review not available';
+        }
+    } catch (err) {
+        // Keep polling on network errors
+        console.error('Polling error:', err);
     }
 }
 
