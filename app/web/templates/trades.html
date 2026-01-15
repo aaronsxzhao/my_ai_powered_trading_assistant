@@ -83,6 +83,11 @@
                         <td class="text-sm font-mono text-dark-400">
                             {% if trade.exit_time %}
                                 {{ trade.exit_time.strftime('%m/%d %H:%M') }}
+                                {% if trade.input_timezone and trade.input_timezone != trade.market_timezone %}
+                                <div class="text-xs text-dark-500">
+                                    ({{ trade.exit_time_local.strftime('%H:%M') if trade.exit_time_local else '' }} {{ trade.input_timezone.split('/')[-1] | replace('_', ' ') }})
+                                </div>
+                                {% endif %}
                             {% else %}
                                 {{ trade.trade_date }}
                             {% endif %}

@@ -224,20 +224,51 @@
                 <h2 class="text-xl font-bold text-white mb-4">📤 Upload CSV</h2>
                 
                 <form id="upload-form" class="space-y-4">
-                    <div>
-                        <label class="label">Import Format</label>
-                        <select id="format-select" class="select">
-                            <option value="generic">📄 Generic CSV</option>
-                            <optgroup label="TradingView">
-                                <option value="tv_order_history">⭐ TradingView - Order History (RECOMMENDED)</option>
-                                <option value="tv_balance_history">📊 TradingView - Balance History</option>
-                            </optgroup>
-                            <optgroup label="Brokers">
-                                <option value="thinkorswim">💹 TD Ameritrade ThinkOrSwim</option>
-                                <option value="tradovate">📈 Tradovate</option>
-                                <option value="interactive_brokers">🏦 Interactive Brokers</option>
-                            </optgroup>
-                        </select>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="label">Import Format</label>
+                            <select id="format-select" class="select">
+                                <option value="generic">📄 Generic CSV</option>
+                                <optgroup label="TradingView">
+                                    <option value="tv_order_history">⭐ TradingView - Order History (RECOMMENDED)</option>
+                                    <option value="tv_balance_history">📊 TradingView - Balance History</option>
+                                </optgroup>
+                                <optgroup label="Brokers">
+                                    <option value="thinkorswim">💹 TD Ameritrade ThinkOrSwim</option>
+                                    <option value="tradovate">📈 Tradovate</option>
+                                    <option value="interactive_brokers">🏦 Interactive Brokers</option>
+                                </optgroup>
+                            </select>
+                        </div>
+                        
+                        <div id="timezone-section" class="hidden">
+                            <label class="label">
+                                Your Timezone (CSV times are in)
+                                <span class="text-xs text-dark-500 ml-1">🌏</span>
+                            </label>
+                            <select id="timezone-select" class="select">
+                                <optgroup label="Americas">
+                                    <option value="America/New_York">Eastern Time (New York)</option>
+                                    <option value="America/Chicago">Central Time (Chicago)</option>
+                                    <option value="America/Denver">Mountain Time (Denver)</option>
+                                    <option value="America/Los_Angeles">Pacific Time (Los Angeles)</option>
+                                </optgroup>
+                                <optgroup label="Asia">
+                                    <option value="Asia/Shanghai">Beijing/Shanghai Time</option>
+                                    <option value="Asia/Hong_Kong">Hong Kong Time</option>
+                                    <option value="Asia/Tokyo">Tokyo Time</option>
+                                    <option value="Asia/Singapore">Singapore Time</option>
+                                </optgroup>
+                                <optgroup label="Europe">
+                                    <option value="Europe/London">London Time</option>
+                                    <option value="Europe/Paris">Central European Time</option>
+                                </optgroup>
+                                <option value="UTC">UTC</option>
+                            </select>
+                            <p class="text-xs text-dark-500 mt-1">
+                                Times will be converted to market timezone (e.g., AMEX/NASDAQ → Eastern, HKEX → HK)
+                            </p>
+                        </div>
                     </div>
                     
                     <div class="border-2 border-dashed border-dark-600 rounded-xl p-8 text-center hover:border-accent-500 transition cursor-pointer bg-dark-900/50"
@@ -562,10 +593,15 @@ function updateFormatInfo() {
     const selected = formatSelect.value;
     const infoEl = document.getElementById('format-info-' + selected);
     if (infoEl) infoEl.classList.remove('hidden');
+    
+    // Show timezone selector and balance file section for TV order history
+    const timezoneSection = document.getElementById('timezone-section');
     if (selected === 'tv_order_history') {
         balanceFileSection.classList.remove('hidden');
+        if (timezoneSection) timezoneSection.classList.remove('hidden');
     } else {
         balanceFileSection.classList.add('hidden');
+        if (timezoneSection) timezoneSection.classList.add('hidden');
     }
 }
 
@@ -579,6 +615,13 @@ uploadForm.addEventListener('submit', async (e) => {
     const formData = new FormData();
     formData.append('file', fileInput.files[0]);
     formData.append('format', formatSelect.value);
+    
+    // Include timezone if TV order history format
+    const timezoneSelect = document.getElementById('timezone-select');
+    if (timezoneSelect && formatSelect.value === 'tv_order_history') {
+        formData.append('input_timezone', timezoneSelect.value);
+    }
+    
     if (balanceFileInput && balanceFileInput.files.length > 0) {
         formData.append('balance_file', balanceFileInput.files[0]);
     }

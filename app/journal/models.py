@@ -122,12 +122,22 @@ class Trade(Base):
 
     # Position sizing
     size = Column(Float)  # Number of shares/contracts
-    stop_price = Column(Float)
-    target_price = Column(Float)
+    
+    # Risk management (manually maintained by user)
+    stop_loss = Column(Float)  # SL - Stop Loss level (where you would exit if wrong)
+    take_profit = Column(Float)  # TP - Take Profit level (target exit)
+    
+    # Legacy - kept for backward compatibility, use stop_loss instead
+    stop_price = Column(Float)  # Deprecated: use stop_loss
+    target_price = Column(Float)  # Deprecated: use take_profit
     
     # Currency (for non-USD trades)
     currency = Column(String(10), default="USD")  # USD, HKD, EUR, etc.
     currency_rate = Column(Float, default=1.0)  # Rate to convert to USD (1 USD = X currency)
+    
+    # Timezone of the market where the trade took place
+    market_timezone = Column(String(50), default="America/New_York")  # e.g., America/New_York, Asia/Hong_Kong
+    input_timezone = Column(String(50))  # User's original timezone when importing (for display)
 
     # Computed metrics (populated by analytics)
     r_multiple = Column(Float)  # PnL / initial risk
@@ -240,24 +250,65 @@ class Trade(Base):
         return self.pnl_dollars
 
     @property
+    def entry_time_local(self) -> Optional[datetime]:
+        """Get entry time in the original input timezone."""
+        return self._convert_to_input_timezone(self.entry_time)
+    
+    @property
+    def exit_time_local(self) -> Optional[datetime]:
+        """Get exit time in the original input timezone."""
+        return self._convert_to_input_timezone(self.exit_time)
+    
+    def _convert_to_input_timezone(self, dt: Optional[datetime]) -> Optional[datetime]:
+        """Convert a market timezone datetime back to input timezone."""
+        if dt is None or not self.input_timezone or not self.market_timezone:
+            return dt
+        if self.input_timezone == self.market_timezone:
+            return dt
+        try:
+            from zoneinfo import ZoneInfo
+            market_tz = ZoneInfo(self.market_timezone)
+            input_tz = ZoneInfo(self.input_timezone)
+            # Assume dt is in market timezone (naive)
+            dt_market = dt.replace(tzinfo=market_tz)
+            # Convert to input timezone
+            dt_input = dt_market.astimezone(input_tz)
+            return dt_input.replace(tzinfo=None)
+        except Exception:
+            return dt
+
+    @property
+    def effective_stop_loss(self) -> Optional[float]:
+        """Get the effective stop loss (prefer stop_loss, fallback to stop_price for legacy)."""
+        return self.stop_loss or self.stop_price
+    
+    @property
+    def effective_take_profit(self) -> Optional[float]:
+        """Get the effective take profit (prefer take_profit, fallback to target_price for legacy)."""
+        return self.take_profit or self.target_price
+    
+    @property
     def initial_risk_dollars(self) -> Optional[float]:
         """Calculate initial risk in dollars."""
-        if self.entry_price and self.stop_price and self.size:
-            risk_per_share = abs(self.entry_price - self.stop_price)
+        sl = self.effective_stop_loss
+        if self.entry_price and sl and self.size:
+            risk_per_share = abs(self.entry_price - sl)
             return risk_per_share * self.size
         return None
 
     def compute_metrics(self) -> None:
         """Compute derived metrics from trade data."""
+        sl = self.effective_stop_loss
+        
         # R-multiple
-        if self.entry_price and self.exit_price and self.stop_price:
+        if self.entry_price and self.exit_price and sl:
             if self.direction == TradeDirection.LONG:
-                risk = self.entry_price - self.stop_price
+                risk = self.entry_price - sl
                 reward = self.exit_price - self.entry_price
             else:
-                risk = self.stop_price - self.entry_price
+                risk = sl - self.entry_price
                 reward = self.entry_price - self.exit_price
-            
+
             # Handle zero or negative risk (stop == entry)
             if risk > 0.0001:
                 self.r_multiple = reward / risk
@@ -280,14 +331,14 @@ class Trade(Base):
                     self.pnl_dollars = (self.entry_price - self.exit_price) * self.size
 
         # MAE/MFE
-        if self.high_during_trade and self.low_during_trade and self.stop_price:
+        if self.high_during_trade and self.low_during_trade and sl:
             if self.direction == TradeDirection.LONG:
-                risk = self.entry_price - self.stop_price
+                risk = self.entry_price - sl
                 if risk > 0:
                     self.mae = (self.entry_price - self.low_during_trade) / risk
                     self.mfe = (self.high_during_trade - self.entry_price) / risk
             else:
-                risk = self.stop_price - self.entry_price
+                risk = sl - self.entry_price
                 if risk > 0:
                     self.mae = (self.high_during_trade - self.entry_price) / risk
                     self.mfe = (self.entry_price - self.low_during_trade) / risk
@@ -408,6 +459,46 @@ def init_db() -> None:
             except Exception:
                 pass
         
+        # Market timezone column
+        try:
+            conn.execute(text("SELECT market_timezone FROM trades LIMIT 1"))
+        except Exception:
+            try:
+                conn.execute(text("ALTER TABLE trades ADD COLUMN market_timezone VARCHAR(50) DEFAULT 'America/New_York'"))
+                conn.commit()
+            except Exception:
+                pass
+        
+        # Input timezone column (user's original timezone)
+        try:
+            conn.execute(text("SELECT input_timezone FROM trades LIMIT 1"))
+        except Exception:
+            try:
+                conn.execute(text("ALTER TABLE trades ADD COLUMN input_timezone VARCHAR(50)"))
+                conn.commit()
+            except Exception:
+                pass
+        
+        # Stop Loss column (SL)
+        try:
+            conn.execute(text("SELECT stop_loss FROM trades LIMIT 1"))
+        except Exception:
+            try:
+                conn.execute(text("ALTER TABLE trades ADD COLUMN stop_loss FLOAT"))
+                conn.commit()
+            except Exception:
+                pass
+        
+        # Take Profit column (TP)
+        try:
+            conn.execute(text("SELECT take_profit FROM trades LIMIT 1"))
+        except Exception:
+            try:
+                conn.execute(text("ALTER TABLE trades ADD COLUMN take_profit FLOAT"))
+                conn.commit()
+            except Exception:
+                pass
+
         # Cached AI review columns
         try:
             conn.execute(text("SELECT cached_review FROM trades LIMIT 1"))

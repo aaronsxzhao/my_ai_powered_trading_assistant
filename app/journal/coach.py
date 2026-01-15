@@ -158,7 +158,7 @@ class TradeCoach:
                     # New extended fields
                     trade_date=str(trade.trade_date) if trade.trade_date else None,
                     market=getattr(trade, 'market', None) or "US stocks",
-                    timezone=getattr(trade, 'timezone', None) or "US/Eastern",
+                    timezone=getattr(trade, 'market_timezone', None) or "America/New_York",
                     intended_setup=trade.entry_reason,
                     management_plan=trade.target_reason,
                     pd_high=pd_high,

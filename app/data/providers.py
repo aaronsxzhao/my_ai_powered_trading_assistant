@@ -55,15 +55,51 @@ def normalize_ticker(ticker: str) -> tuple[str, str]:
     """
     Normalize ticker symbol and detect exchange.
     
+    Handles various formats:
+    - "HKEX:0700" -> "0700.HK", 'HK'
+    - "0700.HK" -> "0700.HK", 'HK'
+    - "0700" (4-5 digits) -> "0700.HK", 'HK'
+    - "AMEX:SPY" -> "SPY", 'US'
+    - "SPY" -> "SPY", 'US'
+    
     Returns:
         tuple of (normalized_ticker, exchange)
-        exchange can be: 'US', 'HK', 'unknown'
+        exchange can be: 'US', 'HK', 'UK', 'JP', 'CN'
     """
     ticker = ticker.upper().strip()
+    
+    # Handle exchange prefix (e.g., "HKEX:0700", "AMEX:SPY")
+    if ':' in ticker:
+        exchange_prefix, symbol = ticker.split(':', 1)
+        
+        # Hong Kong Exchange
+        if exchange_prefix in ['HKEX', 'HKG', 'SEHK']:
+            # HK tickers need .HK suffix for yfinance
+            # Pad with leading zeros if needed (e.g., 700 -> 0700)
+            symbol = symbol.lstrip('0') or '0'  # Remove leading zeros first
+            symbol = symbol.zfill(4)  # Pad to 4 digits
+            return f"{symbol}.HK", 'HK'
+        
+        # China mainland exchanges
+        if exchange_prefix in ['SSE', 'SHA']:  # Shanghai
+            return f"{symbol}.SS", 'CN'
+        if exchange_prefix in ['SZSE', 'SHE']:  # Shenzhen
+            return f"{symbol}.SZ", 'CN'
+        
+        # US exchanges - just return the symbol
+        if exchange_prefix in ['AMEX', 'NYSE', 'NASDAQ', 'ARCA', 'BATS', 'OTC']:
+            return symbol, 'US'
+        
+        # Unknown exchange prefix - try to handle as regular ticker
+        ticker = symbol
     
     # Already has exchange suffix
     if '.HK' in ticker:
         return ticker, 'HK'
+    if '.SS' in ticker:
+        return ticker, 'CN'
+    if '.SZ' in ticker:
+        return ticker, 'CN'
     if '.L' in ticker:
         return ticker, 'UK'
     if '.T' in ticker:
@@ -71,6 +107,7 @@ def normalize_ticker(ticker: str) -> tuple[str, str]:
     
     # Detect HK stocks (numeric only, 4-5 digits)
     if ticker.isdigit() and len(ticker) in [4, 5]:
+        ticker = ticker.zfill(4)  # Ensure 4 digits with leading zeros
         return f"{ticker}.HK", 'HK'
     
     # Default to US
@@ -80,7 +117,7 @@ def normalize_ticker(ticker: str) -> tuple[str, str]:
 def is_international_ticker(ticker: str) -> bool:
     """Check if ticker is for an international (non-US) market."""
     _, exchange = normalize_ticker(ticker)
-    return exchange != 'US'
+    return exchange in ['HK', 'CN', 'UK', 'JP']
 
 Timeframe = Literal["1d", "2h", "1h", "30m", "15m", "5m", "1m"]
 
@@ -206,7 +243,18 @@ class YFinanceProvider(DataProvider):
                 # Wait for rate limiter
                 self.rate_limiter.wait()
                 
+                logger.debug(f"🔍 Fetching {normalized_ticker} from yfinance ({start.date()} to {end.date()}, interval={interval})")
+                
                 ticker_obj = yf.Ticker(normalized_ticker)
+                
+                # Check if ticker is valid by checking info
+                try:
+                    info = ticker_obj.info
+                    if not info or info.get('regularMarketPrice') is None:
+                        logger.warning(f"⚠️ Ticker {normalized_ticker} may not exist or has no market data")
+                except Exception as info_err:
+                    logger.debug(f"Could not fetch info for {normalized_ticker}: {info_err}")
+                
                 df = ticker_obj.history(
                     start=start.strftime("%Y-%m-%d"),
                     end=end.strftime("%Y-%m-%d"),
@@ -215,8 +263,16 @@ class YFinanceProvider(DataProvider):
                 )
 
                 if df.empty:
-                    logger.warning(f"No data returned for {ticker} ({timeframe})")
-                    return pd.DataFrame(columns=OHLCV_COLUMNS)
+                    logger.warning(f"⚠️ No data returned for {normalized_ticker} ({timeframe}) from {start.date()} to {end.date()}")
+                    # Try alternative date range for intraday
+                    if interval in ['1m', '5m', '15m', '30m', '1h', '2h']:
+                        logger.info(f"📊 Trying shorter date range for intraday data...")
+                        df = ticker_obj.history(period="5d", interval=interval, actions=False)
+                        if not df.empty:
+                            logger.info(f"✅ Got {len(df)} rows with 5-day period")
+                    
+                    if df.empty:
+                        return pd.DataFrame(columns=OHLCV_COLUMNS)
 
                 # Reset index to get datetime as column
                 df = df.reset_index()

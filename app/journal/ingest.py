@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Optional, Literal
 import logging
 import re
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -31,9 +32,100 @@ logger = logging.getLogger(__name__)
 # Imports folder for bulk uploads
 IMPORTS_DIR = PROJECT_ROOT / "imports"
 
+# Common timezones for user selection
+INPUT_TIMEZONES = {
+    "America/New_York": "Eastern Time (US)",
+    "America/Chicago": "Central Time (US)",
+    "America/Denver": "Mountain Time (US)", 
+    "America/Los_Angeles": "Pacific Time (US)",
+    "Asia/Shanghai": "Beijing/Shanghai Time",
+    "Asia/Hong_Kong": "Hong Kong Time",
+    "Asia/Tokyo": "Tokyo Time",
+    "Asia/Singapore": "Singapore Time",
+    "Europe/London": "London Time",
+    "Europe/Paris": "Central European Time",
+    "UTC": "UTC",
+}
+
+# Exchange prefix to market timezone mapping
+EXCHANGE_TIMEZONES = {
+    # US Markets (Eastern Time)
+    "AMEX": "America/New_York",
+    "NYSE": "America/New_York",
+    "NASDAQ": "America/New_York",
+    "ARCA": "America/New_York",
+    "BATS": "America/New_York",
+    "OTC": "America/New_York",
+    # Hong Kong
+    "HKEX": "Asia/Hong_Kong",
+    "HKG": "Asia/Hong_Kong",
+    # China
+    "SSE": "Asia/Shanghai",
+    "SZSE": "Asia/Shanghai",
+    # Japan
+    "TSE": "Asia/Tokyo",
+    "JPX": "Asia/Tokyo",
+    # Europe
+    "LSE": "Europe/London",
+    "XETRA": "Europe/Berlin",
+    "EURONEXT": "Europe/Paris",
+    # Default
+    "DEFAULT": "America/New_York",
+}
+
+
+def get_market_timezone(ticker: str) -> str:
+    """
+    Determine the market timezone based on ticker's exchange prefix.
+    
+    Args:
+        ticker: Ticker symbol, possibly with exchange prefix (e.g., "AMEX:SOXL", "HKEX:0700")
+        
+    Returns:
+        Timezone string (e.g., "America/New_York", "Asia/Hong_Kong")
+    """
+    if ":" in ticker:
+        exchange = ticker.split(":")[0].upper()
+        return EXCHANGE_TIMEZONES.get(exchange, EXCHANGE_TIMEZONES["DEFAULT"])
+    return EXCHANGE_TIMEZONES["DEFAULT"]
+
+
+def convert_timezone(dt: datetime, from_tz: str, to_tz: str) -> datetime:
+    """
+    Convert datetime from one timezone to another.
+    
+    Args:
+        dt: Datetime object (naive or aware)
+        from_tz: Source timezone string (e.g., "Asia/Shanghai")
+        to_tz: Target timezone string (e.g., "America/New_York")
+        
+    Returns:
+        Datetime in target timezone (as naive datetime for DB storage)
+    """
+    if from_tz == to_tz:
+        return dt
+    
+    try:
+        from_zone = ZoneInfo(from_tz)
+        to_zone = ZoneInfo(to_tz)
+        
+        # If datetime is naive, assume it's in from_tz
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=from_zone)
+        
+        # Convert to target timezone
+        converted = dt.astimezone(to_zone)
+        
+        # Return as naive datetime (for SQLite compatibility)
+        return converted.replace(tzinfo=None)
+    except Exception as e:
+        logger.warning(f"Timezone conversion failed ({from_tz} → {to_tz}): {e}")
+        return dt
+
+
 # Supported import formats
 IMPORT_FORMATS = {
-    "generic": "Generic CSV (ticker, direction, entry_price, exit_price, stop_price)",
+    "generic": "Generic CSV (ticker, direction, entry_price, exit_price, size, sl, tp)",
     "tv_order_history": "TradingView - Order History Export (RECOMMENDED)",
     "tv_balance_history": "TradingView - Balance History Export (simpler, less detail)",
     "robinhood": "Robinhood - Auto Import (requires login)",
@@ -73,9 +165,10 @@ class TradeIngester:
         direction: Literal["long", "short"],
         entry_price: float,
         exit_price: float,
-        stop_price: float,
         size: float = 1.0,
         timeframe: str = "5m",
+        stop_loss: Optional[float] = None,
+        take_profit: Optional[float] = None,
         entry_time: Optional[datetime] = None,
         exit_time: Optional[datetime] = None,
         target_price: Optional[float] = None,
@@ -88,6 +181,8 @@ class TradeIngester:
         low_during_trade: Optional[float] = None,
         currency: str = "USD",
         currency_rate: float = 1.0,
+        market_timezone: str = "America/New_York",
+        input_timezone: Optional[str] = None,
     ) -> Trade:
         """
         Add a trade manually.
@@ -98,9 +193,10 @@ class TradeIngester:
             direction: 'long' or 'short'
             entry_price: Entry price
             exit_price: Exit price
-            stop_price: Initial stop loss price
             size: Position size (shares/contracts)
             timeframe: Trade timeframe
+            stop_loss: Stop Loss level (optional, manually maintained)
+            take_profit: Take Profit level (optional, manually maintained)
             entry_time: Entry datetime
             exit_time: Exit datetime
             target_price: Price target
@@ -133,7 +229,8 @@ class TradeIngester:
                 direction=TradeDirection.LONG if direction == "long" else TradeDirection.SHORT,
                 entry_price=entry_price,
                 exit_price=exit_price,
-                stop_price=stop_price,
+                stop_loss=stop_loss,
+                take_profit=take_profit,
                 size=size,
                 entry_time=entry_time,
                 exit_time=exit_time,
@@ -147,6 +244,8 @@ class TradeIngester:
                 low_during_trade=low_during_trade,
                 currency=currency,
                 currency_rate=currency_rate,
+                market_timezone=market_timezone,
+                input_timezone=input_timezone,
             )
 
             # Compute metrics
@@ -290,24 +389,17 @@ class TradeIngester:
                 
                 # Get P&L from the row
                 pnl = row.get('Realized P&L (value)', 0)
-                
-                # Estimate stop price (not in balance history)
-                # Use 2% from entry as default
-                if direction == 'long':
-                    stop_price = entry_price * 0.98
-                else:
-                    stop_price = entry_price * 1.02
-                
+
+                # SL/TP not available in balance history - user should set manually
                 trade = self.add_trade_manual(
                     ticker=ticker,
                     trade_date=exit_time.date() if hasattr(exit_time, 'date') else date.today(),
                     direction=direction,
                     entry_price=entry_price,
                     exit_price=exit_price,
-                    stop_price=stop_price,
                     size=size,
                     exit_time=exit_time,
-                    notes=f"Imported from TradingView Balance History. P&L: {pnl:.2f}",
+                    notes=f"Imported from TradingView Balance History. P&L: {pnl:.2f}. Set SL/TP manually.",
                 )
                 imported += 1
                 
@@ -329,6 +421,7 @@ class TradeIngester:
         file_path: Path,
         skip_errors: bool = True,
         balance_file_path: Optional[Path] = None,
+        input_timezone: str = "America/New_York",
     ) -> tuple[int, int, list[str]]:
         """
         Import trades from TradingView Paper Trading ORDER HISTORY export.
@@ -343,6 +436,11 @@ class TradeIngester:
         - Negative position = short
         - Each exit (partial or full) creates a trade record
         
+        Timezone handling:
+        - User specifies their input timezone (what timezone the CSV times are in)
+        - Market timezone is determined by exchange prefix (AMEX/NASDAQ → Eastern, HKEX → HK)
+        - Times are converted from input timezone to market timezone for display/analysis
+        
         Cross-validation:
         - If balance_file_path is provided, validates computed trades against balance history
         
@@ -353,6 +451,7 @@ class TradeIngester:
             file_path: Path to CSV file
             skip_errors: Whether to skip errors
             balance_file_path: Optional path to balance history CSV for cross-validation
+            input_timezone: Timezone of the times in the CSV (user's local timezone)
             
         Returns:
             Tuple of (imported_count, error_count, error_messages)
@@ -545,24 +644,14 @@ class TradeIngester:
                     entry_time = entry_orders[-1]['time'] if entry_orders else None
                     exit_time = exit_orders[0]['time'] if exit_orders else None
                     
-                    # Get stop price
-                    stop_price = last_stop_price
-                    for o in pending_orders:
-                        if o['stop']:
-                            stop_price = o['stop']
-                            break
-                    if stop_price is None:
-                        if direction == 'long':
-                            stop_price = avg_entry_price * 0.98
-                        else:
-                            stop_price = avg_entry_price * 1.02
+                    # Note: Stop Price from TV order history is just the order type (stop order at X price)
+                    # NOT the actual SL level. User should set SL/TP manually after import.
                     
                     trade_entry = {
                         'ticker': ticker,
                         'direction': direction,
                         'entry_price': avg_entry_price,
                         'exit_price': avg_exit_price,
-                        'stop_price': stop_price,
                         'size': entry_total_qty,
                         'entry_time': entry_time,
                         'exit_time': exit_time,
@@ -609,19 +698,40 @@ class TradeIngester:
         
         for trade_data in trades_data:
             try:
+                ticker = trade_data['ticker']
+                
+                # Determine market timezone based on exchange prefix
+                market_tz = get_market_timezone(ticker)
+                
+                # Convert times from user's input timezone to market timezone
+                entry_time = trade_data.get('entry_time')
+                exit_time = trade_data.get('exit_time')
+                
+                if entry_time and input_timezone != market_tz:
+                    entry_time = convert_timezone(entry_time, input_timezone, market_tz)
+                    logger.debug(f"Converted entry time: {input_timezone} → {market_tz}")
+                
+                if exit_time and input_timezone != market_tz:
+                    exit_time = convert_timezone(exit_time, input_timezone, market_tz)
+                    logger.debug(f"Converted exit time: {input_timezone} → {market_tz}")
+                
+                # Use converted exit time for trade_date
+                trade_date = exit_time.date() if exit_time else date.today()
+                
                 trade = self.add_trade_manual(
-                    ticker=trade_data['ticker'],
-                    trade_date=trade_data['exit_time'].date() if trade_data.get('exit_time') else date.today(),
+                    ticker=ticker,
+                    trade_date=trade_date,
                     direction=trade_data['direction'],
                     entry_price=trade_data['entry_price'],
                     exit_price=trade_data['exit_price'],
-                    stop_price=float(trade_data['stop_price']),
                     size=trade_data['size'],
-                    entry_time=trade_data.get('entry_time'),
-                    exit_time=trade_data.get('exit_time'),
-                    notes=f"Imported from TradingView Order History",
+                    entry_time=entry_time,
+                    exit_time=exit_time,
+                    notes=f"Imported from TradingView Order History (times in {market_tz}). Set SL/TP manually.",
                     currency=trade_data.get('currency', 'USD'),
                     currency_rate=trade_data.get('currency_rate', 1.0),
+                    market_timezone=market_tz,
+                    input_timezone=input_timezone if input_timezone != market_tz else None,
                 )
                 imported += 1
                 
@@ -731,20 +841,17 @@ class TradeIngester:
 
                             # Create a trade from matched buy/sell
                             try:
-                                # Estimate stop as 2% from entry
-                                stop = buy_order['entry_price'] * 0.98
-
+                                # SL/TP not available from Robinhood API - user should set manually
                                 trade = self.add_trade_manual(
                                     ticker=ticker,
                                     trade_date=order['exit_time'].date(),
                                     direction='long',
                                     entry_price=buy_order['entry_price'],
                                     exit_price=order['entry_price'],  # Sell price
-                                    stop_price=stop,
                                     size=min(buy_order['size'], order['size']),
                                     entry_time=buy_order['entry_time'],
                                     exit_time=order['exit_time'],
-                                    notes=f"Imported from Robinhood",
+                                    notes=f"Imported from Robinhood. Set SL/TP manually.",
                                 )
                                 imported += 1
                             except Exception as e:
@@ -799,7 +906,10 @@ class TradeIngester:
             "side": "direction",
             "entry": "entry_price",
             "exit": "exit_price",
-            "stop": "stop_price",
+            "stop": "stop_loss",
+            "sl": "stop_loss",
+            "tp": "take_profit",
+            "target": "take_profit",
             "qty": "size",
             "quantity": "size",
             "shares": "size",
@@ -847,15 +957,18 @@ class TradeIngester:
         elif isinstance(trade_date, datetime):
             trade_date = trade_date.date()
 
-        # Get stop price or estimate
-        stop_price = row.get("stop_price")
-        if pd.isna(stop_price) or stop_price is None:
-            # Estimate stop as 1% from entry
-            entry = float(row["entry_price"])
-            if direction == "long":
-                stop_price = entry * 0.99
-            else:
-                stop_price = entry * 1.01
+        # Get SL/TP if provided in CSV
+        stop_loss = row.get("stop_loss") or row.get("sl")
+        if pd.isna(stop_loss):
+            stop_loss = None
+        else:
+            stop_loss = float(stop_loss)
+        
+        take_profit = row.get("take_profit") or row.get("tp")
+        if pd.isna(take_profit):
+            take_profit = None
+        else:
+            take_profit = float(take_profit)
 
         return self.add_trade_manual(
             ticker=str(row["ticker"]),
@@ -863,9 +976,10 @@ class TradeIngester:
             direction=direction,
             entry_price=float(row["entry_price"]),
             exit_price=float(row["exit_price"]),
-            stop_price=float(stop_price),
             size=float(row.get("size", 1)),
             timeframe=str(row.get("timeframe", "5m")),
+            stop_loss=stop_loss,
+            take_profit=take_profit,
             strategy_name=row.get("strategy") if pd.notna(row.get("strategy")) else None,
             notes=row.get("notes") if pd.notna(row.get("notes")) else None,
         )
@@ -1043,7 +1157,7 @@ class TradeIngester:
                 direction=trade.direction.value,
                 entry_price=trade.entry_price,
                 exit_price=trade.exit_price,
-                stop_price=trade.stop_price,
+                stop_price=trade.effective_stop_loss,  # Use effective stop loss
                 entry_reason=trade.entry_reason,
                 notes=trade.notes,
             )

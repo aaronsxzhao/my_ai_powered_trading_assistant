@@ -20,7 +20,12 @@
                     <span class="badge bg-danger-500/20 text-danger-400 border border-danger-500/30">▼ SHORT</span>
                 {% endif %}
             </div>
-            <p class="text-dark-400 mt-1">Trade #{{ trade.id }} • {{ trade.trade_date }}</p>
+            <p class="text-dark-400 mt-1">
+                Trade #{{ trade.id }} • {{ trade.trade_date }}
+                {% if trade.market_timezone %}
+                <span class="text-dark-500 text-xs ml-2">({{ trade.market_timezone.split('/')[-1] | replace('_', ' ') }})</span>
+                {% endif %}
+            </p>
         </div>
         <div class="flex items-center gap-6">
             <div class="text-right">
@@ -70,6 +75,24 @@
                     <div class="text-sm text-dark-400 mb-1">Duration</div>
                     <div class="text-lg font-mono text-white">{{ trade.duration_display }}</div>
                 </div>
+                {% if trade.entry_time %}
+                <div class="stat-card">
+                    <div class="text-sm text-dark-400 mb-1">Entry Time</div>
+                    <div class="text-sm font-mono text-white">{{ trade.entry_time.strftime('%m/%d %H:%M:%S') }}</div>
+                    {% if trade.input_timezone and trade.input_timezone != trade.market_timezone and trade.entry_time_local %}
+                    <div class="text-xs text-dark-500 mt-1">({{ trade.entry_time_local.strftime('%H:%M:%S') }} {{ trade.input_timezone.split('/')[-1] | replace('_', ' ') }})</div>
+                    {% endif %}
+                </div>
+                {% endif %}
+                {% if trade.exit_time %}
+                <div class="stat-card">
+                    <div class="text-sm text-dark-400 mb-1">Exit Time</div>
+                    <div class="text-sm font-mono text-white">{{ trade.exit_time.strftime('%m/%d %H:%M:%S') }}</div>
+                    {% if trade.input_timezone and trade.input_timezone != trade.market_timezone and trade.exit_time_local %}
+                    <div class="text-xs text-dark-500 mt-1">({{ trade.exit_time_local.strftime('%H:%M:%S') }} {{ trade.input_timezone.split('/')[-1] | replace('_', ' ') }})</div>
+                    {% endif %}
+                </div>
+                {% endif %}
                 <div class="stat-card">
                     <div class="text-sm text-dark-400 mb-1">Timeframe</div>
                     <div class="text-sm font-medium">

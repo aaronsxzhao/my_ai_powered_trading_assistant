@@ -510,15 +510,16 @@ async def import_csv(
     file: UploadFile = File(...),
     format: str = Form("generic"),
     balance_file: Optional[UploadFile] = File(None),
+    input_timezone: str = Form("America/New_York"),
 ):
     """Upload and import a CSV file (non-blocking)."""
     import asyncio
     import tempfile
     import os
-    
+
     if not file.filename.endswith('.csv'):
         return JSONResponse({"error": "Only CSV files allowed", "imported": 0, "errors": 1})
-    
+
     try:
         # Save main file
         with tempfile.NamedTemporaryFile(mode='wb', suffix='.csv', delete=False) as tmp:
@@ -536,10 +537,13 @@ async def import_csv(
         
         def _do_import():
             ingester = TradeIngester()
-            if format == 'tv_order_history' and balance_path:
+            if format == 'tv_order_history':
                 from pathlib import Path
                 return ingester._import_tv_order_history(
-                    Path(tmp_path), skip_errors=True, balance_file_path=Path(balance_path)
+                    Path(tmp_path), 
+                    skip_errors=True, 
+                    balance_file_path=Path(balance_path) if balance_path else None,
+                    input_timezone=input_timezone,
                 )
             else:
                 return ingester.import_csv(tmp_path, format=format)
