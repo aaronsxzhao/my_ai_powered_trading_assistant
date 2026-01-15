@@ -44,8 +44,8 @@ class RateLimiter:
             self.last_call = time.time()
 
 
-# Global rate limiter for yfinance (1 call per 2 seconds to be safe)
-_yfinance_rate_limiter = RateLimiter(calls_per_second=0.5)
+# Global rate limiter for yfinance (1 call per second - yfinance is more tolerant)
+_yfinance_rate_limiter = RateLimiter(calls_per_second=1.0)
 
 # Standard column names for OHLCV data
 OHLCV_COLUMNS = ["datetime", "open", "high", "low", "close", "volume"]
@@ -219,42 +219,19 @@ class YFinanceProvider(DataProvider):
 
         # Normalize ticker (e.g., "9988" -> "9988.HK" for Hong Kong stocks)
         normalized_ticker, exchange = normalize_ticker(ticker)
-        if normalized_ticker != ticker:
-            logger.info(f"📈 Normalized ticker {ticker} -> {normalized_ticker} (exchange: {exchange})")
 
         # Map timeframe to yfinance interval
         interval_map = {
-            "1d": "1d",
-            "2h": "2h",
-            "1h": "1h",
-            "30m": "30m",
-            "15m": "15m",
-            "5m": "5m",
-            "1m": "1m",
+            "1d": "1d", "2h": "2h", "1h": "1h",
+            "30m": "30m", "15m": "15m", "5m": "5m", "1m": "1m",
         }
         interval = interval_map.get(timeframe, "1d")
 
-        # yfinance has limitations on intraday data lookback
-        # 1m: 7 days, 5m/15m/30m: 60 days, 1h: 730 days
-        
         last_error = None
         for attempt in range(self.max_retries):
             try:
-                # Wait for rate limiter
                 self.rate_limiter.wait()
-                
-                logger.debug(f"🔍 Fetching {normalized_ticker} from yfinance ({start.date()} to {end.date()}, interval={interval})")
-                
                 ticker_obj = yf.Ticker(normalized_ticker)
-                
-                # Check if ticker is valid by checking info
-                try:
-                    info = ticker_obj.info
-                    if not info or info.get('regularMarketPrice') is None:
-                        logger.warning(f"⚠️ Ticker {normalized_ticker} may not exist or has no market data")
-                except Exception as info_err:
-                    logger.debug(f"Could not fetch info for {normalized_ticker}: {info_err}")
-                
                 df = ticker_obj.history(
                     start=start.strftime("%Y-%m-%d"),
                     end=end.strftime("%Y-%m-%d"),
@@ -355,10 +332,7 @@ class PolygonProvider(DataProvider):
         
         # Polygon only supports US stocks - fall back to yfinance for international
         if is_international_ticker(ticker):
-            normalized_ticker, exchange = normalize_ticker(ticker)
-            logger.info(f"📈 Polygon doesn't support {exchange} stocks, using yfinance for {normalized_ticker}")
-            yf_provider = YFinanceProvider()
-            return yf_provider.get_ohlcv(ticker, timeframe, start, end)
+            return YFinanceProvider().get_ohlcv(ticker, timeframe, start, end)
         
         if not self.api_key:
             raise ValueError("POLYGON_API_KEY is required for Polygon provider")

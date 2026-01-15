@@ -9,16 +9,16 @@ Provides a browser-based interface for:
 - Report generation
 """
 
+import asyncio
+import json
+import logging
 import os
 import shutil
-import logging
 from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException
-
-logger = logging.getLogger(__name__)
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -28,10 +28,16 @@ from app.config import (
     load_tickers_from_file, save_tickers_to_file, get_llm_api_key,
     get_polygon_api_key
 )
+from app.config_prompts import get_cache_settings
 from app.journal.models import init_db, Trade, Strategy, get_session, TradeDirection, TradeOutcome
 from app.journal.ingest import TradeIngester
 from app.journal.analytics import TradeAnalytics
 from app.journal.coach import TradeCoach
+
+logger = logging.getLogger(__name__)
+
+# Track cancelled review generations (trade_id -> True if cancelled)
+_cancelled_reviews: dict[int, bool] = {}
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -206,51 +212,32 @@ async def update_trade_notes(trade_id: int, request: Request):
 
 
 @app.get("/api/trades/{trade_id}/review")
-async def get_trade_review(trade_id: int, force: bool = False):
+async def get_trade_review(trade_id: int, force: bool = False, check_only: bool = False):
     """
     Get AI review for a trade (non-blocking async endpoint).
 
     Uses cached review if available and trade hasn't been modified.
     Set force=true to regenerate the review.
+    Set check_only=true to just check status without triggering generation.
     """
-    import asyncio
-    import json
-    from datetime import datetime
-
     session = get_session()
     try:
         trade = session.query(Trade).filter(Trade.id == trade_id).first()
         if not trade:
             return JSONResponse({"success": False, "error": "Trade not found"})
 
-        # Check if a regeneration is already in progress
-        if trade.review_in_progress and not force:
-            logger.info(f"⏳ Review generation already in progress for trade {trade_id}")
+        # Check if generation already in progress
+        if trade.review_in_progress:
             return JSONResponse({
                 "success": True,
                 "in_progress": True,
                 "message": "Review generation in progress..."
             })
 
-        # Get cache settings
-        from app.config_prompts import get_cache_settings
         cache_settings = get_cache_settings()
 
-        # Debug: Log cache state
-        logger.info(f"📋 Trade {trade_id} cache check: force={force}, enable_cache={cache_settings.get('enable_review_cache', True)}, auto_regen={cache_settings.get('auto_regenerate', False)}")
-        logger.info(f"   cached_review={'YES' if trade.cached_review else 'NO'}, review_generated_at={trade.review_generated_at}, in_progress={trade.review_in_progress}")
-
-        # Check if auto-regenerate is enabled (always force new review)
-        if cache_settings.get('auto_regenerate', False):
-            logger.info(f"Auto-regenerate enabled, forcing new review for trade {trade_id}")
-            force = True
-
-        # Check for cached review (only if not forcing and not in progress)
-        # Note: We don't compare with updated_at because saving cache also triggers updated_at
-        # Cache is explicitly cleared when trade content is modified (in the notes endpoint)
-        if not force and cache_settings.get('enable_review_cache', True) and trade.cached_review and trade.review_generated_at:
-            # Return cached review
-            logger.info(f"✅ Returning cached review for trade {trade_id} (generated at {trade.review_generated_at})")
+        # Return cached review if available
+        if cache_settings.get('enable_review_cache', True) and trade.cached_review and trade.review_generated_at:
             try:
                 cached = json.loads(trade.cached_review)
                 return JSONResponse({
@@ -260,48 +247,59 @@ async def get_trade_review(trade_id: int, force: bool = False):
                     "review": cached
                 })
             except json.JSONDecodeError:
-                logger.warning(f"Failed to parse cached review for trade {trade_id}")
+                pass  # Fall through to regenerate
 
-        # Mark as in progress before starting generation
+        # Check only mode - don't trigger generation
+        if check_only:
+            return JSONResponse({
+                "success": False,
+                "error": "No cached review available",
+                "in_progress": False
+            })
+
+        # Auto-regenerate option
+        if cache_settings.get('auto_regenerate', False):
+            force = True
+
+        # Mark in progress and start generation
         trade.review_in_progress = True
+        _cancelled_reviews[trade_id] = False
         session.commit()
-        logger.info(f"🔄 Starting AI review generation for trade {trade_id}...")
 
-        # Generate new review
-        logger.info(f"Generating new AI review for trade {trade_id}...")
-        
         def _get_review():
-            coach = TradeCoach()
-            return coach.review_trade(trade_id)
-        
-        # Run LLM call in thread pool to not block event loop
+            def is_cancelled():
+                return _cancelled_reviews.get(trade_id, False)
+            return TradeCoach().review_trade(trade_id, cancellation_check=is_cancelled)
+
+        # Run in thread pool to not block event loop
         review = await asyncio.to_thread(_get_review)
-        
+
+        # Check if cancelled
+        if _cancelled_reviews.get(trade_id, False):
+            trade.review_in_progress = False
+            session.commit()
+            _cancelled_reviews.pop(trade_id, None)
+            return JSONResponse({"success": False, "error": "Review generation was cancelled"})
+
         if review:
-            # Refresh trade from database to ensure we have latest state
             session.expire(trade)
             session.refresh(trade)
             
             ai_setup = review.setup_classification
             
-            # Store original AI classification permanently (never overwrite if already set)
+            # Store original AI classification (once only)
             if ai_setup and not trade.ai_setup_classification:
                 trade.ai_setup_classification = ai_setup
-                logger.info(f"📝 Stored original AI classification for trade {trade_id}: {ai_setup}")
             
-            # Update trade's strategy from AI Coaching Review (only if not manually set)
-            # If trade already has a strategy that differs from AI, keep the manual one
+            # Auto-set strategy if not manually set
             if ai_setup and ai_setup.lower() not in ['unknown', 'unclassified', 'insufficient_information']:
-                from app.journal.models import Strategy
-                # Only auto-set strategy if trade doesn't have one yet
                 if not trade.strategy_id:
                     strategy = session.query(Strategy).filter(Strategy.name == ai_setup).first()
                     if not strategy:
-                        strategy = Strategy(name=ai_setup, description=f"Auto-created from AI coaching review")
+                        strategy = Strategy(name=ai_setup, description="Auto-created from AI review")
                         session.add(strategy)
                         session.flush()
                     trade.strategy_id = strategy.id
-                    logger.info(f"✅ Set trade {trade_id} strategy to: {ai_setup}")
             
             current_strategy = trade.strategy.name if trade.strategy else ai_setup
             
@@ -321,16 +319,11 @@ async def get_trade_review(trade_id: int, force: bool = False):
                 "rule_for_next_time": review.rule_for_next_time,
             }
             
-            # Cache the review and clear in_progress flag
+            # Cache and clear in_progress
             trade.cached_review = json.dumps(review_dict)
             trade.review_generated_at = datetime.utcnow()
             trade.review_in_progress = False
             session.commit()
-
-            # Verify cache was saved
-            logger.info(f"✅ Cached new review for trade {trade_id}")
-            logger.info(f"   cached_review length: {len(trade.cached_review) if trade.cached_review else 0}")
-            logger.info(f"   review_generated_at: {trade.review_generated_at}")
             
             return JSONResponse({
                 "success": True,
@@ -353,6 +346,28 @@ async def get_trade_review(trade_id: int, force: bool = False):
                 session.commit()
         except:
             pass
+        return JSONResponse({"success": False, "error": str(e)})
+    finally:
+        session.close()
+
+
+@app.post("/api/trades/{trade_id}/review/cancel")
+async def cancel_trade_review(trade_id: int):
+    """Cancel an in-progress review generation."""
+    session = get_session()
+    try:
+        trade = session.query(Trade).filter(Trade.id == trade_id).first()
+        if not trade:
+            return JSONResponse({"success": False, "error": "Trade not found"})
+        
+        _cancelled_reviews[trade_id] = True
+        
+        if trade.review_in_progress:
+            trade.review_in_progress = False
+            session.commit()
+            return JSONResponse({"success": True, "message": "Review cancelled"})
+        return JSONResponse({"success": True, "message": "No review in progress"})
+    except Exception as e:
         return JSONResponse({"success": False, "error": str(e)})
     finally:
         session.close()
@@ -462,7 +477,8 @@ async def create_trade(
     direction: str = Form(...),
     entry_price: float = Form(...),
     exit_price: float = Form(...),
-    stop_price: float = Form(...),
+    stop_loss: float = Form(None),  # SL - optional
+    take_profit: float = Form(None),  # TP - optional
     size: float = Form(1.0),
     trade_date: str = Form(None),
     strategy: str = Form(None),
@@ -471,22 +487,23 @@ async def create_trade(
 ):
     """Create a new trade."""
     ingester = TradeIngester()
-    
+
     parsed_date = datetime.strptime(trade_date, "%Y-%m-%d").date() if trade_date else date.today()
-    
+
     trade = ingester.add_trade_manual(
         ticker=ticker,
         trade_date=parsed_date,
         direction=direction,
         entry_price=entry_price,
         exit_price=exit_price,
-        stop_price=stop_price,
+        stop_loss=stop_loss,
+        take_profit=take_profit,
         size=size,
         strategy_name=strategy if strategy else None,
         notes=notes,
         entry_reason=entry_reason,
     )
-    
+
     return RedirectResponse(url=f"/trades/{trade.id}", status_code=303)
 
 
@@ -862,8 +879,15 @@ async def update_trade(trade_id: int, request: Request):
             trade.entry_price = float(data["entry_price"])
         if data.get("exit_price") is not None:
             trade.exit_price = float(data["exit_price"])
-        if data.get("stop_price") is not None:
-            trade.stop_price = float(data["stop_price"])
+        
+        # Stop Loss (SL) - can be set to null
+        if "stop_loss" in data:
+            trade.stop_loss = float(data["stop_loss"]) if data["stop_loss"] else None
+        
+        # Take Profit (TP) - can be set to null
+        if "take_profit" in data:
+            trade.take_profit = float(data["take_profit"]) if data["take_profit"] else None
+        
         if data.get("currency") is not None:
             trade.currency = data["currency"]
         if data.get("currency_rate") is not None:

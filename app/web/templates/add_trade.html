@@ -85,8 +85,8 @@
 
                     <!-- Stop -->
                     <div>
-                        <label class="label">Stop Price *</label>
-                        <input type="number" name="stop_price" required 
+                        <label class="label">Stop Loss (SL)</label>
+                        <input type="number" name="stop_loss" 
                             class="input" placeholder="98.00" step="0.01">
                     </div>
                 </div>
@@ -320,11 +320,11 @@
                 <div id="format-info-generic" class="format-info">
                     <h3 class="font-medium text-white mb-2">Generic CSV Format</h3>
                     <div class="bg-dark-900/50 rounded-xl p-4 font-mono text-sm overflow-x-auto text-dark-300">
-                        <div class="text-dark-500">ticker,direction,entry_price,exit_price,stop_price,size,trade_date,notes</div>
-                        <div>SPY,long,475.50,478.00,474.00,100,2024-01-15,Strong pullback</div>
+                        <div class="text-dark-500">ticker,direction,entry_price,exit_price,size,trade_date,sl,tp,notes</div>
+                        <div>SPY,long,475.50,478.00,100,2024-01-15,474.00,480.00,Strong pullback</div>
                     </div>
                     <div class="mt-3 text-sm text-dark-400">
-                        Required: ticker, entry_price, exit_price. Optional: stop_price, direction, size, strategy, notes.
+                        Required: ticker, entry_price, exit_price. Optional: direction, size, sl (stop loss), tp (take profit), strategy, notes.
                     </div>
                 </div>
 
@@ -421,7 +421,7 @@ if (window.location.pathname === '/import') {
 // ===== SINGLE TRADE FORM =====
 const entryInput = document.querySelector('input[name="entry_price"]');
 const exitInput = document.querySelector('input[name="exit_price"]');
-const stopInput = document.querySelector('input[name="stop_price"]');
+const stopInput = document.querySelector('input[name="stop_loss"]');
 const directionSelect = document.querySelector('select[name="direction"]');
 const rPreview = document.getElementById('r-preview');
 

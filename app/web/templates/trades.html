@@ -155,7 +155,7 @@
                         </td>
                         <td>
                             <div class="flex items-center space-x-1 opacity-50 group-hover:opacity-100 transition-opacity">
-                                <button onclick="openEditModal({{ trade.id }}, {{ trade.size or 0 }}, {{ trade.entry_price }}, {{ trade.exit_price or 0 }}, {{ trade.stop_price or 0 }}, '{{ trade.currency or "USD" }}', {{ trade.currency_rate or 1.0 }}, '{{ trade.entry_time.strftime('%Y-%m-%dT%H:%M:%S') if trade.entry_time else '' }}', '{{ trade.exit_time.strftime('%Y-%m-%dT%H:%M:%S') if trade.exit_time else '' }}', '{{ trade.timeframe or "5m" }}')" 
+                                <button onclick="openEditModal({{ trade.id }}, {{ trade.size or 0 }}, {{ trade.entry_price }}, {{ trade.exit_price or 0 }}, {{ trade.stop_loss or trade.stop_price or 0 }}, {{ trade.take_profit or trade.target_price or 0 }}, '{{ trade.currency or "USD" }}', {{ trade.currency_rate or 1.0 }}, '{{ trade.entry_time.strftime('%Y-%m-%dT%H:%M:%S') if trade.entry_time else '' }}', '{{ trade.exit_time.strftime('%Y-%m-%dT%H:%M:%S') if trade.exit_time else '' }}', '{{ trade.timeframe or "5m" }}')"
                                         class="btn btn-ghost p-2 text-sm" title="Edit">
                                     ✏️
                                 </button>
@@ -226,11 +226,15 @@
                     <input type="number" id="edit-exit" step="0.0001" min="0" class="input">
                 </div>
                 <div>
-                    <label class="label">Stop Price</label>
-                    <input type="number" id="edit-stop" step="0.0001" min="0" class="input">
+                    <label class="label">Stop Loss (SL)</label>
+                    <input type="number" id="edit-sl" step="0.0001" min="0" class="input" placeholder="Where trade is wrong">
+                </div>
+                <div>
+                    <label class="label">Take Profit (TP)</label>
+                    <input type="number" id="edit-tp" step="0.0001" min="0" class="input" placeholder="Target exit">
                 </div>
             </div>
-            
+
             <div class="grid grid-cols-3 gap-4">
                 <div>
                     <label class="label">Timeframe</label>
@@ -277,7 +281,7 @@
 let currentTradeId = null;
 let currentTradeDate = null;
 
-function openEditModal(id, shares, entry, exit, stop, currency, rate, entryTime, exitTime, timeframe) {
+function openEditModal(id, shares, entry, exit, sl, tp, currency, rate, entryTime, exitTime, timeframe) {
     currentTradeId = id;
     currentTradeDate = exitTime || entryTime;
     
@@ -286,11 +290,12 @@ function openEditModal(id, shares, entry, exit, stop, currency, rate, entryTime,
     document.getElementById('edit-shares').value = shares;
     document.getElementById('edit-entry').value = entry;
     document.getElementById('edit-exit').value = exit;
-    document.getElementById('edit-stop').value = stop;
+    document.getElementById('edit-sl').value = sl || '';
+    document.getElementById('edit-tp').value = tp || '';
     document.getElementById('edit-currency').value = currency || 'USD';
     document.getElementById('edit-rate').value = rate;
     document.getElementById('edit-timeframe').value = timeframe || '5m';
-    
+
     if (entryTime) document.getElementById('edit-entry-time').value = entryTime;
     if (exitTime) document.getElementById('edit-exit-time').value = exitTime;
     
@@ -335,11 +340,15 @@ document.getElementById('edit-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     
     const id = document.getElementById('edit-id').value;
+    const slValue = document.getElementById('edit-sl').value;
+    const tpValue = document.getElementById('edit-tp').value;
+    
     const data = {
         size: parseFloat(document.getElementById('edit-shares').value),
         entry_price: parseFloat(document.getElementById('edit-entry').value),
         exit_price: parseFloat(document.getElementById('edit-exit').value),
-        stop_price: parseFloat(document.getElementById('edit-stop').value),
+        stop_loss: slValue ? parseFloat(slValue) : null,
+        take_profit: tpValue ? parseFloat(tpValue) : null,
         currency: document.getElementById('edit-currency').value,
         currency_rate: parseFloat(document.getElementById('edit-rate').value),
         entry_time: document.getElementById('edit-entry-time').value || null,

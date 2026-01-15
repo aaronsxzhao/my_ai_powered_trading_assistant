@@ -1120,7 +1120,6 @@ class TradeIngester:
         all_messages = []
 
         for csv_file in csv_files:
-            logger.info(f"Processing {csv_file.name}...")
             try:
                 imported, errors, messages = self.import_csv(csv_file)
                 total_imported += imported
@@ -1162,9 +1161,7 @@ class TradeIngester:
                 notes=trade.notes,
             )
             
-            strategy_name = result.get("strategy_name", "unclassified")
-            logger.info(f"LLM classified trade as: {strategy_name} ({result.get('confidence', 'unknown')} confidence)")
-            return strategy_name
+            return result.get("strategy_name", "unclassified")
             
         except Exception as e:
             logger.warning(f"LLM classification failed: {e}")

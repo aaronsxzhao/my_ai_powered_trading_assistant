@@ -104,7 +104,7 @@ class LLMAnalyzer:
         direction: str,
         entry_price: float,
         exit_price: float,
-        stop_price: float,
+        stop_price: Optional[float] = None,  # Renamed from stop_price, actually represents SL
         entry_reason: Optional[str] = None,
         notes: Optional[str] = None,
         ohlcv_context: Optional[str] = None,
@@ -113,6 +113,9 @@ class LLMAnalyzer:
     ) -> dict:
         """
         Use LLM to classify the trade setup/strategy.
+        
+        Args:
+            stop_price: Stop Loss level (where trade is wrong). Legacy name, represents SL.
         
         Returns dict with:
         - strategy_name: The classified strategy (or 'needs_info' if more data needed)
@@ -125,20 +128,27 @@ class LLMAnalyzer:
         from app.config_prompts import get_system_prompt, get_user_prompt
         system_prompt = get_system_prompt('trade_classification')
 
-        # Calculate R-multiple safely
-        if direction == "long":
-            risk = entry_price - stop_price
-            reward = exit_price - entry_price
-        else:
-            risk = stop_price - entry_price
-            reward = entry_price - exit_price
+        # Calculate R-multiple safely (only if SL is provided)
+        stop_loss = stop_price  # Use clearer name internally
+        r_mult = 0.0
+        r_mult_str = "N/A (no SL)"
         
-        if abs(risk) < 0.0001:
-            r_mult = reward / (entry_price * 0.02) if entry_price > 0 else 0
-        else:
-            r_mult = reward / risk
+        if stop_loss is not None:
+            if direction == "long":
+                risk = entry_price - stop_loss
+                reward = exit_price - entry_price
+            else:
+                risk = stop_loss - entry_price
+                reward = entry_price - exit_price
+            
+            if abs(risk) < 0.0001:
+                r_mult = reward / (entry_price * 0.02) if entry_price > 0 else 0
+            else:
+                r_mult = reward / risk
+            
+            r_mult_str = f"{'+' if r_mult > 0 else ''}{r_mult:.2f}R"
         
-        r_mult_str = f"{'+' if r_mult > 0 else ''}{r_mult:.2f}R"
+        stop_loss_str = f"${stop_loss:.4f}" if stop_loss else "Not set"
 
         # Build user prompt from template
         user_template = get_user_prompt('trade_classification')
@@ -148,7 +158,8 @@ class LLMAnalyzer:
                 direction=direction.upper(),
                 entry_price=f"{entry_price:.4f}",
                 exit_price=f"{exit_price:.4f}",
-                stop_price=f"{stop_price:.4f}",
+                stop_price=stop_loss_str,  # Legacy placeholder name
+                stop_loss=stop_loss_str,   # New placeholder name
                 r_multiple=r_mult_str,
                 entry_reason=entry_reason or "Not provided",
                 notes=notes or "Not provided",
@@ -164,7 +175,7 @@ class LLMAnalyzer:
 - Direction: {direction.upper()}
 - Entry: ${entry_price:.4f}
 - Exit: ${exit_price:.4f}
-- Stop: ${stop_price:.4f}
+- Stop Loss (SL): {stop_loss_str}
 - R: {r_mult_str}
 - Timeframe: {timeframe or '5m'}
 - Trade Type: {trade_type or 'Not specified'}
@@ -175,11 +186,6 @@ Notes: {notes or 'Not provided'}
 {f"MARKET CONTEXT:{chr(10)}{ohlcv_context}" if ohlcv_context else "No market context."}
 
 Classify this trade. If you cannot classify with confidence, explain what specific information is missing."""
-
-        # === DEBUG: Print classification data ===
-        logger.info("🏷️ LLM TRADE CLASSIFICATION - DATA:")
-        logger.info(f"   {ticker} {direction.upper()} Entry=${entry_price:.4f} Exit=${exit_price:.4f} Stop=${stop_price:.4f} {r_mult_str}")
-        # === END DEBUG ===
 
         response = self._call_llm(system_prompt, user_prompt)
         
@@ -215,8 +221,8 @@ Classify this trade. If you cannot classify with confidence, explain what specif
         direction: str,
         entry_price: float,
         exit_price: float,
-        stop_price: float,
-        target_price: Optional[float] = None,
+        stop_price: Optional[float] = None,  # SL - Stop Loss level (where trade is wrong)
+        target_price: Optional[float] = None,  # TP - Take Profit level
         entry_reason: Optional[str] = None,
         notes: Optional[str] = None,
         ohlcv_context: Optional[str] = None,
@@ -264,21 +270,37 @@ Classify this trade. If you cannot classify with confidence, explain what specif
         """
         Comprehensive Brooks Audit of a completed trade.
         
+        Args:
+            stop_price: Stop Loss (SL) level - where trade is considered wrong
+            target_price: Take Profit (TP) level - intended target
+        
         Returns detailed Brooks-style review with coaching.
         """
-        # Calculate R-multiple with safety check for zero risk
-        if direction == "long":
-            risk = entry_price - stop_price
-            reward = exit_price - entry_price
-        else:
-            risk = stop_price - entry_price
-            reward = entry_price - exit_price
+        # Use clearer internal names
+        stop_loss = stop_price
+        take_profit = target_price
         
-        # Handle edge case where stop == entry (zero risk)
-        if abs(risk) < 0.0001:
-            r_multiple = reward / (entry_price * 0.02) if entry_price > 0 else 0  # Assume 2% risk
+        # Calculate R-multiple (only if SL is provided)
+        r_multiple = 0.0
+        if stop_loss is not None:
+            if direction == "long":
+                risk = entry_price - stop_loss
+                reward = exit_price - entry_price
+            else:
+                risk = stop_loss - entry_price
+                reward = entry_price - exit_price
+            
+            # Handle edge case where stop == entry (zero risk)
+            if abs(risk) < 0.0001:
+                r_multiple = reward / (entry_price * 0.02) if entry_price > 0 else 0  # Assume 2% risk
+            else:
+                r_multiple = reward / risk
         else:
-            r_multiple = reward / risk
+            # No SL set - calculate raw P&L change
+            if direction == "long":
+                reward = exit_price - entry_price
+            else:
+                reward = entry_price - exit_price
 
         # Load configurable prompts
         from app.config_prompts import get_system_prompt, get_user_prompt
@@ -342,8 +364,10 @@ Classify this trade. If you cannot classify with confidence, explain what specif
             exit_price=f"{exit_price:.4f}",
             size=f"{size:.0f}" if size else "1",
             order_type=order_type or "market",
-            stop_price=f"{stop_price:.4f}",
-            target_price=f"${target_price:.4f}" if target_price else "not set",
+            stop_price=f"${stop_loss:.4f}" if stop_loss else "not set",  # Legacy placeholder
+            stop_loss=f"${stop_loss:.4f}" if stop_loss else "not set",  # New placeholder
+            target_price=f"${take_profit:.4f}" if take_profit else "not set",  # Legacy placeholder
+            take_profit=f"${take_profit:.4f}" if take_profit else "not set",  # New placeholder
             exit_breakdown=exit_breakdown or "none",
             fees=f"${fees:.2f}" if fees else "unknown",
             slippage=f"${slippage:.4f}" if slippage else "unknown",
@@ -396,34 +420,6 @@ Classify this trade. If you cannot classify with confidence, explain what specif
             lessons=lessons or "None noted",
             ohlcv_context=ohlcv_context if ohlcv_context else "No market context data provided."
         )
-
-        # === DEBUG: Print what's being sent to LLM ===
-        logger.info("=" * 60)
-        logger.info("🧠 LLM TRADE ANALYSIS - DATA BEING SENT:")
-        logger.info("=" * 60)
-        logger.info(f"📊 TRADE INFO:")
-        logger.info(f"   Ticker: {ticker}")
-        logger.info(f"   Direction: {direction.upper()}")
-        logger.info(f"   Entry: ${entry_price:.4f}")
-        logger.info(f"   Exit: ${exit_price:.4f}")
-        logger.info(f"   Stop: ${stop_price:.4f}")
-        logger.info(f"   Target: ${target_price:.4f}" if target_price else "   Target: Not set")
-        logger.info(f"   R-Multiple: {r_multiple:+.2f}R")
-        logger.info(f"   MAE: {mae:.2f}R" if mae else "   MAE: Not provided")
-        logger.info(f"   MFE: {mfe:.2f}R" if mfe else "   MFE: Not provided")
-        logger.info(f"📝 NOTES:")
-        logger.info(f"   Entry Reason: {entry_reason or 'Not provided'}")
-        logger.info(f"   Notes: {notes or 'Not provided'}")
-        logger.info(f"📈 OHLCV CONTEXT:")
-        if ohlcv_context:
-            for line in ohlcv_context.split('\n')[:12]:  # First 12 lines
-                logger.info(f"   {line}")
-        else:
-            logger.info("   No market context data")
-        logger.info(f"📋 SYSTEM PROMPT LENGTH: {len(system_prompt)} chars")
-        logger.info(f"📋 USER PROMPT LENGTH: {len(user_prompt)} chars")
-        logger.info("=" * 60)
-        # === END DEBUG ===
 
         response = self._call_llm(system_prompt, user_prompt, max_tokens=20000)
 

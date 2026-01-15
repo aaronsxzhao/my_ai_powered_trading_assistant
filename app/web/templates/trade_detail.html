@@ -64,8 +64,24 @@
                     <div class="text-xl font-mono font-bold text-white">${{ "%.4f"|format(trade.exit_price) if trade.exit_price else '-' }}</div>
                 </div>
                 <div class="stat-card">
-                    <div class="text-sm text-dark-400 mb-1">Stop</div>
-                    <div class="text-xl font-mono font-bold text-white">${{ "%.4f"|format(trade.stop_price) if trade.stop_price else '-' }}</div>
+                    <div class="text-sm text-dark-400 mb-1">Stop Loss</div>
+                    <div class="text-xl font-mono font-bold text-white">
+                        {% if trade.effective_stop_loss %}
+                        ${{ "%.4f"|format(trade.effective_stop_loss) }}
+                        {% else %}
+                        <span class="text-dark-500">Not set</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="text-sm text-dark-400 mb-1">Take Profit</div>
+                    <div class="text-xl font-mono font-bold text-white">
+                        {% if trade.effective_take_profit %}
+                        ${{ "%.4f"|format(trade.effective_take_profit) }}
+                        {% else %}
+                        <span class="text-dark-500">Not set</span>
+                        {% endif %}
+                    </div>
                 </div>
                 <div class="stat-card">
                     <div class="text-sm text-dark-400 mb-1">Size</div>
@@ -173,17 +189,32 @@
                     🧠 AI Coaching Review
                     <span id="cache-badge" class="badge bg-dark-700 text-dark-400 text-xs hidden">Cached</span>
                 </h2>
-                <div id="review-grade" class="flex items-center gap-2 hidden">
-                    <span class="text-sm text-dark-400">Grade:</span>
-                    <span id="grade-value" class="text-3xl font-bold"></span>
+                <div class="flex items-center gap-3">
+                    <div id="review-grade" class="flex items-center gap-2 hidden">
+                        <span class="text-sm text-dark-400">Grade:</span>
+                        <span id="grade-value" class="text-3xl font-bold"></span>
+                    </div>
                 </div>
             </div>
             <div id="review-meta" class="text-xs text-dark-500 mb-3 hidden">
                 Generated: <span id="generated-at"></span>
             </div>
 
+            <!-- Initial State - Show Generate Button -->
+            <div id="review-initial" class="py-12 text-center">
+                <div class="text-5xl mb-4">🧠</div>
+                <h3 class="text-lg font-medium text-white mb-2">AI Coaching Review</h3>
+                <p class="text-dark-400 text-sm mb-6 max-w-sm mx-auto">
+                    Get Brooks-style analysis of your trade including setup classification, execution review, and coaching advice.
+                </p>
+                <button onclick="loadReview(false)" class="btn btn-primary text-lg px-8 py-3">
+                    ✨ Generate Review
+                </button>
+                <p class="text-dark-500 text-xs mt-3">Uses cached review if available</p>
+            </div>
+
             <!-- Loading State with Progress -->
-            <div id="review-loading" class="py-8">
+            <div id="review-loading" class="py-8 hidden">
                 <div class="loading-spinner w-10 h-10 border-4 border-accent-500 border-t-transparent mx-auto mb-4"></div>
                 <p class="text-dark-300 text-center mb-4" id="loading-status">Initializing analysis...</p>
                 
@@ -209,6 +240,13 @@
                         <span class="w-5 h-5 rounded-full border border-dark-600 flex items-center justify-center text-xs">5</span>
                         <span>Caching results...</span>
                     </div>
+                </div>
+                
+                <!-- Cancel Button -->
+                <div class="mt-6 text-center">
+                    <button onclick="cancelGeneration()" class="btn btn-secondary" id="cancel-btn">
+                        ✕ Cancel Generation
+                    </button>
                 </div>
             </div>
 
@@ -250,6 +288,13 @@
 
                 <!-- Grade explanation -->
                 <div id="grade-explanation" class="text-sm text-dark-400 italic mt-4"></div>
+                
+                <!-- Regenerate button -->
+                <div class="mt-6 pt-4 border-t border-dark-700 flex justify-end">
+                    <button onclick="refreshReview()" class="btn btn-secondary">
+                        🔄 Regenerate Review
+                    </button>
+                </div>
             </div>
 
             <!-- Error State -->
@@ -393,7 +438,6 @@
     <!-- Actions -->
     <div class="flex flex-wrap gap-3">
         <a href="/trades" class="btn btn-secondary">← Back to Trades</a>
-        <button onclick="refreshReview()" class="btn btn-primary">🔄 Regenerate Review</button>
         <button onclick="deleteTrade({{ trade.id }})" class="btn btn-ghost text-danger-400 hover:bg-danger-500/10">
             🗑️ Delete Trade
         </button>
@@ -405,14 +449,50 @@
 <script>
 const TRADE_ID = {{ trade.id }};
 
-// Load review asynchronously when page loads
-document.addEventListener('DOMContentLoaded', () => loadReview(false));
+// Check if there's already a cached review or in-progress generation on page load
+document.addEventListener('DOMContentLoaded', () => checkExistingReview());
 
 let pollingInterval = null;
+let abortController = null;
+let isCancelled = false;
+
+async function checkExistingReview() {
+    // Quick check if there's a cached review or in-progress generation
+    try {
+        const response = await fetch(`/api/trades/${TRADE_ID}/review?check_only=true`);
+        const data = await response.json();
+        
+        if (data.in_progress) {
+            // There's a generation in progress, show loading and poll
+            document.getElementById('review-initial').classList.add('hidden');
+            document.getElementById('review-loading').classList.remove('hidden');
+            updateStep(3, 'active', 'AI analysis in progress...');
+            pollingInterval = setInterval(() => pollForReview(), 3000);
+        } else if (data.success && data.review) {
+            // There's a cached review, display it
+            document.getElementById('review-initial').classList.add('hidden');
+            displayReview(data.review);
+            document.getElementById('cache-badge').classList.remove('hidden');
+            if (data.generated_at) {
+                document.getElementById('review-meta').classList.remove('hidden');
+                const genDate = new Date(data.generated_at);
+                document.getElementById('generated-at').textContent = genDate.toLocaleString();
+            }
+        }
+        // Otherwise, show the initial "Generate Review" button (already visible by default)
+    } catch (err) {
+        console.log('No existing review found');
+    }
+}
 
 async function loadReview(force = false) {
+    // Reset cancel state
+    isCancelled = false;
+    abortController = new AbortController();
+    
     // Reset and show loading
     resetLoadingSteps();
+    document.getElementById('review-initial').classList.add('hidden');
     document.getElementById('review-loading').classList.remove('hidden');
     document.getElementById('review-content').classList.add('hidden');
     document.getElementById('review-error').classList.add('hidden');
@@ -428,13 +508,16 @@ async function loadReview(force = false) {
 
     try {
         // Simulate progress for better UX
-        setTimeout(() => updateStep(1, 'done'), 300);
-        setTimeout(() => updateStep(2, 'active', 'Fetching OHLCV data...'), 500);
+        setTimeout(() => { if (!isCancelled) updateStep(1, 'done'); }, 300);
+        setTimeout(() => { if (!isCancelled) updateStep(2, 'active', 'Fetching OHLCV data...'); }, 500);
 
         const url = force
             ? `/api/trades/${TRADE_ID}/review?force=true`
             : `/api/trades/${TRADE_ID}/review`;
-        const response = await fetch(url);
+        const response = await fetch(url, { signal: abortController.signal });
+        
+        if (isCancelled) return;
+        
         const data = await response.json();
 
         // Handle "in progress" status - start polling
@@ -484,6 +567,14 @@ async function loadReview(force = false) {
             showToast(data.error || 'Review failed', 'error');
         }
     } catch (err) {
+        if (err.name === 'AbortError') {
+            // User cancelled - show initial state again
+            document.getElementById('review-loading').classList.add('hidden');
+            document.getElementById('review-initial').classList.remove('hidden');
+            showToast('Generation cancelled', 'info');
+            return;
+        }
+        
         if (pollingInterval) {
             clearInterval(pollingInterval);
             pollingInterval = null;
@@ -493,6 +584,33 @@ async function loadReview(force = false) {
         document.getElementById('error-message').textContent = 'Failed to load review: ' + err.message;
         showToast('AI analysis failed', 'error');
     }
+}
+
+async function cancelGeneration() {
+    isCancelled = true;
+    
+    // Abort ongoing fetch
+    if (abortController) {
+        abortController.abort();
+    }
+    
+    // Stop polling
+    if (pollingInterval) {
+        clearInterval(pollingInterval);
+        pollingInterval = null;
+    }
+    
+    // Try to cancel on the server side
+    try {
+        await fetch(`/api/trades/${TRADE_ID}/review/cancel`, { method: 'POST' });
+    } catch (err) {
+        console.log('Cancel request sent');
+    }
+    
+    // Reset UI to initial state
+    document.getElementById('review-loading').classList.add('hidden');
+    document.getElementById('review-initial').classList.remove('hidden');
+    showToast('Generation cancelled', 'info');
 }
 
 async function pollForReview() {
@@ -697,6 +815,7 @@ async function deleteTrade(id) {
 }
 
 function refreshReview() {
+    document.getElementById('review-initial').classList.add('hidden');
     document.getElementById('review-loading').classList.remove('hidden');
     document.getElementById('review-content').classList.add('hidden');
     document.getElementById('review-error').classList.add('hidden');

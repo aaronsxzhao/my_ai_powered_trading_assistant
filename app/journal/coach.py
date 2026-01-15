@@ -101,16 +101,23 @@ class TradeCoach:
             self._data_provider = get_provider()
         return self._data_provider
 
-    def review_trade(self, trade_id: int) -> Optional[TradeReview]:
+    def review_trade(self, trade_id: int, cancellation_check: Optional[callable] = None) -> Optional[TradeReview]:
         """
         Perform comprehensive review of a trade using LLM analysis.
 
         Args:
             trade_id: Trade ID to review
+            cancellation_check: Optional function that returns True if generation should stop
 
         Returns:
-            TradeReview object or None if trade not found
+            TradeReview object or None if trade not found or cancelled
         """
+        def is_cancelled():
+            if cancellation_check and cancellation_check():
+                logger.info(f"⏹️ Review cancelled for trade {trade_id}")
+                return True
+            return False
+        
         session = get_session()
         try:
             trade = session.query(Trade).filter(Trade.id == trade_id).first()
@@ -118,8 +125,16 @@ class TradeCoach:
                 logger.warning(f"Trade {trade_id} not found")
                 return None
 
+            # Check for cancellation before expensive OHLCV fetch
+            if is_cancelled():
+                return None
+
             # Get market context data (separate sections)
-            ohlcv_context = self._get_ohlcv_context_string(trade)
+            ohlcv_context = self._get_ohlcv_context_string(trade, cancellation_check=is_cancelled)
+            
+            # Check for cancellation after OHLCV fetch
+            if is_cancelled():
+                return None
             
             # Get prior day levels and session context
             pd_high, pd_low, pd_close, today_open = self._get_session_context(trade)
@@ -131,8 +146,8 @@ class TradeCoach:
                     direction=trade.direction.value,
                     entry_price=trade.entry_price,
                     exit_price=trade.exit_price,
-                    stop_price=trade.stop_price,
-                    target_price=trade.target_price,
+                    stop_price=trade.effective_stop_loss,
+                    target_price=trade.effective_take_profit,
                     entry_reason=trade.entry_reason,
                     notes=trade.notes,
                     ohlcv_context=ohlcv_context,
@@ -229,69 +244,91 @@ class TradeCoach:
         finally:
             session.close()
 
-    def _get_ohlcv_context_string(self, trade: Trade) -> str:
+    def _get_ohlcv_context_string(self, trade: Trade, cancellation_check: Optional[callable] = None) -> str:
         """
         Get OHLCV data as a string for LLM context.
-        
+
         IMPORTANT: Uses entry_time as the cutoff to avoid look-ahead bias.
         Only data that was available at entry time is included.
-        
+
         Fetches different data based on trade timeframe:
         - 5m (scalp): 60 daily bars, 120 2-hour bars, 234 5-min bars
         - 2h (swing): 60 daily bars, 120 2-hour bars
         - 1d (position): 120 daily bars
+        
+        Args:
+            trade: Trade object
+            cancellation_check: Optional function that returns True if should stop
         """
         try:
-            # CRITICAL: Use entry_time as the cutoff point to avoid look-ahead bias
-            # This ensures we only analyze with data that was available when entering the trade
+            # Use entry_time as cutoff to avoid look-ahead bias
             if trade.entry_time:
                 entry_cutoff = trade.entry_time
-                logger.info(f"📊 Using entry_time as cutoff: {entry_cutoff} (no look-ahead bias)")
             else:
-                # Fallback to end of trade date if entry_time not recorded
                 entry_cutoff = datetime.combine(trade.trade_date, datetime.max.time().replace(microsecond=0))
-                logger.warning(f"⚠️ No entry_time recorded, using trade_date EOD: {entry_cutoff}")
-            
+
             timeframe = trade.timeframe or "5m"
-            
-            logger.info(f"📊 Fetching multi-timeframe OHLCV for {trade.ticker} (trade TF: {timeframe}, cutoff: {entry_cutoff})")
-            
+
             all_context = []
-            
+
             # Brooks-specified bar counts for comprehensive context:
             # - Daily: 60 bars (multi-week trend/range context) - up to prior day close
             # - 2-Hour: 120 bars (structure, legs, wedges, tests) - up to entry time
             # - 5-Min: 234 bars (3 trading days) - up to entry time
-            
+
             # For daily bars, use the day BEFORE entry to avoid partial day data
             daily_cutoff = datetime.combine(trade.trade_date - timedelta(days=1), datetime.max.time())
-            
+
             if timeframe == "5m":
                 # 5-min scalp/day trades: Full Brooks package
+                # Check cancellation between each fetch (rate-limited operations)
+                if cancellation_check and cancellation_check():
+                    return "Cancelled"
                 all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "1d", daily_cutoff, 60, "DAILY (up to prior day close)"))
+                
+                if cancellation_check and cancellation_check():
+                    return "Cancelled"
                 all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "2h", entry_cutoff, 120, "2-HOUR (up to entry time)"))
+                
+                if cancellation_check and cancellation_check():
+                    return "Cancelled"
                 all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "5m", entry_cutoff, 234, "5-MINUTE (up to entry time)"))
-            
+
             elif timeframe == "2h":
                 # 2-hour swing trades: Daily + 2H context
+                if cancellation_check and cancellation_check():
+                    return "Cancelled"
                 all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "1d", daily_cutoff, 60, "DAILY (up to prior day close)"))
+                
+                if cancellation_check and cancellation_check():
+                    return "Cancelled"
                 all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "2h", entry_cutoff, 120, "2-HOUR (up to entry time)"))
-            
+
             elif timeframe == "1d":
                 # Daily position trades: Extended daily context
+                if cancellation_check and cancellation_check():
+                    return "Cancelled"
                 all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "1d", daily_cutoff, 120, "DAILY (up to prior day close)"))
-            
+
             else:
                 # Default to 5m timeframe with full Brooks package
+                if cancellation_check and cancellation_check():
+                    return "Cancelled"
                 all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "1d", daily_cutoff, 60, "DAILY (up to prior day close)"))
+                
+                if cancellation_check and cancellation_check():
+                    return "Cancelled"
                 all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "2h", entry_cutoff, 120, "2-HOUR (up to entry time)"))
+                
+                if cancellation_check and cancellation_check():
+                    return "Cancelled"
                 all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "5m", entry_cutoff, 234, "5-MINUTE (up to entry time)"))
-            
+
             result = "\n\n".join([ctx for ctx in all_context if ctx])
             if not result:
                 return "No market data available"
             return result
-            
+
         except Exception as e:
             logger.warning(f"Failed to get OHLCV context: {e}")
             return "Market data unavailable"
@@ -493,7 +530,7 @@ class TradeCoach:
         flaws = []
         if r < 0:
             flaws.append(f"Loss: {r:.2f}R")
-        if not trade.stop_price:
+        if not trade.effective_stop_loss:
             flaws.append("No stop defined")
 
         return TradeReview(
@@ -619,13 +656,13 @@ class TradeCoach:
 
     def _assess_risk_reward(self, trade: Trade) -> str:
         """Assess risk/reward of the trade."""
-        if not trade.entry_price or not trade.stop_price:
+        if not trade.entry_price or not trade.effective_stop_loss:
             return "Risk/reward could not be assessed (missing stop)"
 
-        risk = abs(trade.entry_price - trade.stop_price)
+        risk = abs(trade.entry_price - trade.effective_stop_loss)
 
-        if trade.target_price:
-            reward = abs(trade.target_price - trade.entry_price)
+        if trade.effective_take_profit:
+            reward = abs(trade.effective_take_profit - trade.entry_price)
             rr_ratio = reward / risk if risk > 0 else 0
 
             if rr_ratio >= 2:
@@ -679,9 +716,9 @@ class TradeCoach:
 
         # Error 2: Scalp with poor R:R
         if trade.r_multiple and trade.r_multiple > 0 and trade.r_multiple < 0.5:
-            if trade.target_price and trade.entry_price and trade.stop_price:
-                risk = abs(trade.entry_price - trade.stop_price)
-                target_r = abs(trade.target_price - trade.entry_price) / risk if risk > 0 else 0
+            if trade.effective_take_profit and trade.entry_price and trade.effective_stop_loss:
+                risk = abs(trade.entry_price - trade.effective_stop_loss)
+                target_r = abs(trade.effective_take_profit - trade.entry_price) / risk if risk > 0 else 0
                 if target_r < 1:
                     errors.append(
                         "POOR SCALP MATH: Target was less than 1R - needs very high "
@@ -737,7 +774,7 @@ class TradeCoach:
         # Had a documented plan
         if trade.entry_reason:
             goods.append("Had documented entry reason")
-        if trade.stop_price and trade.target_price:
+        if trade.effective_stop_loss and trade.effective_take_profit:
             goods.append("Defined stop and target before entry")
 
         # Controlled risk
@@ -773,7 +810,7 @@ class TradeCoach:
         # Missing documentation
         if not trade.entry_reason:
             flaws.append("No documented entry reason")
-        if not trade.stop_price:
+        if not trade.effective_stop_loss:
             flaws.append("No stop loss defined")
 
         return flaws[:3]  # Top 3 flaws
@@ -837,7 +874,7 @@ class TradeCoach:
         # Deductions for missing documentation
         if not trade.entry_reason:
             score -= 10
-        if not trade.stop_price:
+        if not trade.effective_stop_loss:
             score -= 15
 
         # Bonus for winning

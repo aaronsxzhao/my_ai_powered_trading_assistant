@@ -185,7 +185,7 @@ DEFAULT_SETTINGS = {
 
 === IMPORTANT: ALWAYS ATTEMPT CLASSIFICATION ===
 Even with limited information, make your best guess based on:
-- Price action (entry, exit, stop prices)
+- Price action (entry, exit, stop loss levels)
 - Direction (long/short)
 - R-multiple result
 - Any available OHLCV context
@@ -327,7 +327,7 @@ End every review with:
 - Direction: {direction}
 - Entry Price: ${entry_price}
 - Exit Price: ${exit_price}
-- Stop Price: ${stop_price}
+- Stop Loss (SL): ${stop_loss}
 - P&L Result: {r_multiple}
 - Trade Timeframe: {timeframe}
 
@@ -361,7 +361,7 @@ TRADE DETAILS (completed):
 - Exit price: ${exit_price}
 - Position size: {size}
 - Order type: {order_type}
-- Planned stop price at entry: ${stop_price}
+- Planned Stop Loss (SL) at entry: ${stop_loss}
 - Planned target price at entry: {target_price}
 - Actual exits (if scaled out): {exit_breakdown}
 - Commissions/fees: {fees}
