@@ -38,6 +38,7 @@ Create a `.env` file in the project root:
 LLM_API_KEY=your_api_key_here
 LLM_BASE_URL=https://your-llm-proxy.com/v1
 LLM_MODEL=claude-sonnet-4.5
+LLM_WORKERS=20  # Number of concurrent LLM calls (default: 20)
 
 # Data Provider (optional - defaults to yfinance)
 DATA_PROVIDER=polygon  # or yfinance

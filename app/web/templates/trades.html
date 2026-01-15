@@ -15,7 +15,7 @@
         <div class="flex flex-wrap gap-2">
             <a href="/add-trade" class="btn btn-primary">➕ Add Trade</a>
             <button onclick="recalculateMetrics()" class="btn btn-secondary">🔄 Recalculate</button>
-            <button onclick="reclassifyTrades()" class="btn btn-secondary">🧠 Reclassify</button>
+            <button onclick="analyzeAllTrades()" class="btn btn-secondary">🧠 Analyze All</button>
             <button onclick="deleteAllTrades()" class="btn btn-ghost text-danger-400 hover:bg-danger-500/10">🗑️ Delete All</button>
         </div>
     </div>
@@ -40,11 +40,16 @@
             <div class="stat-label">Losses</div>
         </div>
         <div class="stat-card">
-            {% set total_pnl = trades | sum(attribute='pnl_dollars') if trades else 0 %}
-            <div class="stat-value {% if total_pnl >= 0 %}positive{% else %}negative{% endif %}">
-                {{ "+" if total_pnl > 0 else "" }}${{ "%.2f"|format(total_pnl or 0) }}
+            {% set ns = namespace(total_pnl_usd=0) %}
+            {% for trade in trades %}
+                {% if trade.pnl_usd %}
+                    {% set ns.total_pnl_usd = ns.total_pnl_usd + trade.pnl_usd %}
+                {% endif %}
+            {% endfor %}
+            <div class="stat-value {% if ns.total_pnl_usd >= 0 %}positive{% else %}negative{% endif %}">
+                {{ "+" if ns.total_pnl_usd > 0 else "" }}${{ "%.2f"|format(ns.total_pnl_usd) }}
             </div>
-            <div class="stat-label">Total P&L</div>
+            <div class="stat-label">Total P&L (USD)</div>
         </div>
     </div>
     {% endif %}
@@ -111,13 +116,11 @@
                                 {% endif %}
                             {% else %}-{% endif %}
                         </td>
-                        <td class="font-mono font-semibold {% if trade.pnl_dollars and trade.pnl_dollars >= 0 %}positive{% else %}negative{% endif %}">
-                            {% if trade.pnl_dollars %}
-                                {% if trade.currency and trade.currency != 'USD' and trade.currency_rate %}
-                                    <span class="text-inherit">${{ "%.2f"|format(trade.pnl_dollars / trade.currency_rate) }}</span>
+                        <td class="font-mono font-semibold {% if trade.pnl_usd and trade.pnl_usd >= 0 %}positive{% else %}negative{% endif %}">
+                            {% if trade.pnl_usd %}
+                                {{ "+" if trade.pnl_usd > 0 else "" }}${{ "%.2f"|format(trade.pnl_usd) }}
+                                {% if trade.currency and trade.currency != 'USD' %}
                                     <span class="text-xs text-dark-500 block">{{ trade.currency }} {{ "%.2f"|format(trade.pnl_dollars) }}</span>
-                                {% else %}
-                                    {{ "+" if trade.pnl_dollars > 0 else "" }}${{ "%.2f"|format(trade.pnl_dollars) }}
                                 {% endif %}
                             {% else %}-{% endif %}
                         </td>
@@ -384,33 +387,54 @@ async function recalculateMetrics() {
     }
 }
 
-async function reclassifyTrades() {
-    // Ask if force reclassify
-    const force = confirm('Reclassify ALL trades? (Cancel to only classify unclassified trades)');
+async function analyzeAllTrades() {
+    // Ask if force re-analyze
+    const force = confirm('Analyze ALL trades? (Cancel to only analyze unreviewed trades)');
+
+    // Show persistent loading message
+    showToast('🧠 AI analysis started... This may take 1-2 minutes for many trades.', 'info', 120000);
+    console.log('Analyze started, force=' + force);
     
-    showStartToast('AI reclassification');
     try {
-        const url = force ? '/api/reclassify-trades?force=true' : '/api/reclassify-trades';
-        const response = await fetch(url, { method: 'POST' });
-        const data = await response.json();
+        const url = force ? '/api/analyze-all-trades?force=true' : '/api/analyze-all-trades';
+        console.log('Calling: ' + url);
         
+        // Use AbortController for timeout (10 minutes)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 600000);
+        
+        const response = await fetch(url, { 
+            method: 'POST',
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        
+        console.log('Response status: ' + response.status);
+        const data = await response.json();
+        console.log('Response data:', data);
+
         if (data.error) {
             showToast(data.error, 'error');
             return;
         }
-        
-        const classified = data.classified || 0;
+
+        const analyzed = data.analyzed || 0;
         const skipped = data.skipped || 0;
         const errors = data.errors || 0;
-        
-        let msg = `${classified} classified`;
+
+        let msg = `${analyzed} analyzed`;
         if (skipped > 0) msg += `, ${skipped} skipped (already done)`;
         if (errors > 0) msg += `, ${errors} failed`;
-        
-        showFinishToast('AI reclassification', msg);
-        setTimeout(() => window.location.reload(), 1500);
+
+        showToast('✅ ' + msg, 'success', 5000);
+        setTimeout(() => window.location.reload(), 2000);
     } catch (err) {
-        showToast('Reclassification failed: ' + err.message, 'error');
+        console.error('Analyze error:', err);
+        if (err.name === 'AbortError') {
+            showToast('Analysis timed out. Try again or analyze individual trades.', 'error');
+        } else {
+            showToast('Analysis failed: ' + err.message, 'error');
+        }
     }
 }
 

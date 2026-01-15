@@ -289,3 +289,11 @@ def get_database_url() -> str:
 def get_polygon_api_key() -> str | None:
     """Get Polygon.io API key from environment."""
     return os.getenv("POLYGON_API_KEY")
+
+
+def get_llm_workers() -> int:
+    """Get number of concurrent LLM workers from environment."""
+    try:
+        return int(os.getenv("LLM_WORKERS", "20"))
+    except ValueError:
+        return 20

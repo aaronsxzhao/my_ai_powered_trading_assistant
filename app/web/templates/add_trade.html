@@ -1,140 +1,393 @@
 {% extends "base.html" %}
 
-{% block title %}Add Trade - Brooks Trading Coach{% endblock %}
+{% block title %}Add Trades - Brooks Trading Coach{% endblock %}
 
 {% block content %}
-<div class="max-w-2xl mx-auto">
+<div class="space-y-6">
     <div class="mb-6">
         <h1 class="text-3xl font-bold bg-gradient-to-r from-white to-dark-300 bg-clip-text text-transparent">
-            Add Trade
+            Add Trades
         </h1>
-        <p class="text-dark-400 text-sm mt-1">Log a new trade for AI coaching</p>
+        <p class="text-dark-400 text-sm mt-1">Log a single trade or import in bulk</p>
     </div>
 
-    <form action="/api/trades" method="POST" class="card space-y-6">
-        <div class="grid grid-cols-2 gap-4">
-            <!-- Ticker -->
-            <div>
-                <label class="label">Ticker *</label>
-                <input type="text" name="ticker" required 
-                    class="input" placeholder="SPY" list="ticker-list">
-                <datalist id="ticker-list">
-                    {% for ticker in tickers %}
-                    <option value="{{ ticker }}">
-                    {% endfor %}
-                </datalist>
-            </div>
+    <!-- Tabs -->
+    <div class="border-b border-dark-700 mb-6">
+        <nav class="flex space-x-4">
+            <button onclick="showTab('single')" id="tab-single" 
+                class="trade-tab px-6 py-3 text-sm font-medium border-b-2 border-accent-500 text-accent-400">
+                ➕ Single Trade
+            </button>
+            <button onclick="showTab('import')" id="tab-import"
+                class="trade-tab px-6 py-3 text-sm font-medium border-b-2 border-transparent text-dark-400 hover:text-dark-200">
+                📥 Bulk Import
+            </button>
+        </nav>
+    </div>
 
-            <!-- Date -->
-            <div>
-                <label class="label">Trade Date</label>
-                <input type="date" name="trade_date" 
-                    class="input" value="{{ today if today else '' }}">
+    <!-- Single Trade Panel -->
+    <div id="panel-single" class="trade-panel">
+        <div class="max-w-2xl">
+            <form action="/api/trades" method="POST" class="card space-y-6">
+                <div class="grid grid-cols-2 gap-4">
+                    <!-- Ticker -->
+                    <div>
+                        <label class="label">Ticker *</label>
+                        <input type="text" name="ticker" required 
+                            class="input" placeholder="SPY" list="ticker-list">
+                        <datalist id="ticker-list">
+                            {% for ticker in tickers %}
+                            <option value="{{ ticker }}">
+                            {% endfor %}
+                        </datalist>
+                    </div>
+
+                    <!-- Date -->
+                    <div>
+                        <label class="label">Trade Date</label>
+                        <input type="date" name="trade_date" 
+                            class="input" value="{{ today if today else '' }}">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <!-- Direction -->
+                    <div>
+                        <label class="label">Direction *</label>
+                        <select name="direction" required class="select">
+                            <option value="long">🟢 Long</option>
+                            <option value="short">🔴 Short</option>
+                        </select>
+                    </div>
+
+                    <!-- Size -->
+                    <div>
+                        <label class="label">Size (shares)</label>
+                        <input type="number" name="size" 
+                            class="input" placeholder="100" value="1" step="any">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-3 gap-4">
+                    <!-- Entry -->
+                    <div>
+                        <label class="label">Entry Price *</label>
+                        <input type="number" name="entry_price" required 
+                            class="input" placeholder="100.00" step="0.01">
+                    </div>
+
+                    <!-- Exit -->
+                    <div>
+                        <label class="label">Exit Price *</label>
+                        <input type="number" name="exit_price" required 
+                            class="input" placeholder="102.00" step="0.01">
+                    </div>
+
+                    <!-- Stop -->
+                    <div>
+                        <label class="label">Stop Price *</label>
+                        <input type="number" name="stop_price" required 
+                            class="input" placeholder="98.00" step="0.01">
+                    </div>
+                </div>
+
+                <!-- Strategy (optional - LLM will classify if not set) -->
+                <div>
+                    <label class="label">Strategy (optional - AI will classify if empty)</label>
+                    <select name="strategy" class="select">
+                        <option value="">-- Let AI classify --</option>
+                        <optgroup label="With Trend">
+                            {% for s in strategies if s.category == 'with_trend' %}
+                            <option value="{{ s.name }}">{{ s.name }}</option>
+                            {% endfor %}
+                        </optgroup>
+                        <optgroup label="Countertrend">
+                            {% for s in strategies if s.category == 'countertrend' %}
+                            <option value="{{ s.name }}">{{ s.name }}</option>
+                            {% endfor %}
+                        </optgroup>
+                        <optgroup label="Trading Range">
+                            {% for s in strategies if s.category == 'trading_range' %}
+                            <option value="{{ s.name }}">{{ s.name }}</option>
+                            {% endfor %}
+                        </optgroup>
+                        <optgroup label="Special">
+                            {% for s in strategies if s.category == 'special' %}
+                            <option value="{{ s.name }}">{{ s.name }}</option>
+                            {% endfor %}
+                        </optgroup>
+                    </select>
+                </div>
+
+                <!-- Entry Reason -->
+                <div>
+                    <label class="label">Entry Reason</label>
+                    <textarea name="entry_reason" class="input" rows="2" 
+                        placeholder="Why did you enter this trade?"></textarea>
+                </div>
+
+                <!-- Notes -->
+                <div>
+                    <label class="label">Notes</label>
+                    <textarea name="notes" class="input" rows="3" 
+                        placeholder="Additional notes about the trade..."></textarea>
+                </div>
+
+                <!-- Submit -->
+                <div class="flex justify-end space-x-4">
+                    <a href="/trades" class="btn btn-secondary">Cancel</a>
+                    <button type="submit" class="btn btn-primary">Add Trade</button>
+                </div>
+            </form>
+
+            <!-- R Calculator -->
+            <div class="card mt-6">
+                <h3 class="font-bold mb-3 text-white">📊 R-Multiple Calculator</h3>
+                <p class="text-dark-400 text-sm mb-4">Enter your prices above to see the R-multiple.</p>
+                <div id="r-preview" class="text-2xl font-mono font-bold text-dark-500">--</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Import Panel -->
+    <div id="panel-import" class="trade-panel hidden">
+        <!-- Robinhood Auto-Import -->
+        <div class="card bg-gradient-to-br from-success-500/10 to-success-600/5 border-success-500/30 mb-6">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-bold text-white">🤖 Robinhood Auto-Import</h2>
+                <span id="rh-status" class="badge bg-dark-700 text-dark-300 border-dark-600">Not Connected</span>
+            </div>
+            
+            <div id="rh-login-form">
+                <div class="bg-accent-500/10 border border-accent-500/30 rounded-xl p-3 mb-4">
+                    <p class="text-sm text-accent-300">
+                        <strong>📱 How it works:</strong> After clicking Connect, check your <strong class="text-white">Robinhood app</strong> 
+                        to approve the login. No MFA code needed if you use app approval.
+                    </p>
+                </div>
+                
+                <div class="space-y-3">
+                    <input type="email" id="rh-username" placeholder="Robinhood Email" class="input">
+                    <input type="password" id="rh-password" placeholder="Password" class="input">
+                    
+                    <details class="text-sm">
+                        <summary class="text-dark-400 cursor-pointer hover:text-dark-200">
+                            Using SMS/Authenticator instead of app approval? Click here
+                        </summary>
+                        <input type="text" id="rh-mfa" placeholder="6-digit MFA Code" class="input mt-2">
+                    </details>
+                    
+                    <div class="flex items-center gap-3">
+                        <select id="rh-days" class="select flex-shrink-0">
+                            <option value="7">Last 7 days</option>
+                            <option value="30" selected>Last 30 days</option>
+                            <option value="90">Last 90 days</option>
+                            <option value="365">Last year</option>
+                        </select>
+                        <button onclick="startRobinhoodConnect()" class="btn btn-success flex-1">
+                            🔗 Connect & Import
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="rh-instructions" class="hidden mt-4 p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl">
+                    <div class="flex items-start gap-3">
+                        <div class="text-2xl animate-pulse">📱</div>
+                        <div>
+                            <p class="font-medium text-amber-400">Waiting for approval...</p>
+                            <p class="text-sm text-amber-300" id="rh-instruction-text">
+                                Check your Robinhood app and tap "Approve" to continue.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="rh-connected" class="hidden">
+                <div class="flex items-center justify-between">
+                    <span class="text-success-400">✓ Connected to Robinhood</span>
+                    <div class="flex gap-2">
+                        <button onclick="importFromRobinhoodSession()" class="btn btn-primary">
+                            📥 Import New Trades
+                        </button>
+                        <button onclick="disconnectRobinhood()" class="btn btn-secondary">
+                            Disconnect
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <div class="grid grid-cols-2 gap-4">
-            <!-- Direction -->
-            <div>
-                <label class="label">Direction *</label>
-                <select name="direction" required class="select">
-                    <option value="long">🟢 Long</option>
-                    <option value="short">🔴 Short</option>
-                </select>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Upload Form -->
+            <div class="card">
+                <h2 class="text-xl font-bold text-white mb-4">📤 Upload CSV</h2>
+                
+                <form id="upload-form" class="space-y-4">
+                    <div>
+                        <label class="label">Import Format</label>
+                        <select id="format-select" class="select">
+                            <option value="generic">📄 Generic CSV</option>
+                            <optgroup label="TradingView">
+                                <option value="tv_order_history">⭐ TradingView - Order History (RECOMMENDED)</option>
+                                <option value="tv_balance_history">📊 TradingView - Balance History</option>
+                            </optgroup>
+                            <optgroup label="Brokers">
+                                <option value="thinkorswim">💹 TD Ameritrade ThinkOrSwim</option>
+                                <option value="tradovate">📈 Tradovate</option>
+                                <option value="interactive_brokers">🏦 Interactive Brokers</option>
+                            </optgroup>
+                        </select>
+                    </div>
+                    
+                    <div class="border-2 border-dashed border-dark-600 rounded-xl p-8 text-center hover:border-accent-500 transition cursor-pointer bg-dark-900/50"
+                         onclick="document.getElementById('file-input').click()">
+                        <input type="file" id="file-input" accept=".csv" class="hidden" onchange="handleFileSelect(this)">
+                        <div class="text-4xl mb-2">📁</div>
+                        <div class="text-dark-300">Click to select CSV file</div>
+                        <div class="text-sm text-dark-500">or drag and drop</div>
+                    </div>
+                    
+                    <div id="file-name" class="text-center text-accent-400 hidden"></div>
+                    
+                    <div id="balance-file-section" class="hidden">
+                        <div class="border-t border-dark-700 pt-4 mt-2">
+                            <label class="label">
+                                📊 Balance History (for cross-validation) 
+                                <span class="text-dark-500 font-normal">- Optional</span>
+                            </label>
+                            <div class="border-2 border-dashed border-success-500/30 rounded-xl p-4 text-center hover:border-success-500 transition cursor-pointer bg-success-500/5"
+                                 onclick="document.getElementById('balance-file-input').click()">
+                                <input type="file" id="balance-file-input" accept=".csv" class="hidden" onchange="handleBalanceFileSelect(this)">
+                                <div class="text-2xl mb-1">📊</div>
+                                <div class="text-dark-300 text-sm">Add Balance History for validation</div>
+                            </div>
+                            <div id="balance-file-name" class="text-center text-success-400 text-sm hidden"></div>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" id="upload-btn" class="btn btn-primary w-full" disabled>
+                        📤 Upload & Import
+                    </button>
+                </form>
+
+                <div class="mt-6 pt-6 border-t border-dark-700">
+                    <h3 class="font-medium text-white mb-2">Or import from folder:</h3>
+                    <p class="text-sm text-dark-400 mb-3">
+                        Drop CSV files in: <code class="bg-dark-900 px-2 py-1 rounded text-accent-400">{{ imports_path }}</code>
+                    </p>
+                    <button onclick="bulkImport()" class="btn btn-secondary w-full">
+                        📥 Import All from Folder
+                    </button>
+                </div>
             </div>
 
-            <!-- Size -->
-            <div>
-                <label class="label">Size (shares)</label>
-                <input type="number" name="size" 
-                    class="input" placeholder="100" value="1" step="any">
+            <!-- Instructions -->
+            <div class="card">
+                <h2 class="text-xl font-bold text-white mb-4">📋 Format Instructions</h2>
+                
+                <div id="format-info-generic" class="format-info">
+                    <h3 class="font-medium text-white mb-2">Generic CSV Format</h3>
+                    <div class="bg-dark-900/50 rounded-xl p-4 font-mono text-sm overflow-x-auto text-dark-300">
+                        <div class="text-dark-500">ticker,direction,entry_price,exit_price,stop_price,size,trade_date,notes</div>
+                        <div>SPY,long,475.50,478.00,474.00,100,2024-01-15,Strong pullback</div>
+                    </div>
+                    <div class="mt-3 text-sm text-dark-400">
+                        Required: ticker, entry_price, exit_price. Optional: stop_price, direction, size, strategy, notes.
+                    </div>
+                </div>
+
+                <div id="format-info-tv_order_history" class="format-info hidden">
+                    <h3 class="font-medium text-white mb-2">⭐ TradingView - Order History</h3>
+                    <div class="bg-success-500/10 border border-success-500/30 rounded-xl p-4 text-sm">
+                        <p class="mb-2 text-success-400"><strong>✓ Best format for multi-leg trades!</strong></p>
+                        <ol class="list-decimal list-inside space-y-1 text-dark-300">
+                            <li>Open TradingView Paper Trading panel</li>
+                            <li>Go to "Order History" tab</li>
+                            <li>Click the download button (↓)</li>
+                        </ol>
+                    </div>
+                </div>
+
+                <div id="format-info-tv_balance_history" class="format-info hidden">
+                    <h3 class="font-medium text-white mb-2">TradingView - Balance History</h3>
+                    <div class="bg-dark-900/50 rounded-xl p-4 text-sm text-dark-300">
+                        Export from Paper Trading → Balance History → Download
+                    </div>
+                </div>
+
+                <div id="format-info-thinkorswim" class="format-info hidden">
+                    <h3 class="font-medium text-white mb-2">TD Ameritrade ThinkOrSwim</h3>
+                    <div class="bg-dark-900/50 rounded-xl p-4 text-sm text-dark-300">
+                        Export from: Monitor → Account Statement → Trades → Export
+                    </div>
+                </div>
+
+                <div id="format-info-tradovate" class="format-info hidden">
+                    <h3 class="font-medium text-white mb-2">Tradovate</h3>
+                    <div class="bg-dark-900/50 rounded-xl p-4 text-sm text-dark-300">
+                        Export from: Performance → Trade History → Download CSV
+                    </div>
+                </div>
+
+                <div id="format-info-interactive_brokers" class="format-info hidden">
+                    <h3 class="font-medium text-white mb-2">Interactive Brokers</h3>
+                    <div class="bg-dark-900/50 rounded-xl p-4 text-sm text-dark-300">
+                        Export from: Reports → Flex Queries → Trade Confirmations
+                    </div>
+                </div>
+
+                <div class="mt-6 p-4 bg-accent-500/10 border border-accent-500/30 rounded-xl">
+                    <div class="font-medium text-accent-400 mb-1">🧠 AI Classification</div>
+                    <p class="text-sm text-accent-300">
+                        The AI will automatically classify each trade into Brooks-style setups.
+                    </p>
+                </div>
             </div>
         </div>
 
-        <div class="grid grid-cols-3 gap-4">
-            <!-- Entry -->
-            <div>
-                <label class="label">Entry Price *</label>
-                <input type="number" name="entry_price" required 
-                    class="input" placeholder="100.00" step="0.01">
+        {% if import_files %}
+        <div class="card mt-6">
+            <h2 class="text-xl font-bold text-white mb-4">📂 Files Ready to Import</h2>
+            <div class="space-y-2">
+                {% for f in import_files %}
+                <div class="flex items-center justify-between p-3 bg-dark-900/50 rounded-xl border border-dark-700">
+                    <span class="font-mono text-dark-200">{{ f.name }}</span>
+                    <span class="text-dark-500 text-sm">{{ f.stat().st_size // 1024 }} KB</span>
+                </div>
+                {% endfor %}
             </div>
-
-            <!-- Exit -->
-            <div>
-                <label class="label">Exit Price *</label>
-                <input type="number" name="exit_price" required 
-                    class="input" placeholder="102.00" step="0.01">
-            </div>
-
-            <!-- Stop -->
-            <div>
-                <label class="label">Stop Price *</label>
-                <input type="number" name="stop_price" required 
-                    class="input" placeholder="98.00" step="0.01">
-            </div>
+            <button onclick="bulkImport()" class="btn btn-primary mt-4">
+                Import All ({{ import_files|length }} files)
+            </button>
         </div>
-
-        <!-- Strategy (optional - LLM will classify if not set) -->
-        <div>
-            <label class="label">Strategy (optional - AI will classify if empty)</label>
-            <select name="strategy" class="select">
-                <option value="">-- Let AI classify --</option>
-                <optgroup label="With Trend">
-                    {% for s in strategies if s.category == 'with_trend' %}
-                    <option value="{{ s.name }}">{{ s.name }}</option>
-                    {% endfor %}
-                </optgroup>
-                <optgroup label="Countertrend">
-                    {% for s in strategies if s.category == 'countertrend' %}
-                    <option value="{{ s.name }}">{{ s.name }}</option>
-                    {% endfor %}
-                </optgroup>
-                <optgroup label="Trading Range">
-                    {% for s in strategies if s.category == 'trading_range' %}
-                    <option value="{{ s.name }}">{{ s.name }}</option>
-                    {% endfor %}
-                </optgroup>
-                <optgroup label="Special">
-                    {% for s in strategies if s.category == 'special' %}
-                    <option value="{{ s.name }}">{{ s.name }}</option>
-                    {% endfor %}
-                </optgroup>
-            </select>
-        </div>
-
-        <!-- Entry Reason -->
-        <div>
-            <label class="label">Entry Reason</label>
-            <textarea name="entry_reason" class="input" rows="2" 
-                placeholder="Why did you enter this trade?"></textarea>
-        </div>
-
-        <!-- Notes -->
-        <div>
-            <label class="label">Notes</label>
-            <textarea name="notes" class="input" rows="3" 
-                placeholder="Additional notes about the trade..."></textarea>
-        </div>
-
-        <!-- Submit -->
-        <div class="flex justify-end space-x-4">
-            <a href="/trades" class="btn btn-secondary">Cancel</a>
-            <button type="submit" class="btn btn-primary">Add Trade</button>
-        </div>
-    </form>
-
-    <!-- R Calculator -->
-    <div class="card mt-6">
-        <h3 class="font-bold mb-3 text-white">📊 R-Multiple Calculator</h3>
-        <p class="text-dark-400 text-sm mb-4">Enter your prices above to see the R-multiple.</p>
-        <div id="r-preview" class="text-2xl font-mono font-bold text-dark-500">--</div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-// Auto-calculate R-multiple
+// Tab switching
+function showTab(tab) {
+    document.querySelectorAll('.trade-panel').forEach(p => p.classList.add('hidden'));
+    document.querySelectorAll('.trade-tab').forEach(t => {
+        t.classList.remove('border-accent-500', 'text-accent-400');
+        t.classList.add('border-transparent', 'text-dark-400');
+    });
+    
+    document.getElementById('panel-' + tab).classList.remove('hidden');
+    const tabEl = document.getElementById('tab-' + tab);
+    tabEl.classList.add('border-accent-500', 'text-accent-400');
+    tabEl.classList.remove('border-transparent', 'text-dark-400');
+}
+
+// Check URL for tab parameter
+if (window.location.pathname === '/import') {
+    showTab('import');
+}
+
+// ===== SINGLE TRADE FORM =====
 const entryInput = document.querySelector('input[name="entry_price"]');
 const exitInput = document.querySelector('input[name="exit_price"]');
 const stopInput = document.querySelector('input[name="stop_price"]');
@@ -179,7 +432,200 @@ exitInput.addEventListener('input', calculateR);
 stopInput.addEventListener('input', calculateR);
 directionSelect.addEventListener('change', calculateR);
 
-// Set today's date
 document.querySelector('input[name="trade_date"]').valueAsDate = new Date();
+
+// ===== BULK IMPORT =====
+const fileInput = document.getElementById('file-input');
+const fileName = document.getElementById('file-name');
+const uploadBtn = document.getElementById('upload-btn');
+const uploadForm = document.getElementById('upload-form');
+const formatSelect = document.getElementById('format-select');
+const balanceFileInput = document.getElementById('balance-file-input');
+const balanceFileName = document.getElementById('balance-file-name');
+const balanceFileSection = document.getElementById('balance-file-section');
+
+checkRobinhoodSession();
+
+async function checkRobinhoodSession() {
+    try {
+        const response = await fetch('/api/robinhood/status');
+        const data = await response.json();
+        if (data.has_session) {
+            document.getElementById('rh-status').textContent = 'Session Stored';
+            document.getElementById('rh-status').className = 'badge bg-amber-500/20 text-amber-400 border-amber-500/30';
+        }
+    } catch (e) {}
+}
+
+function startRobinhoodConnect() {
+    const username = document.getElementById('rh-username').value;
+    const password = document.getElementById('rh-password').value;
+    if (!username || !password) {
+        showToast('Please enter username and password', 'error');
+        return;
+    }
+    document.getElementById('rh-instructions').classList.remove('hidden');
+    importFromRobinhood();
+}
+
+async function importFromRobinhood() {
+    const username = document.getElementById('rh-username').value;
+    const password = document.getElementById('rh-password').value;
+    const mfaEl = document.getElementById('rh-mfa');
+    const mfa = mfaEl ? mfaEl.value : '';
+    const days = document.getElementById('rh-days').value;
+    
+    try {
+        const response = await fetch('/api/robinhood/import', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                username, password, mfa_code: mfa || null, days_back: parseInt(days)
+            })
+        });
+        const data = await response.json();
+        document.getElementById('rh-instructions').classList.add('hidden');
+        
+        if (data.needs_device_approval) {
+            showToast('Check Robinhood app to approve login', 'warning');
+            return;
+        }
+        if (data.needs_mfa) {
+            showToast('Enter MFA code and try again', 'warning');
+            document.querySelector('#rh-login-form details').open = true;
+            return;
+        }
+        if (data.error) {
+            showToast('Error: ' + data.error, 'error');
+        } else {
+            showFinishToast('Robinhood import', `${data.imported} trades`);
+            setTimeout(() => window.location.reload(), 2000);
+        }
+    } catch (err) {
+        document.getElementById('rh-instructions').classList.add('hidden');
+        showToast('Connection failed', 'error');
+    }
+}
+
+async function importFromRobinhoodSession() {
+    showStartToast('Robinhood import');
+    const days = document.getElementById('rh-days').value;
+    try {
+        const response = await fetch('/api/robinhood/import-session', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({days_back: parseInt(days)})
+        });
+        const data = await response.json();
+        if (data.error) showToast('Error: ' + data.error, 'error');
+        else {
+            showFinishToast('Robinhood import', `${data.imported} trades`);
+            setTimeout(() => window.location.reload(), 2000);
+        }
+    } catch (err) {
+        showToast('Import failed', 'error');
+    }
+}
+
+async function disconnectRobinhood() {
+    await fetch('/api/robinhood/disconnect', {method: 'POST'});
+    document.getElementById('rh-status').textContent = 'Not Connected';
+    document.getElementById('rh-status').className = 'badge bg-dark-700 text-dark-300 border-dark-600';
+    showToast('Disconnected');
+}
+
+function handleFileSelect(input) {
+    if (input.files.length > 0) {
+        fileName.textContent = input.files[0].name;
+        fileName.classList.remove('hidden');
+        uploadBtn.disabled = false;
+        const name = input.files[0].name.toLowerCase();
+        if (name.includes('order-history')) {
+            formatSelect.value = 'tv_order_history';
+            updateFormatInfo();
+        } else if (name.includes('balance-history')) {
+            formatSelect.value = 'tv_balance_history';
+            updateFormatInfo();
+        }
+    }
+}
+
+function handleBalanceFileSelect(input) {
+    if (input.files.length > 0) {
+        balanceFileName.textContent = '✓ ' + input.files[0].name;
+        balanceFileName.classList.remove('hidden');
+    }
+}
+
+function updateFormatInfo() {
+    document.querySelectorAll('.format-info').forEach(el => el.classList.add('hidden'));
+    const selected = formatSelect.value;
+    const infoEl = document.getElementById('format-info-' + selected);
+    if (infoEl) infoEl.classList.remove('hidden');
+    if (selected === 'tv_order_history') {
+        balanceFileSection.classList.remove('hidden');
+    } else {
+        balanceFileSection.classList.add('hidden');
+    }
+}
+
+formatSelect.addEventListener('change', updateFormatInfo);
+updateFormatInfo();
+
+uploadForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!fileInput.files.length) return;
+    showStartToast('Importing trades');
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    formData.append('format', formatSelect.value);
+    if (balanceFileInput && balanceFileInput.files.length > 0) {
+        formData.append('balance_file', balanceFileInput.files[0]);
+    }
+    try {
+        const response = await fetch('/api/import-csv', {method: 'POST', body: formData});
+        const data = await response.json();
+        if (data.error) showToast('Error: ' + data.error, 'error');
+        else {
+            showFinishToast('Import', `${data.imported} trades`);
+            setTimeout(() => window.location.reload(), 1500);
+        }
+    } catch (err) {
+        showToast('Import failed', 'error');
+    }
+});
+
+async function bulkImport() {
+    showStartToast('Bulk import');
+    try {
+        const response = await fetch('/api/bulk-import', {method: 'POST'});
+        const data = await response.json();
+        showFinishToast('Bulk import', `${data.imported} trades`);
+        setTimeout(() => window.location.reload(), 1500);
+    } catch (err) {
+        showToast('Import failed', 'error');
+    }
+}
+
+// Drag and drop
+const dropZone = document.querySelector('.border-dashed');
+if (dropZone) {
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('border-accent-500');
+    });
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('border-accent-500');
+    });
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('border-accent-500');
+        const files = e.dataTransfer.files;
+        if (files.length > 0 && files[0].name.endsWith('.csv')) {
+            fileInput.files = files;
+            handleFileSelect(fileInput);
+        }
+    });
+}
 </script>
 {% endblock %}

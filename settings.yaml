@@ -1,3 +1,6 @@
+cache:
+  auto_regenerate: false
+  enable_review_cache: true
 candles:
   5min: 234
   daily: 30

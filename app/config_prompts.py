@@ -18,6 +18,12 @@ SETTINGS_FILE = PROJECT_ROOT / "settings.yaml"
 
 # Default settings
 DEFAULT_SETTINGS = {
+    # Cache settings
+    "cache": {
+        "enable_review_cache": True,  # Whether to cache AI reviews
+        "auto_regenerate": False,     # Always regenerate reviews (ignore cache)
+    },
+    
     # Candle counts for different timeframes
     "candles": {
         "daily": 30,       # Number of daily candles to fetch
@@ -557,4 +563,27 @@ def update_prompt(prompt_type: str, prompt_text: str, is_user_prompt: bool = Fal
         if 'system_prompts' not in settings:
             settings['system_prompts'] = {}
         settings['system_prompts'][prompt_type] = prompt_text
+    return save_settings(settings)
+
+
+def get_cache_settings() -> dict:
+    """Get cache settings."""
+    settings = load_settings()
+    defaults = DEFAULT_SETTINGS.get('cache', {})
+    cache_settings = settings.get('cache', {})
+    return {
+        'enable_review_cache': cache_settings.get('enable_review_cache', defaults.get('enable_review_cache', True)),
+        'auto_regenerate': cache_settings.get('auto_regenerate', defaults.get('auto_regenerate', False)),
+    }
+
+
+def update_cache_settings(enable_review_cache: Optional[bool] = None, auto_regenerate: Optional[bool] = None) -> bool:
+    """Update cache settings."""
+    settings = load_settings()
+    if 'cache' not in settings:
+        settings['cache'] = {}
+    if enable_review_cache is not None:
+        settings['cache']['enable_review_cache'] = enable_review_cache
+    if auto_regenerate is not None:
+        settings['cache']['auto_regenerate'] = auto_regenerate
     return save_settings(settings)

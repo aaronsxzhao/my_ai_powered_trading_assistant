@@ -50,6 +50,38 @@ _yfinance_rate_limiter = RateLimiter(calls_per_second=0.5)
 # Standard column names for OHLCV data
 OHLCV_COLUMNS = ["datetime", "open", "high", "low", "close", "volume"]
 
+
+def normalize_ticker(ticker: str) -> tuple[str, str]:
+    """
+    Normalize ticker symbol and detect exchange.
+    
+    Returns:
+        tuple of (normalized_ticker, exchange)
+        exchange can be: 'US', 'HK', 'unknown'
+    """
+    ticker = ticker.upper().strip()
+    
+    # Already has exchange suffix
+    if '.HK' in ticker:
+        return ticker, 'HK'
+    if '.L' in ticker:
+        return ticker, 'UK'
+    if '.T' in ticker:
+        return ticker, 'JP'
+    
+    # Detect HK stocks (numeric only, 4-5 digits)
+    if ticker.isdigit() and len(ticker) in [4, 5]:
+        return f"{ticker}.HK", 'HK'
+    
+    # Default to US
+    return ticker, 'US'
+
+
+def is_international_ticker(ticker: str) -> bool:
+    """Check if ticker is for an international (non-US) market."""
+    _, exchange = normalize_ticker(ticker)
+    return exchange != 'US'
+
 Timeframe = Literal["1d", "2h", "1h", "30m", "15m", "5m", "1m"]
 
 
@@ -148,6 +180,11 @@ class YFinanceProvider(DataProvider):
         """Fetch OHLCV data from Yahoo Finance with rate limiting and retry."""
         import yfinance as yf
 
+        # Normalize ticker (e.g., "9988" -> "9988.HK" for Hong Kong stocks)
+        normalized_ticker, exchange = normalize_ticker(ticker)
+        if normalized_ticker != ticker:
+            logger.info(f"📈 Normalized ticker {ticker} -> {normalized_ticker} (exchange: {exchange})")
+
         # Map timeframe to yfinance interval
         interval_map = {
             "1d": "1d",
@@ -169,7 +206,7 @@ class YFinanceProvider(DataProvider):
                 # Wait for rate limiter
                 self.rate_limiter.wait()
                 
-                ticker_obj = yf.Ticker(ticker)
+                ticker_obj = yf.Ticker(normalized_ticker)
                 df = ticker_obj.history(
                     start=start.strftime("%Y-%m-%d"),
                     end=end.strftime("%Y-%m-%d"),
@@ -259,6 +296,14 @@ class PolygonProvider(DataProvider):
         end: datetime,
     ) -> pd.DataFrame:
         """Fetch OHLCV data from Polygon.io with rate limiting and retry."""
+        
+        # Polygon only supports US stocks - fall back to yfinance for international
+        if is_international_ticker(ticker):
+            normalized_ticker, exchange = normalize_ticker(ticker)
+            logger.info(f"📈 Polygon doesn't support {exchange} stocks, using yfinance for {normalized_ticker}")
+            yf_provider = YFinanceProvider()
+            return yf_provider.get_ohlcv(ticker, timeframe, start, end)
+        
         if not self.api_key:
             raise ValueError("POLYGON_API_KEY is required for Polygon provider")
 

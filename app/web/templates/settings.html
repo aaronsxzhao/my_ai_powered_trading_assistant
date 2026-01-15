@@ -9,9 +9,48 @@
             <h1 class="text-3xl font-bold bg-gradient-to-r from-white to-dark-300 bg-clip-text text-transparent">
                 ⚙️ Settings
             </h1>
-            <p class="text-dark-400 text-sm mt-1">Configure AI analysis and prompts</p>
+            <p class="text-dark-400 text-sm mt-1">Configure AI analysis, prompts, and manage resources</p>
         </div>
         <button onclick="resetToDefaults()" class="btn btn-secondary">🔄 Reset to Defaults</button>
+    </div>
+
+    <!-- Quick Links -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <a href="/tickers" class="card hover:border-accent-500/50 transition-all group cursor-pointer">
+            <div class="flex flex-col items-center text-center py-2">
+                <span class="text-3xl mb-2 group-hover:scale-110 transition-transform">🎯</span>
+                <span class="font-medium text-white">Manage Tickers</span>
+                <span class="text-xs text-dark-500 mt-1">Watchlist symbols</span>
+            </div>
+        </a>
+        <a href="/materials" class="card hover:border-accent-500/50 transition-all group cursor-pointer">
+            <div class="flex flex-col items-center text-center py-2">
+                <span class="text-3xl mb-2 group-hover:scale-110 transition-transform">📚</span>
+                <span class="font-medium text-white">Training Materials</span>
+                <span class="text-xs text-dark-500 mt-1">LLM knowledge base</span>
+            </div>
+        </a>
+        <a href="/reports" class="card hover:border-accent-500/50 transition-all group cursor-pointer">
+            <div class="flex flex-col items-center text-center py-2">
+                <span class="text-3xl mb-2 group-hover:scale-110 transition-transform">📋</span>
+                <span class="font-medium text-white">Reports</span>
+                <span class="text-xs text-dark-500 mt-1">Premarket & EOD</span>
+            </div>
+        </a>
+        <a href="/analysis" class="card hover:border-accent-500/50 transition-all group cursor-pointer">
+            <div class="flex flex-col items-center text-center py-2">
+                <span class="text-3xl mb-2 group-hover:scale-110 transition-transform">🔍</span>
+                <span class="font-medium text-white">Bulk Trade Analysis</span>
+                <span class="text-xs text-dark-500 mt-1">AI pattern discovery</span>
+            </div>
+        </a>
+        <a href="/strategies" class="card hover:border-accent-500/50 transition-all group cursor-pointer">
+            <div class="flex flex-col items-center text-center py-2">
+                <span class="text-3xl mb-2 group-hover:scale-110 transition-transform">🏷️</span>
+                <span class="font-medium text-white">Manage Strategies</span>
+                <span class="text-xs text-dark-500 mt-1">Edit & categorize</span>
+            </div>
+        </a>
     </div>
 
     <!-- Candle Settings -->
@@ -41,6 +80,34 @@
             <div class="md:col-span-3">
                 <button type="submit" class="btn btn-primary">💾 Save Candle Settings</button>
             </div>
+        </form>
+    </div>
+
+    <!-- Cache Settings -->
+    <div class="card">
+        <h2 class="text-xl font-bold mb-4 text-white">💾 Cache Settings</h2>
+        <p class="text-dark-400 mb-4">Control how AI reviews are cached to avoid repeated LLM calls.</p>
+        
+        <form id="cache-form" class="space-y-4">
+            <div class="flex items-center gap-3">
+                <input type="checkbox" id="enable-review-cache" class="w-5 h-5 rounded bg-dark-700 border-dark-600 text-accent-500 focus:ring-accent-500"
+                    {{ 'checked' if cache_settings.enable_review_cache else '' }}>
+                <div>
+                    <label for="enable-review-cache" class="font-medium text-white cursor-pointer">Enable Review Cache</label>
+                    <p class="text-xs text-dark-500">When enabled, AI reviews are saved and reused. Disable to always fetch fresh reviews.</p>
+                </div>
+            </div>
+            
+            <div class="flex items-center gap-3">
+                <input type="checkbox" id="auto-regenerate" class="w-5 h-5 rounded bg-dark-700 border-dark-600 text-accent-500 focus:ring-accent-500"
+                    {{ 'checked' if cache_settings.auto_regenerate else '' }}>
+                <div>
+                    <label for="auto-regenerate" class="font-medium text-white cursor-pointer">Auto-Regenerate Reviews</label>
+                    <p class="text-xs text-dark-500">When enabled, always regenerate reviews (ignores cache). Useful for testing prompts.</p>
+                </div>
+            </div>
+            
+            <button type="submit" class="btn btn-primary">💾 Save Cache Settings</button>
         </form>
     </div>
 
@@ -223,6 +290,34 @@ document.getElementById('candle-form').addEventListener('submit', async (e) => {
         
         if (response.ok) {
             showFinishToast('Candle settings saved');
+        } else {
+            showToast('Failed to save settings', 'error');
+        }
+    } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+    }
+});
+
+// Save cache settings
+document.getElementById('cache-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const data = {
+        enable_review_cache: document.getElementById('enable-review-cache').checked,
+        auto_regenerate: document.getElementById('auto-regenerate').checked
+    };
+    
+    showStartToast('Saving cache settings');
+    
+    try {
+        const response = await fetch('/api/settings/cache', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        });
+        
+        if (response.ok) {
+            showFinishToast('Cache settings saved', 'Cache: ' + (data.enable_review_cache ? 'ON' : 'OFF') + ', Auto-regen: ' + (data.auto_regenerate ? 'ON' : 'OFF'));
         } else {
             showToast('Failed to save settings', 'error');
         }

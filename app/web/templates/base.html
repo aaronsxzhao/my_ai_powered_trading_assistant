@@ -385,20 +385,11 @@
                         <a href="/trades" class="nav-link {% if '/trades' in request.url.path %}active{% endif %}">
                             <span class="mr-1.5">📊</span> Trades
                         </a>
-                        <a href="/add-trade" class="nav-link {% if request.url.path == '/add-trade' %}active{% endif %}">
-                            <span class="mr-1.5">➕</span> Add
-                        </a>
-                        <a href="/import" class="nav-link {% if request.url.path == '/import' %}active{% endif %}">
-                            <span class="mr-1.5">📥</span> Import
-                        </a>
-                        <a href="/reports" class="nav-link {% if request.url.path == '/reports' %}active{% endif %}">
-                            <span class="mr-1.5">📋</span> Reports
+                        <a href="/add-trade" class="nav-link {% if request.url.path == '/add-trade' or request.url.path == '/import' %}active{% endif %}">
+                            <span class="mr-1.5">➕</span> Add Trades
                         </a>
                         <a href="/stats" class="nav-link {% if request.url.path == '/stats' %}active{% endif %}">
                             <span class="mr-1.5">📈</span> Stats
-                        </a>
-                        <a href="/analysis" class="nav-link {% if request.url.path == '/analysis' %}active{% endif %}">
-                            <span class="mr-1.5">🔍</span> Analyze
                         </a>
                     </div>
                 </div>
@@ -419,16 +410,10 @@
                             {% endif %}
                         {% endif %}
                     </div>
-                    <a href="/tickers" class="nav-link p-2 {% if request.url.path == '/tickers' %}active{% endif %}" title="Tickers">
-                        🎯
-                    </a>
-                    <a href="/materials" class="nav-link p-2 {% if request.url.path == '/materials' %}active{% endif %}" title="Training Materials">
-                        📚
-                    </a>
                     <button onclick="toggleTheme()" class="nav-link p-2" title="Toggle Dark/Light Mode" id="theme-toggle">
                         <span id="theme-icon">🌙</span>
                     </button>
-                    <a href="/settings" class="nav-link p-2 {% if request.url.path == '/settings' %}active{% endif %}" title="Settings">
+                    <a href="/settings" class="nav-link p-2 {% if request.url.path == '/settings' or request.url.path == '/tickers' or request.url.path == '/materials' or request.url.path == '/reports' or request.url.path == '/analysis' %}active{% endif %}" title="Settings">
                         ⚙️
                     </a>
                 </div>
@@ -447,13 +432,13 @@
                 <span class="text-lg mb-1">📊</span>
                 Trades
             </a>
-            <a href="/add-trade" class="flex flex-col items-center px-3 py-2 text-xs {% if request.url.path == '/add-trade' %}text-accent-400{% else %}text-dark-400{% endif %}">
+            <a href="/add-trade" class="flex flex-col items-center px-3 py-2 text-xs {% if request.url.path == '/add-trade' or request.url.path == '/import' %}text-accent-400{% else %}text-dark-400{% endif %}">
                 <span class="text-lg mb-1">➕</span>
                 Add
             </a>
-            <a href="/import" class="flex flex-col items-center px-3 py-2 text-xs {% if request.url.path == '/import' %}text-accent-400{% else %}text-dark-400{% endif %}">
-                <span class="text-lg mb-1">📥</span>
-                Import
+            <a href="/stats" class="flex flex-col items-center px-3 py-2 text-xs {% if request.url.path == '/stats' %}text-accent-400{% else %}text-dark-400{% endif %}">
+                <span class="text-lg mb-1">📈</span>
+                Stats
             </a>
             <a href="/settings" class="flex flex-col items-center px-3 py-2 text-xs {% if request.url.path == '/settings' %}text-accent-400{% else %}text-dark-400{% endif %}">
                 <span class="text-lg mb-1">⚙️</span>

@@ -86,8 +86,8 @@
                         <div class="font-mono font-bold {% if trade.r_multiple and trade.r_multiple >= 0 %}positive{% else %}negative{% endif %}">
                             {% if trade.r_multiple %}{{ "%.2f"|format(trade.r_multiple) }}R{% else %}-{% endif %}
                         </div>
-                        {% if trade.pnl_dollars %}
-                        <div class="text-xs text-dark-400">${{ "%.0f"|format(trade.pnl_dollars) }}</div>
+                        {% if trade.pnl_usd %}
+                        <div class="text-xs text-dark-400">${{ "%.0f"|format(trade.pnl_usd) }}</div>
                         {% endif %}
                     </div>
                 </a>

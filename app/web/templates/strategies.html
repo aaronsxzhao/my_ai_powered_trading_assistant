@@ -1,0 +1,309 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Strategies - Brooks Trading Coach{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+            <h1 class="text-3xl font-bold bg-gradient-to-r from-white to-dark-300 bg-clip-text text-transparent">
+                🎯 Manage Strategies
+            </h1>
+            <p class="text-dark-400 text-sm mt-1">Edit, merge, and categorize your trading strategies</p>
+        </div>
+        <a href="/settings" class="btn btn-secondary">← Back to Settings</a>
+    </div>
+
+    <!-- Category Filter -->
+    <div class="flex flex-wrap gap-2">
+        <button onclick="filterCategory('all')" class="category-btn active" data-category="all">All</button>
+        <button onclick="filterCategory('trend')" class="category-btn" data-category="trend">Trend</button>
+        <button onclick="filterCategory('trading_range')" class="category-btn" data-category="trading_range">Trading Range</button>
+        <button onclick="filterCategory('reversal')" class="category-btn" data-category="reversal">Reversal</button>
+        <button onclick="filterCategory('special')" class="category-btn" data-category="special">Special</button>
+        <button onclick="filterCategory('unknown')" class="category-btn" data-category="unknown">Unknown</button>
+    </div>
+
+    <!-- Strategies Table -->
+    <div class="card overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead>
+                    <tr class="border-b border-dark-700">
+                        <th class="text-left p-3 text-dark-400 text-sm font-medium">
+                            <input type="checkbox" id="select-all" onclick="toggleSelectAll()" class="mr-2">
+                            Strategy
+                        </th>
+                        <th class="text-left p-3 text-dark-400 text-sm font-medium">Category</th>
+                        <th class="text-center p-3 text-dark-400 text-sm font-medium">Trades</th>
+                        <th class="text-right p-3 text-dark-400 text-sm font-medium">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for strategy in strategies %}
+                    <tr class="border-b border-dark-800 hover:bg-dark-800/50 strategy-row" 
+                        data-id="{{ strategy.id }}" data-category="{{ strategy.category or 'unknown' }}">
+                        <td class="p-3">
+                            <div class="flex items-center gap-3">
+                                <input type="checkbox" class="strategy-checkbox" value="{{ strategy.id }}">
+                                <span class="font-medium text-white">{{ strategy.name }}</span>
+                            </div>
+                        </td>
+                        <td class="p-3">
+                            <select class="select text-sm py-1 px-2" 
+                                    onchange="updateCategory({{ strategy.id }}, this.value)">
+                                <option value="trend" {% if strategy.category == 'trend' %}selected{% endif %}>Trend</option>
+                                <option value="trading_range" {% if strategy.category == 'trading_range' %}selected{% endif %}>Trading Range</option>
+                                <option value="reversal" {% if strategy.category == 'reversal' %}selected{% endif %}>Reversal</option>
+                                <option value="special" {% if strategy.category == 'special' %}selected{% endif %}>Special</option>
+                                <option value="unknown" {% if strategy.category == 'unknown' or not strategy.category %}selected{% endif %}>Unknown</option>
+                            </select>
+                        </td>
+                        <td class="p-3 text-center">
+                            <span class="badge {% if strategy_stats[strategy.id] > 0 %}badge-success{% else %}bg-dark-700 text-dark-400{% endif %}">
+                                {{ strategy_stats[strategy.id] }}
+                            </span>
+                        </td>
+                        <td class="p-3 text-right">
+                            <button onclick="editStrategy({{ strategy.id }}, '{{ strategy.name }}', '{{ strategy.description or '' }}')" 
+                                    class="text-accent-400 hover:text-accent-300 text-sm">
+                                ✏️ Edit
+                            </button>
+                            {% if strategy_stats[strategy.id] == 0 %}
+                            <button onclick="deleteStrategy({{ strategy.id }})" 
+                                    class="text-danger-400 hover:text-danger-300 text-sm ml-2">
+                                🗑️
+                            </button>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Merge Selected -->
+    <div id="merge-section" class="card hidden">
+        <h3 class="text-lg font-bold text-white mb-4">🔀 Merge Selected Strategies</h3>
+        <p class="text-dark-400 text-sm mb-4">All trades from selected strategies will be reassigned to the target strategy.</p>
+        
+        <div class="flex items-center gap-4">
+            <div class="flex-1">
+                <label class="label">Target Strategy</label>
+                <select id="merge-target" class="select">
+                    {% for strategy in strategies %}
+                    <option value="{{ strategy.id }}">{{ strategy.name }} ({{ strategy_stats[strategy.id] }} trades)</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button onclick="mergeSelected()" class="btn btn-primary mt-6">Merge Selected</button>
+        </div>
+    </div>
+
+    <!-- Add New Strategy -->
+    <div class="card">
+        <h3 class="text-lg font-bold text-white mb-4">➕ Add New Strategy</h3>
+        <form id="add-strategy-form" class="flex flex-wrap gap-4">
+            <input type="text" id="new-strategy-name" placeholder="Strategy name" class="input flex-1" required>
+            <select id="new-strategy-category" class="select">
+                <option value="trend">Trend</option>
+                <option value="trading_range">Trading Range</option>
+                <option value="reversal">Reversal</option>
+                <option value="special">Special</option>
+                <option value="unknown">Unknown</option>
+            </select>
+            <button type="submit" class="btn btn-primary">Add Strategy</button>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Modal -->
+<div id="edit-modal" class="fixed inset-0 bg-dark-950/80 backdrop-blur-sm flex items-center justify-center z-50 hidden">
+    <div class="bg-dark-800 rounded-2xl p-6 max-w-md w-full mx-4 border border-dark-600">
+        <h3 class="text-xl font-bold text-white mb-4">Edit Strategy</h3>
+        <input type="hidden" id="edit-strategy-id">
+        <div class="space-y-4">
+            <div>
+                <label class="label">Name</label>
+                <input type="text" id="edit-strategy-name" class="input">
+            </div>
+            <div>
+                <label class="label">Description</label>
+                <textarea id="edit-strategy-description" class="input" rows="3"></textarea>
+            </div>
+        </div>
+        <div class="flex justify-end gap-3 mt-6">
+            <button onclick="closeEditModal()" class="btn btn-secondary">Cancel</button>
+            <button onclick="saveStrategy()" class="btn btn-primary">Save</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+.category-btn {
+    @apply px-3 py-1.5 rounded-lg text-sm font-medium transition-all;
+    @apply bg-dark-700 text-dark-300 border border-dark-600;
+}
+.category-btn:hover {
+    @apply bg-dark-600 text-dark-200;
+}
+.category-btn.active {
+    @apply bg-accent-500/20 text-accent-400 border-accent-500/30;
+}
+</style>
+
+<script>
+// Filter by category
+function filterCategory(category) {
+    document.querySelectorAll('.category-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelector(`[data-category="${category}"]`).classList.add('active');
+    
+    document.querySelectorAll('.strategy-row').forEach(row => {
+        if (category === 'all' || row.dataset.category === category) {
+            row.classList.remove('hidden');
+        } else {
+            row.classList.add('hidden');
+        }
+    });
+}
+
+// Select all checkboxes
+function toggleSelectAll() {
+    const checked = document.getElementById('select-all').checked;
+    document.querySelectorAll('.strategy-checkbox').forEach(cb => cb.checked = checked);
+    updateMergeSection();
+}
+
+// Update merge section visibility
+document.querySelectorAll('.strategy-checkbox').forEach(cb => {
+    cb.addEventListener('change', updateMergeSection);
+});
+
+function updateMergeSection() {
+    const checked = document.querySelectorAll('.strategy-checkbox:checked');
+    const mergeSection = document.getElementById('merge-section');
+    if (checked.length >= 2) {
+        mergeSection.classList.remove('hidden');
+    } else {
+        mergeSection.classList.add('hidden');
+    }
+}
+
+// Update category
+async function updateCategory(strategyId, category) {
+    try {
+        const response = await fetch(`/api/strategies/${strategyId}`, {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ category })
+        });
+        if (response.ok) {
+            showToast('Category updated', 'success');
+            // Update row data attribute
+            document.querySelector(`[data-id="${strategyId}"]`).dataset.category = category;
+        }
+    } catch (err) {
+        showToast('Update failed', 'error');
+    }
+}
+
+// Edit strategy modal
+function editStrategy(id, name, description) {
+    document.getElementById('edit-strategy-id').value = id;
+    document.getElementById('edit-strategy-name').value = name;
+    document.getElementById('edit-strategy-description').value = description;
+    document.getElementById('edit-modal').classList.remove('hidden');
+}
+
+function closeEditModal() {
+    document.getElementById('edit-modal').classList.add('hidden');
+}
+
+async function saveStrategy() {
+    const id = document.getElementById('edit-strategy-id').value;
+    const name = document.getElementById('edit-strategy-name').value;
+    const description = document.getElementById('edit-strategy-description').value;
+    
+    try {
+        const response = await fetch(`/api/strategies/${id}`, {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ name, description })
+        });
+        if (response.ok) {
+            showToast('Strategy updated', 'success');
+            setTimeout(() => window.location.reload(), 1000);
+        }
+    } catch (err) {
+        showToast('Update failed', 'error');
+    }
+    closeEditModal();
+}
+
+// Delete strategy
+async function deleteStrategy(id) {
+    if (!confirm('Delete this strategy?')) return;
+    
+    try {
+        const response = await fetch(`/api/strategies/${id}`, { method: 'DELETE' });
+        if (response.ok) {
+            showToast('Strategy deleted', 'success');
+            document.querySelector(`[data-id="${id}"]`).remove();
+        }
+    } catch (err) {
+        showToast('Delete failed', 'error');
+    }
+}
+
+// Merge selected strategies
+async function mergeSelected() {
+    const selected = Array.from(document.querySelectorAll('.strategy-checkbox:checked')).map(cb => parseInt(cb.value));
+    const targetId = parseInt(document.getElementById('merge-target').value);
+    
+    if (selected.length < 2) {
+        showToast('Select at least 2 strategies to merge', 'error');
+        return;
+    }
+    
+    if (!confirm(`Merge ${selected.length} strategies? All trades will be reassigned.`)) return;
+    
+    try {
+        const response = await fetch('/api/strategies/merge', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ source_ids: selected, target_id: targetId })
+        });
+        const data = await response.json();
+        showToast(data.message, 'success');
+        setTimeout(() => window.location.reload(), 1500);
+    } catch (err) {
+        showToast('Merge failed', 'error');
+    }
+}
+
+// Add new strategy
+document.getElementById('add-strategy-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const name = document.getElementById('new-strategy-name').value;
+    const category = document.getElementById('new-strategy-category').value;
+    
+    try {
+        const response = await fetch('/api/strategies', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ name, category })
+        });
+        if (response.ok) {
+            showToast('Strategy added', 'success');
+            setTimeout(() => window.location.reload(), 1000);
+        }
+    } catch (err) {
+        showToast('Add failed', 'error');
+    }
+});
+</script>
+{% endblock %}

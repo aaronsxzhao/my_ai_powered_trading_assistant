@@ -149,6 +149,9 @@ class Trade(Base):
     strategy = relationship("Strategy", back_populates="trades")
     setup_type = Column(String(50))  # Quick classification
     setup_notes = Column(Text)
+    
+    # Original AI classification (preserved even if strategy is manually changed)
+    ai_setup_classification = Column(String(100))  # Original AI classification, never overwritten
 
     # Context at time of trade
     market_regime = Column(String(20))  # trend_up, trend_down, range
@@ -225,6 +228,15 @@ class Trade(Base):
         if self.pnl_dollars is not None:
             return self.pnl_dollars > 0
         return False
+
+    @property
+    def pnl_usd(self) -> Optional[float]:
+        """Get P&L converted to USD."""
+        if self.pnl_dollars is None:
+            return None
+        if self.currency and self.currency != 'USD' and self.currency_rate and self.currency_rate > 0:
+            return self.pnl_dollars / self.currency_rate
+        return self.pnl_dollars
 
     @property
     def initial_risk_dollars(self) -> Optional[float]:
@@ -421,6 +433,16 @@ def init_db() -> None:
                 conn.execute(text("ALTER TABLE trades ADD COLUMN emotional_state VARCHAR(50)"))
                 conn.execute(text("ALTER TABLE trades ADD COLUMN followed_plan BOOLEAN"))
                 conn.execute(text("ALTER TABLE trades ADD COLUMN account_type VARCHAR(20) DEFAULT 'paper'"))
+                conn.commit()
+            except Exception:
+                pass
+        
+        # Original AI classification (permanent, never overwritten)
+        try:
+            conn.execute(text("SELECT ai_setup_classification FROM trades LIMIT 1"))
+        except Exception:
+            try:
+                conn.execute(text("ALTER TABLE trades ADD COLUMN ai_setup_classification VARCHAR(100)"))
                 conn.commit()
             except Exception:
                 pass
