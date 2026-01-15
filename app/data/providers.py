@@ -209,11 +209,41 @@ class YFinanceProvider(DataProvider):
         return pd.DataFrame(columns=OHLCV_COLUMNS)
 
 
+class PolygonRateLimiter:
+    """Rate limiter for Polygon API to avoid 429 errors.
+    
+    Polygon free tier: 5 requests/minute
+    Polygon paid tiers: Higher limits
+    """
+    
+    def __init__(self, requests_per_minute: int = 5):
+        self._lock = threading.Lock()
+        self._last_request_time = 0
+        self._min_interval = 60.0 / requests_per_minute  # seconds between requests
+    
+    def wait(self):
+        """Wait if necessary to respect rate limits."""
+        with self._lock:
+            now = time.time()
+            elapsed = now - self._last_request_time
+            if elapsed < self._min_interval:
+                sleep_time = self._min_interval - elapsed
+                time.sleep(sleep_time)
+            self._last_request_time = time.time()
+
+
+# Global rate limiter for Polygon (5 req/min for free tier, adjust if you have paid)
+_polygon_rate_limiter = PolygonRateLimiter(requests_per_minute=5)
+
+
 class PolygonProvider(DataProvider):
-    """Polygon.io data provider - fast and reliable market data."""
+    """Polygon.io data provider with rate limiting and retry logic."""
 
     def __init__(self):
         self.api_key = get_polygon_api_key()
+        self.rate_limiter = _polygon_rate_limiter
+        self.max_retries = 5
+        self.base_delay = 2.0  # Base delay for exponential backoff
         if not self.api_key:
             logger.warning("POLYGON_API_KEY not set. Add it to .env file.")
 
@@ -228,12 +258,10 @@ class PolygonProvider(DataProvider):
         start: datetime,
         end: datetime,
     ) -> pd.DataFrame:
-        """Fetch OHLCV data from Polygon.io."""
+        """Fetch OHLCV data from Polygon.io with rate limiting and retry."""
         if not self.api_key:
             raise ValueError("POLYGON_API_KEY is required for Polygon provider")
 
-        # Placeholder implementation
-        # In production, use: https://polygon.io/docs/stocks/get_v2_aggs_ticker__stocksticker__range__multiplier___timespan___from___to
         import httpx
 
         # Map timeframe to Polygon format
@@ -254,32 +282,65 @@ class PolygonProvider(DataProvider):
         )
         params = {"apiKey": self.api_key, "adjusted": "true", "sort": "asc", "limit": 50000}
 
-        try:
-            response = httpx.get(url, params=params, timeout=30)
-            response.raise_for_status()
-            data = response.json()
+        last_error = None
+        for attempt in range(self.max_retries):
+            try:
+                # Rate limit before making request
+                self.rate_limiter.wait()
+                
+                response = httpx.get(url, params=params, timeout=30)
+                
+                # Handle rate limiting (429)
+                if response.status_code == 429:
+                    # Exponential backoff with jitter
+                    delay = self.base_delay * (2 ** attempt) + (time.time() % 1)
+                    logger.warning(
+                        f"Polygon rate limit hit for {ticker}, "
+                        f"waiting {delay:.1f}s (attempt {attempt + 1}/{self.max_retries})"
+                    )
+                    time.sleep(delay)
+                    continue
+                
+                response.raise_for_status()
+                data = response.json()
 
-            if data.get("resultsCount", 0) == 0:
+                if data.get("resultsCount", 0) == 0:
+                    logger.debug(f"No data returned for {ticker} ({timeframe})")
+                    return pd.DataFrame(columns=OHLCV_COLUMNS)
+
+                df = pd.DataFrame(data["results"])
+                df = df.rename(
+                    columns={
+                        "t": "datetime",
+                        "o": "open",
+                        "h": "high",
+                        "l": "low",
+                        "c": "close",
+                        "v": "volume",
+                    }
+                )
+                df["datetime"] = pd.to_datetime(df["datetime"], unit="ms")
+
+                return self._normalize_dataframe(df)
+
+            except httpx.HTTPStatusError as e:
+                last_error = e
+                if e.response.status_code == 429:
+                    delay = self.base_delay * (2 ** attempt) + (time.time() % 1)
+                    logger.warning(f"Polygon 429 for {ticker}, retry in {delay:.1f}s")
+                    time.sleep(delay)
+                    continue
+                else:
+                    logger.error(f"Error fetching {ticker} from Polygon: {e}")
+                    return pd.DataFrame(columns=OHLCV_COLUMNS)
+            except Exception as e:
+                last_error = e
+                logger.error(f"Error fetching {ticker} from Polygon: {e}")
                 return pd.DataFrame(columns=OHLCV_COLUMNS)
-
-            df = pd.DataFrame(data["results"])
-            df = df.rename(
-                columns={
-                    "t": "datetime",
-                    "o": "open",
-                    "h": "high",
-                    "l": "low",
-                    "c": "close",
-                    "v": "volume",
-                }
-            )
-            df["datetime"] = pd.to_datetime(df["datetime"], unit="ms")
-
-            return self._normalize_dataframe(df)
-
-        except Exception as e:
-            logger.error(f"Error fetching {ticker} from Polygon: {e}")
-            return pd.DataFrame(columns=OHLCV_COLUMNS)
+        
+        # All retries exhausted
+        logger.error(f"Failed to fetch {ticker} from Polygon after {self.max_retries} retries: {last_error}")
+        return pd.DataFrame(columns=OHLCV_COLUMNS)
 
 
 class AlpacaProvider(DataProvider):

@@ -108,19 +108,22 @@ class LLMAnalyzer:
         entry_reason: Optional[str] = None,
         notes: Optional[str] = None,
         ohlcv_context: Optional[str] = None,
+        timeframe: Optional[str] = None,
+        trade_type: Optional[str] = None,
     ) -> dict:
         """
         Use LLM to classify the trade setup/strategy.
         
         Returns dict with:
-        - strategy_name: The classified strategy
+        - strategy_name: The classified strategy (or 'needs_info' if more data needed)
         - strategy_category: with_trend, countertrend, trading_range, special
         - confidence: low, medium, high
         - reasoning: Why this classification
+        - missing_info: List of what additional info would help (if applicable)
         """
-        # Load configurable prompt
-        from app.config_prompts import get_prompt
-        system_prompt = get_prompt('trade_classification')
+        # Load configurable prompts
+        from app.config_prompts import get_system_prompt, get_user_prompt
+        system_prompt = get_system_prompt('trade_classification')
 
         # Calculate R-multiple safely
         if direction == "long":
@@ -137,23 +140,46 @@ class LLMAnalyzer:
         
         r_mult_str = f"{'+' if r_mult > 0 else ''}{r_mult:.2f}R"
 
-        user_prompt = f"""Classify this trade:
-
-TRADE DETAILS:
+        # Build user prompt from template
+        user_template = get_user_prompt('trade_classification')
+        try:
+            user_prompt = user_template.format(
+                ticker=ticker,
+                direction=direction.upper(),
+                entry_price=f"{entry_price:.4f}",
+                exit_price=f"{exit_price:.4f}",
+                stop_price=f"{stop_price:.4f}",
+                r_multiple=r_mult_str,
+                entry_reason=entry_reason or "Not provided",
+                notes=notes or "Not provided",
+                ohlcv_context=f"MARKET CONTEXT (OHLCV):\n{ohlcv_context}" if ohlcv_context else "No market context available.",
+                timeframe=timeframe or "5m",
+                trade_type=trade_type or "Not specified",
+            )
+        except KeyError as e:
+            # Fallback if template has different placeholders
+            logger.warning(f"Template key error: {e}, using fallback prompt")
+            user_prompt = f"""Classify this trade:
 - Ticker: {ticker}
 - Direction: {direction.upper()}
-- Entry: ${entry_price}
-- Exit: ${exit_price}
-- Stop: ${stop_price}
-- P&L: {r_mult_str}
+- Entry: ${entry_price:.4f}
+- Exit: ${exit_price:.4f}
+- Stop: ${stop_price:.4f}
+- R: {r_mult_str}
+- Timeframe: {timeframe or '5m'}
+- Trade Type: {trade_type or 'Not specified'}
 
-TRADER'S NOTES:
-Entry Reason: {entry_reason or "Not provided"}
-Notes: {notes or "Not provided"}
+Entry Reason: {entry_reason or 'Not provided'}
+Notes: {notes or 'Not provided'}
 
-{f"MARKET CONTEXT (OHLCV):{chr(10)}{ohlcv_context}" if ohlcv_context else ""}
+{f"MARKET CONTEXT:{chr(10)}{ohlcv_context}" if ohlcv_context else "No market context."}
 
-Classify this trade setup."""
+Classify this trade. If you cannot classify with confidence, explain what specific information is missing."""
+
+        # === DEBUG: Print classification data ===
+        logger.info("🏷️ LLM TRADE CLASSIFICATION - DATA:")
+        logger.info(f"   {ticker} {direction.upper()} Entry=${entry_price:.4f} Exit=${exit_price:.4f} Stop=${stop_price:.4f} {r_mult_str}")
+        # === END DEBUG ===
 
         response = self._call_llm(system_prompt, user_prompt)
         
@@ -196,9 +222,26 @@ Classify this trade setup."""
         ohlcv_context: Optional[str] = None,
         mae: Optional[float] = None,
         mfe: Optional[float] = None,
+        # Brooks intent fields
+        timeframe: Optional[str] = None,
+        trade_type: Optional[str] = None,
+        entry_time: Optional[str] = None,
+        exit_time: Optional[str] = None,
+        size: Optional[float] = None,
+        pnl_dollars: Optional[float] = None,
+        hold_time_minutes: Optional[int] = None,
+        stop_reason: Optional[str] = None,
+        target_reason: Optional[str] = None,
+        invalidation_condition: Optional[str] = None,
+        confidence_level: Optional[int] = None,
+        emotional_state: Optional[str] = None,
+        followed_plan: Optional[bool] = None,
+        account_type: Optional[str] = None,
+        mistakes: Optional[str] = None,
+        lessons: Optional[str] = None,
     ) -> dict:
         """
-        Comprehensive LLM analysis of a completed trade.
+        Comprehensive Brooks Audit of a completed trade.
         
         Returns detailed Brooks-style review with coaching.
         """
@@ -216,30 +259,93 @@ Classify this trade setup."""
         else:
             r_multiple = reward / risk
 
-        # Load configurable prompt
-        from app.config_prompts import get_prompt
-        system_prompt = get_prompt('trade_analysis')
+        # Load configurable prompts
+        from app.config_prompts import get_system_prompt, get_user_prompt
+        system_prompt = get_system_prompt('trade_analysis')
 
-        user_prompt = f"""Review this completed trade:
+        # Format hold time
+        hold_time_str = "-"
+        if hold_time_minutes:
+            if hold_time_minutes >= 1440:
+                days = hold_time_minutes // 1440
+                hours = (hold_time_minutes % 1440) // 60
+                hold_time_str = f"{days}d {hours}h"
+            elif hold_time_minutes >= 60:
+                hours = hold_time_minutes // 60
+                mins = hold_time_minutes % 60
+                hold_time_str = f"{hours}h {mins}m"
+            else:
+                hold_time_str = f"{hold_time_minutes}m"
 
-TRADE DETAILS:
-- Ticker: {ticker}
-- Direction: {direction.upper()}
-- Entry: ${entry_price:.2f}
-- Exit: ${exit_price:.2f}
-- Stop: ${stop_price:.2f}
-{f"- Target: ${target_price:.2f}" if target_price else "- Target: Not set"}
-- R-Multiple: {r_multiple:+.2f}R ({"WINNER" if r_multiple > 0 else "LOSER" if r_multiple < 0 else "BREAKEVEN"})
-{f"- MAE: {mae:.2f}R (max adverse excursion)" if mae else ""}
-{f"- MFE: {mfe:.2f}R (max favorable excursion)" if mfe else ""}
+        # Build user prompt from template
+        outcome_str = "WINNER" if r_multiple > 0 else "LOSER" if r_multiple < 0 else "BREAKEVEN"
+        user_template = get_user_prompt('trade_analysis')
+        
+        # Format entry/exit times
+        entry_time_str = str(entry_time) if entry_time else "Not recorded"
+        exit_time_str = str(exit_time) if exit_time else "Not recorded"
+        
+        user_prompt = user_template.format(
+            ticker=ticker,
+            account_type=account_type or "paper",
+            direction=direction.upper(),
+            timeframe=timeframe or "5m",
+            entry_time=entry_time_str,
+            entry_price=f"{entry_price:.4f}",
+            entry_order_type="stop",  # Default
+            size=f"{size:.0f}" if size else "1",
+            exit_time=exit_time_str,
+            exit_price=f"{exit_price:.4f}",
+            exit_order_type="market",  # Default
+            stop_price=f"{stop_price:.4f}",
+            target_price=f"${target_price:.4f}" if target_price else "Not set",
+            r_multiple=f"{r_multiple:+.2f}R",
+            outcome=outcome_str,
+            pnl_dollars=f"${pnl_dollars:.2f}" if pnl_dollars else "Not calculated",
+            hold_time=hold_time_str,
+            mae_line=f"- MAE: {mae:.2f}R (max adverse excursion)" if mae else "",
+            mfe_line=f"- MFE: {mfe:.2f}R (max favorable excursion)" if mfe else "",
+            entry_reason=entry_reason or "Not provided",
+            trade_type=trade_type or "Not specified",
+            stop_reason=stop_reason or "Not provided",
+            target_reason=target_reason or "Not provided",
+            invalidation=invalidation_condition or "Not provided",
+            confidence=f"{confidence_level}/5" if confidence_level else "Not rated",
+            emotional_state=emotional_state or "Not recorded",
+            followed_plan="Yes" if followed_plan else ("No" if followed_plan is False else "Not recorded"),
+            notes=notes or "None",
+            mistakes=mistakes or "None noted",
+            lessons=lessons or "None noted",
+            ohlcv_context=ohlcv_context if ohlcv_context else "No market context data provided."
+        )
 
-TRADER'S NOTES:
-Entry Reason: {entry_reason or "Not provided"}
-Notes: {notes or "Not provided"}
-
-{f"MARKET CONTEXT (recent OHLCV data):{chr(10)}{ohlcv_context}" if ohlcv_context else "No market context data provided."}
-
-Provide your Brooks-style analysis and coaching."""
+        # === DEBUG: Print what's being sent to LLM ===
+        logger.info("=" * 60)
+        logger.info("🧠 LLM TRADE ANALYSIS - DATA BEING SENT:")
+        logger.info("=" * 60)
+        logger.info(f"📊 TRADE INFO:")
+        logger.info(f"   Ticker: {ticker}")
+        logger.info(f"   Direction: {direction.upper()}")
+        logger.info(f"   Entry: ${entry_price:.4f}")
+        logger.info(f"   Exit: ${exit_price:.4f}")
+        logger.info(f"   Stop: ${stop_price:.4f}")
+        logger.info(f"   Target: ${target_price:.4f}" if target_price else "   Target: Not set")
+        logger.info(f"   R-Multiple: {r_multiple:+.2f}R")
+        logger.info(f"   MAE: {mae:.2f}R" if mae else "   MAE: Not provided")
+        logger.info(f"   MFE: {mfe:.2f}R" if mfe else "   MFE: Not provided")
+        logger.info(f"📝 NOTES:")
+        logger.info(f"   Entry Reason: {entry_reason or 'Not provided'}")
+        logger.info(f"   Notes: {notes or 'Not provided'}")
+        logger.info(f"📈 OHLCV CONTEXT:")
+        if ohlcv_context:
+            for line in ohlcv_context.split('\n')[:12]:  # First 12 lines
+                logger.info(f"   {line}")
+        else:
+            logger.info("   No market context data")
+        logger.info(f"📋 SYSTEM PROMPT LENGTH: {len(system_prompt)} chars")
+        logger.info(f"📋 USER PROMPT LENGTH: {len(user_prompt)} chars")
+        logger.info("=" * 60)
+        # === END DEBUG ===
 
         response = self._call_llm(system_prompt, user_prompt, max_tokens=2500)
         

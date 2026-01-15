@@ -11,11 +11,14 @@ Provides a browser-based interface for:
 
 import os
 import shutil
+import logging
 from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException
+
+logger = logging.getLogger(__name__)
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -156,15 +159,15 @@ async def trade_detail(request: Request, trade_id: int):
 
 @app.patch("/api/trades/{trade_id}/notes")
 async def update_trade_notes(trade_id: int, request: Request):
-    """Update trade notes and personal review."""
+    """Update trade notes, personal review, and Brooks intent fields."""
     data = await request.json()
-    
+
     session = get_session()
     try:
         trade = session.query(Trade).filter(Trade.id == trade_id).first()
         if not trade:
             raise HTTPException(status_code=404, detail="Trade not found")
-        
+
         # Update note fields
         if 'notes' in data:
             trade.notes = data['notes']
@@ -175,48 +178,114 @@ async def update_trade_notes(trade_id: int, request: Request):
         if 'lessons' in data:
             trade.lessons = data['lessons']
         
-        session.commit()
+        # Update Brooks intent fields
+        if 'trade_type' in data:
+            trade.trade_type = data['trade_type']
+        if 'confidence_level' in data:
+            trade.confidence_level = data['confidence_level']
+        if 'emotional_state' in data:
+            trade.emotional_state = data['emotional_state']
+        if 'followed_plan' in data:
+            trade.followed_plan = data['followed_plan']
+        if 'stop_reason' in data:
+            trade.stop_reason = data['stop_reason']
+        if 'target_reason' in data:
+            trade.target_reason = data['target_reason']
+        if 'invalidation_condition' in data:
+            trade.invalidation_condition = data['invalidation_condition']
         
-        return JSONResponse({"success": True, "message": "Notes saved"})
+        # Clear cached review when trade intent is updated (to force re-analysis)
+        trade.cached_review = None
+        trade.review_generated_at = None
+
+        session.commit()
+
+        return JSONResponse({"success": True, "message": "Trade details saved"})
     finally:
         session.close()
 
 
 @app.get("/api/trades/{trade_id}/review")
-async def get_trade_review(trade_id: int):
-    """Get AI review for a trade (non-blocking async endpoint)."""
+async def get_trade_review(trade_id: int, force: bool = False):
+    """
+    Get AI review for a trade (non-blocking async endpoint).
+    
+    Uses cached review if available and trade hasn't been modified.
+    Set force=true to regenerate the review.
+    """
     import asyncio
+    import json
+    from datetime import datetime
     
-    def _get_review():
-        coach = TradeCoach()
-        return coach.review_trade(trade_id)
-    
+    session = get_session()
     try:
+        trade = session.query(Trade).filter(Trade.id == trade_id).first()
+        if not trade:
+            return JSONResponse({"success": False, "error": "Trade not found"})
+        
+        # Check for cached review
+        if not force and trade.cached_review and trade.review_generated_at:
+            # Check if trade was modified after review was generated
+            if trade.updated_at and trade.updated_at > trade.review_generated_at:
+                logger.info(f"Trade {trade_id} was modified after last review, regenerating...")
+            else:
+                # Return cached review
+                logger.info(f"Returning cached review for trade {trade_id} (generated at {trade.review_generated_at})")
+                try:
+                    cached = json.loads(trade.cached_review)
+                    return JSONResponse({
+                        "success": True,
+                        "cached": True,
+                        "generated_at": trade.review_generated_at.isoformat() if trade.review_generated_at else None,
+                        "review": cached
+                    })
+                except json.JSONDecodeError:
+                    logger.warning(f"Failed to parse cached review for trade {trade_id}")
+        
+        # Generate new review
+        logger.info(f"Generating new AI review for trade {trade_id}...")
+        
+        def _get_review():
+            coach = TradeCoach()
+            return coach.review_trade(trade_id)
+        
         # Run LLM call in thread pool to not block event loop
         review = await asyncio.to_thread(_get_review)
         
         if review:
+            review_dict = {
+                "grade": review.grade,
+                "grade_explanation": review.grade_explanation,
+                "regime": review.regime,
+                "always_in": review.always_in,
+                "context_description": review.context_description,
+                "setup_classification": review.setup_classification,
+                "setup_quality": review.setup_quality,
+                "what_was_good": review.what_was_good if isinstance(review.what_was_good, list) else [review.what_was_good] if review.what_was_good else [],
+                "what_was_flawed": review.what_was_flawed if isinstance(review.what_was_flawed, list) else [review.what_was_flawed] if review.what_was_flawed else [],
+                "errors_detected": review.errors_detected if isinstance(review.errors_detected, list) else [review.errors_detected] if review.errors_detected else [],
+                "rule_for_next_time": review.rule_for_next_time,
+            }
+            
+            # Cache the review
+            trade.cached_review = json.dumps(review_dict)
+            trade.review_generated_at = datetime.utcnow()
+            session.commit()
+            logger.info(f"Cached new review for trade {trade_id}")
+            
             return JSONResponse({
                 "success": True,
-                "review": {
-                    "grade": review.grade,
-                    "grade_explanation": review.grade_explanation,
-                    "regime": review.regime,
-                    "always_in": review.always_in,
-                    "context_description": review.context_description,
-                    "setup_classification": review.setup_classification,
-                    "setup_quality": review.setup_quality,
-                    "what_was_good": review.what_was_good if isinstance(review.what_was_good, list) else [review.what_was_good] if review.what_was_good else [],
-                    "what_was_flawed": review.what_was_flawed if isinstance(review.what_was_flawed, list) else [review.what_was_flawed] if review.what_was_flawed else [],
-                    "errors_detected": review.errors_detected if isinstance(review.errors_detected, list) else [review.errors_detected] if review.errors_detected else [],
-                    "rule_for_next_time": review.rule_for_next_time,
-                }
+                "cached": False,
+                "generated_at": trade.review_generated_at.isoformat(),
+                "review": review_dict
             })
         else:
             return JSONResponse({"success": False, "error": "Review not available"})
     except Exception as e:
         logger.error(f"Error getting trade review: {e}")
         return JSONResponse({"success": False, "error": str(e)})
+    finally:
+        session.close()
 
 
 @app.get("/add-trade", response_class=HTMLResponse)
@@ -555,12 +624,18 @@ async def recalculate_all_metrics():
 
 
 @app.post("/api/reclassify-trades")
-async def reclassify_all_trades():
-    """Reclassify all trades using LLM with 20 concurrent workers."""
+async def reclassify_all_trades(force: bool = False):
+    """Reclassify trades using LLM with 20 concurrent workers.
+    
+    By default, only reclassifies trades that are unclassified or have 'unclassified' strategy.
+    Set force=true to reclassify all trades.
+    """
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
     from app.llm.analyzer import LLMAnalyzer
     from app.journal.models import Strategy
+    from app.data.cache import get_cached_ohlcv
+    from datetime import timedelta
     
     analyzer = LLMAnalyzer()
     
@@ -574,9 +649,19 @@ async def reclassify_all_trades():
     try:
         trades = session.query(Trade).all()
         trade_data = []
+        skipped = 0
         
         # Prepare trade data for concurrent processing
         for trade in trades:
+            # Skip already classified trades unless force=true
+            if not force and trade.strategy and trade.strategy.name not in ['unclassified', 'insufficient_information']:
+                skipped += 1
+                continue
+            
+            # Note: Skip OHLCV fetch during bulk reclassify to avoid rate limits
+            # OHLCV context will be fetched only during individual trade review
+            ohlcv_context = None
+            
             trade_data.append({
                 "id": trade.id,
                 "ticker": trade.ticker,
@@ -586,6 +671,9 @@ async def reclassify_all_trades():
                 "stop_price": trade.stop_price or trade.entry_price * 0.98,
                 "entry_reason": trade.entry_reason,
                 "notes": trade.notes,
+                "ohlcv_context": ohlcv_context,
+                "timeframe": trade.timeframe or "5m",
+                "trade_type": trade.trade_type,
             })
         
         # Function to classify a single trade
@@ -599,14 +687,17 @@ async def reclassify_all_trades():
                     stop_price=data["stop_price"],
                     entry_reason=data["entry_reason"],
                     notes=data["notes"],
+                    ohlcv_context=data.get("ohlcv_context"),
+                    timeframe=data.get("timeframe"),
+                    trade_type=data.get("trade_type"),
                 )
                 return {"id": data["id"], "result": result, "error": None}
             except Exception as e:
                 return {"id": data["id"], "result": None, "error": str(e)}
         
-        # Run with 20 concurrent workers
+        # Run with 5 concurrent workers (reduced to avoid API rate limits)
         loop = asyncio.get_event_loop()
-        with ThreadPoolExecutor(max_workers=20) as executor:
+        with ThreadPoolExecutor(max_workers=5) as executor:
             results = await loop.run_in_executor(
                 None,
                 lambda: list(executor.map(classify_single, trade_data))
@@ -629,7 +720,8 @@ async def reclassify_all_trades():
                 if not trade:
                     continue
                 
-                strategy_name = result.get("strategy_name", "unclassified")
+                # Get strategy name - prefer primary_setup from new format
+                strategy_name = result.get("primary_setup") or result.get("strategy_name", "unclassified")
                 
                 # Find or create strategy
                 strategy = session.query(Strategy).filter(
@@ -639,13 +731,23 @@ async def reclassify_all_trades():
                 if not strategy:
                     strategy = Strategy(
                         name=strategy_name,
-                        category=result.get("strategy_category", "unknown"),
+                        category=result.get("setup_category") or result.get("strategy_category", "unknown"),
                         description=result.get("reasoning", ""),
                     )
                     session.add(strategy)
                     session.flush()
                 
                 trade.strategy_id = strategy.id
+                
+                # Store setup notes including missing info
+                missing_info = result.get("missing_info", [])
+                if missing_info:
+                    trade.setup_notes = f"Missing: {', '.join(missing_info)}"
+                
+                # Clear cached review since strategy changed
+                trade.cached_review = None
+                trade.review_generated_at = None
+                
                 classified += 1
             except Exception as e:
                 logger.error(f"Error updating trade {trade_id}: {e}")
@@ -654,6 +756,7 @@ async def reclassify_all_trades():
         session.commit()
         
         return JSONResponse({
+            "skipped": skipped,
             "count": classified,
             "classified": classified,
             "errors": errors,
@@ -704,6 +807,8 @@ async def update_trade(trade_id: int, request: Request):
             trade.currency = data["currency"]
         if data.get("currency_rate") is not None:
             trade.currency_rate = float(data["currency_rate"])
+        if data.get("timeframe") is not None:
+            trade.timeframe = data["timeframe"]
         
         # Update times if provided
         if data.get("entry_time"):
@@ -735,13 +840,14 @@ async def update_trade(trade_id: int, request: Request):
 async def settings_page(request: Request):
     """Settings page for prompts and candle counts."""
     from app.config_prompts import load_settings, SETTINGS_FILE
-    
+
     current_settings = load_settings()
-    
+
     return templates.TemplateResponse("settings.html", {
         "request": request,
         "candles": current_settings.get('candles', {}),
-        "prompts": current_settings.get('prompts', {}),
+        "system_prompts": current_settings.get('system_prompts', {}),
+        "user_prompts": current_settings.get('user_prompts', {}),
         "settings_file": str(SETTINGS_FILE),
         "data_provider": settings.data_provider,
         "llm_available": get_llm_api_key() is not None,
@@ -767,20 +873,22 @@ async def update_candle_settings(request: Request):
 
 @app.post("/api/settings/prompts")
 async def update_prompt_settings(request: Request):
-    """Update a specific prompt."""
+    """Update a specific prompt (system or user)."""
     from app.config_prompts import update_prompt
-    
+
     data = await request.json()
     prompt_type = data.get('prompt_type')
     prompt_text = data.get('prompt_text')
-    
-    if not prompt_type or not prompt_text:
+    is_user_prompt = data.get('is_user_prompt', False)
+
+    if not prompt_type or prompt_text is None:
         raise HTTPException(status_code=400, detail="Missing prompt_type or prompt_text")
+
+    success = update_prompt(prompt_type, prompt_text, is_user_prompt=is_user_prompt)
     
-    success = update_prompt(prompt_type, prompt_text)
-    
+    prompt_label = "User" if is_user_prompt else "System"
     if success:
-        return JSONResponse({"message": f"Prompt '{prompt_type}' saved"})
+        return JSONResponse({"message": f"{prompt_label} prompt '{prompt_type}' saved"})
     raise HTTPException(status_code=500, detail="Failed to save prompt")
 
 

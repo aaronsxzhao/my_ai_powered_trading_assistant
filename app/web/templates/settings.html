@@ -44,60 +44,123 @@
         </form>
     </div>
 
-    <!-- LLM Prompts -->
+    <!-- System Prompts -->
     <div class="card">
-        <h2 class="text-xl font-bold mb-4 text-white">🧠 LLM Prompts</h2>
-        <p class="text-dark-400 mb-4">Customize the prompts used for AI analysis. Use JSON response format specifications.</p>
+        <h2 class="text-xl font-bold mb-2 text-white">🧠 System Prompts</h2>
+        <p class="text-dark-400 mb-4">AI persona and instructions. Defines how the AI should behave and respond.</p>
         
-        <!-- Prompt Tabs -->
+        <!-- System Prompt Tabs -->
         <div class="border-b border-dark-700 mb-4">
             <nav class="flex space-x-4">
-                <button onclick="showPromptTab('classification')" id="tab-classification" 
-                    class="prompt-tab px-4 py-2 text-sm font-medium border-b-2 border-accent-500 text-accent-400">
-                    Trade Classification
+                <button onclick="showSystemTab('classification')" id="sys-tab-classification" 
+                    class="sys-tab px-4 py-2 text-sm font-medium border-b-2 border-accent-500 text-accent-400">
+                    Classification
                 </button>
-                <button onclick="showPromptTab('analysis')" id="tab-analysis"
-                    class="prompt-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-dark-400 hover:text-dark-200">
-                    Trade Analysis
+                <button onclick="showSystemTab('analysis')" id="sys-tab-analysis"
+                    class="sys-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-dark-400 hover:text-dark-200">
+                    Analysis
                 </button>
-                <button onclick="showPromptTab('market')" id="tab-market"
-                    class="prompt-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-dark-400 hover:text-dark-200">
+                <button onclick="showSystemTab('market')" id="sys-tab-market"
+                    class="sys-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-dark-400 hover:text-dark-200">
                     Market Context
                 </button>
             </nav>
         </div>
         
-        <!-- Trade Classification Prompt -->
-        <div id="prompt-classification" class="prompt-panel">
+        <!-- System: Trade Classification -->
+        <div id="sys-classification" class="sys-panel">
             <div class="mb-2 flex justify-between items-center">
-                <label class="text-sm font-medium text-dark-300">Trade Classification Prompt</label>
-                <span class="text-xs text-dark-500">Used when classifying trade setups</span>
+                <label class="text-sm font-medium text-dark-300">System: Trade Classification</label>
+                <span class="text-xs text-dark-500">AI persona for classifying setups</span>
             </div>
-            <textarea id="prompt-trade_classification" rows="15" 
-                class="input font-mono text-sm">{{ prompts.trade_classification }}</textarea>
-            <button onclick="savePrompt('trade_classification')" class="btn btn-primary mt-3">💾 Save Classification Prompt</button>
+            <textarea id="system-trade_classification" rows="12" 
+                class="input font-mono text-sm">{{ system_prompts.trade_classification }}</textarea>
+            <button onclick="savePrompt('trade_classification', false)" class="btn btn-primary mt-3">💾 Save</button>
         </div>
         
-        <!-- Trade Analysis Prompt -->
-        <div id="prompt-analysis" class="prompt-panel hidden">
+        <!-- System: Trade Analysis -->
+        <div id="sys-analysis" class="sys-panel hidden">
             <div class="mb-2 flex justify-between items-center">
-                <label class="text-sm font-medium text-dark-300">Trade Analysis Prompt</label>
-                <span class="text-xs text-dark-500">Used when reviewing completed trades</span>
+                <label class="text-sm font-medium text-dark-300">System: Trade Analysis</label>
+                <span class="text-xs text-dark-500">AI persona for reviewing trades</span>
             </div>
-            <textarea id="prompt-trade_analysis" rows="15"
-                class="input font-mono text-sm">{{ prompts.trade_analysis }}</textarea>
-            <button onclick="savePrompt('trade_analysis')" class="btn btn-primary mt-3">💾 Save Analysis Prompt</button>
+            <textarea id="system-trade_analysis" rows="12"
+                class="input font-mono text-sm">{{ system_prompts.trade_analysis }}</textarea>
+            <button onclick="savePrompt('trade_analysis', false)" class="btn btn-primary mt-3">💾 Save</button>
         </div>
         
-        <!-- Market Context Prompt -->
-        <div id="prompt-market" class="prompt-panel hidden">
+        <!-- System: Market Context -->
+        <div id="sys-market" class="sys-panel hidden">
             <div class="mb-2 flex justify-between items-center">
-                <label class="text-sm font-medium text-dark-300">Market Context Prompt</label>
-                <span class="text-xs text-dark-500">Used for premarket analysis</span>
+                <label class="text-sm font-medium text-dark-300">System: Market Context</label>
+                <span class="text-xs text-dark-500">AI persona for premarket analysis</span>
             </div>
-            <textarea id="prompt-market_context" rows="15"
-                class="input font-mono text-sm">{{ prompts.market_context }}</textarea>
-            <button onclick="savePrompt('market_context')" class="btn btn-primary mt-3">💾 Save Market Prompt</button>
+            <textarea id="system-market_context" rows="12"
+                class="input font-mono text-sm">{{ system_prompts.market_context }}</textarea>
+            <button onclick="savePrompt('market_context', false)" class="btn btn-primary mt-3">💾 Save</button>
+        </div>
+    </div>
+
+    <!-- User Prompts -->
+    <div class="card">
+        <h2 class="text-xl font-bold mb-2 text-white">📝 User Prompts</h2>
+        <p class="text-dark-400 mb-4">
+            Templates for trade data sent to AI. Use <code class="text-accent-400">{variable}</code> placeholders for dynamic values.
+        </p>
+        <div class="bg-dark-900/50 border border-dark-700 rounded-lg p-3 mb-4">
+            <div class="text-xs text-dark-400 mb-1">Available placeholders:</div>
+            <code class="text-xs text-accent-300">{ticker} {direction} {entry_price} {exit_price} {stop_price} {target_price} {r_multiple} {outcome} {entry_reason} {notes} {ohlcv_context} {mae_line} {mfe_line} {date}</code>
+        </div>
+        
+        <!-- User Prompt Tabs -->
+        <div class="border-b border-dark-700 mb-4">
+            <nav class="flex space-x-4">
+                <button onclick="showUserTab('classification')" id="user-tab-classification" 
+                    class="user-tab px-4 py-2 text-sm font-medium border-b-2 border-purple-500 text-purple-400">
+                    Classification
+                </button>
+                <button onclick="showUserTab('analysis')" id="user-tab-analysis"
+                    class="user-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-dark-400 hover:text-dark-200">
+                    Analysis
+                </button>
+                <button onclick="showUserTab('market')" id="user-tab-market"
+                    class="user-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-dark-400 hover:text-dark-200">
+                    Market Context
+                </button>
+            </nav>
+        </div>
+        
+        <!-- User: Trade Classification -->
+        <div id="user-classification" class="user-panel">
+            <div class="mb-2 flex justify-between items-center">
+                <label class="text-sm font-medium text-dark-300">User: Trade Classification</label>
+                <span class="text-xs text-dark-500">Data template for classification</span>
+            </div>
+            <textarea id="user-trade_classification" rows="10" 
+                class="input font-mono text-sm">{{ user_prompts.trade_classification }}</textarea>
+            <button onclick="savePrompt('trade_classification', true)" class="btn bg-purple-600 hover:bg-purple-700 text-white mt-3">💾 Save</button>
+        </div>
+        
+        <!-- User: Trade Analysis -->
+        <div id="user-analysis" class="user-panel hidden">
+            <div class="mb-2 flex justify-between items-center">
+                <label class="text-sm font-medium text-dark-300">User: Trade Analysis</label>
+                <span class="text-xs text-dark-500">Data template for trade review</span>
+            </div>
+            <textarea id="user-trade_analysis" rows="10"
+                class="input font-mono text-sm">{{ user_prompts.trade_analysis }}</textarea>
+            <button onclick="savePrompt('trade_analysis', true)" class="btn bg-purple-600 hover:bg-purple-700 text-white mt-3">💾 Save</button>
+        </div>
+        
+        <!-- User: Market Context -->
+        <div id="user-market" class="user-panel hidden">
+            <div class="mb-2 flex justify-between items-center">
+                <label class="text-sm font-medium text-dark-300">User: Market Context</label>
+                <span class="text-xs text-dark-500">Data template for premarket</span>
+            </div>
+            <textarea id="user-market_context" rows="10"
+                class="input font-mono text-sm">{{ user_prompts.market_context }}</textarea>
+            <button onclick="savePrompt('market_context', true)" class="btn bg-purple-600 hover:bg-purple-700 text-white mt-3">💾 Save</button>
         </div>
     </div>
 
@@ -111,26 +174,31 @@
 
 {% block scripts %}
 <script>
-function showPromptTab(tab) {
-    // Hide all panels
-    document.querySelectorAll('.prompt-panel').forEach(p => p.classList.add('hidden'));
-    // Deactivate all tabs
-    document.querySelectorAll('.prompt-tab').forEach(t => {
+// System prompt tabs
+function showSystemTab(tab) {
+    document.querySelectorAll('.sys-panel').forEach(p => p.classList.add('hidden'));
+    document.querySelectorAll('.sys-tab').forEach(t => {
         t.classList.remove('border-accent-500', 'text-accent-400');
         t.classList.add('border-transparent', 'text-dark-400');
     });
     
-    // Show selected panel
-    const panelMap = {
-        'classification': 'prompt-classification',
-        'analysis': 'prompt-analysis',
-        'market': 'prompt-market'
-    };
-    document.getElementById(panelMap[tab]).classList.remove('hidden');
-    
-    // Activate selected tab
-    const tabEl = document.getElementById('tab-' + tab);
+    document.getElementById('sys-' + tab).classList.remove('hidden');
+    const tabEl = document.getElementById('sys-tab-' + tab);
     tabEl.classList.add('border-accent-500', 'text-accent-400');
+    tabEl.classList.remove('border-transparent', 'text-dark-400');
+}
+
+// User prompt tabs
+function showUserTab(tab) {
+    document.querySelectorAll('.user-panel').forEach(p => p.classList.add('hidden'));
+    document.querySelectorAll('.user-tab').forEach(t => {
+        t.classList.remove('border-purple-500', 'text-purple-400');
+        t.classList.add('border-transparent', 'text-dark-400');
+    });
+    
+    document.getElementById('user-' + tab).classList.remove('hidden');
+    const tabEl = document.getElementById('user-tab-' + tab);
+    tabEl.classList.add('border-purple-500', 'text-purple-400');
     tabEl.classList.remove('border-transparent', 'text-dark-400');
 }
 
@@ -163,12 +231,14 @@ document.getElementById('candle-form').addEventListener('submit', async (e) => {
     }
 });
 
-// Save prompt
-async function savePrompt(promptType) {
-    const textarea = document.getElementById('prompt-' + promptType);
+// Save prompt (system or user)
+async function savePrompt(promptType, isUserPrompt) {
+    const prefix = isUserPrompt ? 'user-' : 'system-';
+    const textarea = document.getElementById(prefix + promptType);
     const promptText = textarea.value;
     
-    showStartToast('Saving prompt');
+    const promptLabel = isUserPrompt ? 'User' : 'System';
+    showStartToast(`Saving ${promptLabel} prompt`);
     
     try {
         const response = await fetch('/api/settings/prompts', {
@@ -176,12 +246,13 @@ async function savePrompt(promptType) {
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
                 prompt_type: promptType,
-                prompt_text: promptText
+                prompt_text: promptText,
+                is_user_prompt: isUserPrompt
             })
         });
         
         if (response.ok) {
-            showFinishToast(`${promptType} prompt saved`);
+            showFinishToast(`${promptLabel} ${promptType} saved`);
         } else {
             showToast('Failed to save prompt', 'error');
         }

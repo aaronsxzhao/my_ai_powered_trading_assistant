@@ -1,8 +1,8 @@
 candles:
   5min: 234
   daily: 30
-  hourly: 48
-prompts:
+  hourly: 120
+system_prompts:
   market_context: "You are an expert Al Brooks price action analyst providing a premarket\
     \ briefing.\n\nAnalyze the provided OHLCV data and provide:\n1. REGIME: Current\
     \ market regime (strong trend, weak trend, trading range, breakout)\n2. ALWAYS-IN\
@@ -50,3 +50,78 @@ prompts:
     \ in JSON format:\n{\n    \"strategy_name\": \"the_strategy_name\",\n    \"strategy_category\"\
     : \"with_trend|countertrend|trading_range|special\",\n    \"confidence\": \"low|medium|high\"\
     ,\n    \"reasoning\": \"Brief explanation of why this classification\"\n}"
+user_prompts:
+  market_context: 'Analyze the following market data for {ticker}:
+
+
+    {ohlcv_context}
+
+
+    Current date: {date}
+
+
+    Provide your premarket briefing and trading plan for today.'
+  trade_analysis: 'Review this completed trade:
+
+
+    TRADE DETAILS:
+
+    - Ticker: {ticker}
+
+    - Direction: {direction}
+
+    - Entry: ${entry_price}
+
+    - Exit: ${exit_price}
+
+    - Stop: ${stop_price}
+
+    - Target: {target_price}
+
+    - R-Multiple: {r_multiple} ({outcome})
+
+    {mae_line}
+
+    {mfe_line}
+
+
+    TRADER''S NOTES:
+
+    Entry Reason: {entry_reason}
+
+    Notes: {notes}
+
+
+    {ohlcv_context}
+
+
+    Provide your Brooks-style analysis and coaching.'
+  trade_classification: 'Classify this trade:
+
+
+    TRADE DETAILS:
+
+    - Ticker: {ticker}
+
+    - Direction: {direction}
+
+    - Entry: ${entry_price}
+
+    - Exit: ${exit_price}
+
+    - Stop: ${stop_price}
+
+    - P&L: {r_multiple}
+
+
+    TRADER''S NOTES:
+
+    Entry Reason: {entry_reason}
+
+    Notes: {notes}
+
+
+    {ohlcv_context}
+
+
+    Classify this trade setup.'

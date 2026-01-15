@@ -159,6 +159,22 @@ class Trade(Base):
     mistakes = Column(Text)
     lessons = Column(Text)
     coach_feedback = Column(Text)
+    
+    # Brooks-style trade intent fields
+    trade_type = Column(String(20))  # scalp, swing, position
+    entry_order_type = Column(String(20))  # market, limit, stop, stop_limit
+    exit_order_type = Column(String(20))  # market, limit, stop, stop_limit
+    stop_reason = Column(Text)  # Why stop is placed there
+    target_reason = Column(Text)  # Why target is placed there
+    invalidation_condition = Column(Text)  # What would prove setup wrong
+    confidence_level = Column(Integer)  # 1-5
+    emotional_state = Column(String(50))  # calm, rushed, revenge, fomo, tired
+    followed_plan = Column(Boolean)  # Did trader follow their plan?
+    account_type = Column(String(20), default="paper")  # paper, live
+    
+    # Cached AI review (JSON string)
+    cached_review = Column(Text)  # Stores JSON of TradeReview
+    review_generated_at = Column(DateTime)  # When the review was generated
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -354,20 +370,60 @@ def init_db() -> None:
     engine = get_engine()
     Base.metadata.create_all(engine)
     
-    # Add currency columns to existing trades table if they don't exist
+    # Add new columns to existing trades table if they don't exist
     # This handles migrations for existing databases
     from sqlalchemy import text
     with engine.connect() as conn:
+        # Currency columns
         try:
             conn.execute(text("SELECT currency FROM trades LIMIT 1"))
         except Exception:
-            # Column doesn't exist, add it
             try:
                 conn.execute(text("ALTER TABLE trades ADD COLUMN currency VARCHAR(10) DEFAULT 'USD'"))
                 conn.execute(text("ALTER TABLE trades ADD COLUMN currency_rate FLOAT DEFAULT 1.0"))
                 conn.commit()
             except Exception:
-                pass  # Column might already exist or other error
+                pass
+        
+        # Trade timeframe column (5m, 2h, 1d)
+        try:
+            conn.execute(text("SELECT timeframe FROM trades LIMIT 1"))
+        except Exception:
+            try:
+                conn.execute(text("ALTER TABLE trades ADD COLUMN timeframe VARCHAR(10) DEFAULT '5m'"))
+                conn.commit()
+            except Exception:
+                pass
+        
+        # Cached AI review columns
+        try:
+            conn.execute(text("SELECT cached_review FROM trades LIMIT 1"))
+        except Exception:
+            try:
+                conn.execute(text("ALTER TABLE trades ADD COLUMN cached_review TEXT"))
+                conn.execute(text("ALTER TABLE trades ADD COLUMN review_generated_at DATETIME"))
+                conn.commit()
+            except Exception:
+                pass
+        
+        # Brooks-style trade intent columns
+        try:
+            conn.execute(text("SELECT trade_type FROM trades LIMIT 1"))
+        except Exception:
+            try:
+                conn.execute(text("ALTER TABLE trades ADD COLUMN trade_type VARCHAR(20)"))
+                conn.execute(text("ALTER TABLE trades ADD COLUMN entry_order_type VARCHAR(20)"))
+                conn.execute(text("ALTER TABLE trades ADD COLUMN exit_order_type VARCHAR(20)"))
+                conn.execute(text("ALTER TABLE trades ADD COLUMN stop_reason TEXT"))
+                conn.execute(text("ALTER TABLE trades ADD COLUMN target_reason TEXT"))
+                conn.execute(text("ALTER TABLE trades ADD COLUMN invalidation_condition TEXT"))
+                conn.execute(text("ALTER TABLE trades ADD COLUMN confidence_level INTEGER"))
+                conn.execute(text("ALTER TABLE trades ADD COLUMN emotional_state VARCHAR(50)"))
+                conn.execute(text("ALTER TABLE trades ADD COLUMN followed_plan BOOLEAN"))
+                conn.execute(text("ALTER TABLE trades ADD COLUMN account_type VARCHAR(20) DEFAULT 'paper'"))
+                conn.commit()
+            except Exception:
+                pass
 
     # Seed default strategies
     session = get_session()

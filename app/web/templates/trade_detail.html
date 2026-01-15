@@ -73,6 +73,21 @@
                     <div class="text-lg font-mono text-white">{{ trade.duration_display }}</div>
                 </div>
                 <div class="stat-card">
+                    <div class="text-sm text-dark-400 mb-1">Timeframe</div>
+                    <div class="text-sm font-medium">
+                        {% set tf = trade.timeframe or '5m' %}
+                        {% if tf == '5m' %}
+                            <span class="badge bg-purple-500/20 text-purple-400 border border-purple-500/30">5 min</span>
+                        {% elif tf == '2h' %}
+                            <span class="badge bg-amber-500/20 text-amber-400 border border-amber-500/30">2 hour</span>
+                        {% elif tf == '1d' %}
+                            <span class="badge bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">Daily</span>
+                        {% else %}
+                            <span class="badge bg-dark-600 text-dark-300">{{ tf }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="stat-card">
                     <div class="text-sm text-dark-400 mb-1">Strategy</div>
                     <div class="text-sm font-medium text-accent-400">{{ trade.strategy.name if trade.strategy else 'Unclassified' }}</div>
                 </div>
@@ -129,18 +144,45 @@
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-xl font-bold text-white flex items-center gap-2">
                     🧠 AI Coaching Review
+                    <span id="cache-badge" class="badge bg-dark-700 text-dark-400 text-xs hidden">Cached</span>
                 </h2>
                 <div id="review-grade" class="flex items-center gap-2 hidden">
                     <span class="text-sm text-dark-400">Grade:</span>
                     <span id="grade-value" class="text-3xl font-bold"></span>
                 </div>
             </div>
+            <div id="review-meta" class="text-xs text-dark-500 mb-3 hidden">
+                Generated: <span id="generated-at"></span>
+            </div>
 
-            <!-- Loading State -->
-            <div id="review-loading" class="text-center py-12">
+            <!-- Loading State with Progress -->
+            <div id="review-loading" class="py-8">
                 <div class="loading-spinner w-10 h-10 border-4 border-accent-500 border-t-transparent mx-auto mb-4"></div>
-                <p class="text-dark-300">Analyzing trade with AI...</p>
-                <p class="text-sm text-dark-500 mt-1">This may take 10-20 seconds</p>
+                <p class="text-dark-300 text-center mb-4" id="loading-status">Initializing analysis...</p>
+                
+                <!-- Progress Steps -->
+                <div class="space-y-2 max-w-md mx-auto text-sm">
+                    <div id="step-1" class="flex items-center gap-2 text-dark-500">
+                        <span class="w-5 h-5 rounded-full border border-dark-600 flex items-center justify-center text-xs">1</span>
+                        <span>Checking cached review...</span>
+                    </div>
+                    <div id="step-2" class="flex items-center gap-2 text-dark-500">
+                        <span class="w-5 h-5 rounded-full border border-dark-600 flex items-center justify-center text-xs">2</span>
+                        <span>Fetching OHLCV data (Daily, 2H, 5min)...</span>
+                    </div>
+                    <div id="step-3" class="flex items-center gap-2 text-dark-500">
+                        <span class="w-5 h-5 rounded-full border border-dark-600 flex items-center justify-center text-xs">3</span>
+                        <span>Building Brooks Audit prompt...</span>
+                    </div>
+                    <div id="step-4" class="flex items-center gap-2 text-dark-500">
+                        <span class="w-5 h-5 rounded-full border border-dark-600 flex items-center justify-center text-xs">4</span>
+                        <span>Calling LLM for analysis...</span>
+                    </div>
+                    <div id="step-5" class="flex items-center gap-2 text-dark-500">
+                        <span class="w-5 h-5 rounded-full border border-dark-600 flex items-center justify-center text-xs">5</span>
+                        <span>Caching results...</span>
+                    </div>
+                </div>
             </div>
 
             <!-- Review Content (hidden until loaded) -->
@@ -193,6 +235,90 @@
         </div>
     </div>
 
+    <!-- Trade Intent Section (Brooks Audit) -->
+    <div class="card">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                📋 Trade Plan & Intent
+            </h2>
+            <span class="text-xs text-dark-500">For comprehensive Brooks Audit</span>
+        </div>
+        
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+            <!-- Trade Type -->
+            <div>
+                <label class="label">Trade Type</label>
+                <select id="trade-type-field" class="select">
+                    <option value="">Select...</option>
+                    <option value="scalp" {% if trade.trade_type == 'scalp' %}selected{% endif %}>Scalp</option>
+                    <option value="swing" {% if trade.trade_type == 'swing' %}selected{% endif %}>Swing</option>
+                    <option value="position" {% if trade.trade_type == 'position' %}selected{% endif %}>Position</option>
+                </select>
+            </div>
+            
+            <!-- Confidence Level -->
+            <div>
+                <label class="label">Confidence (1-5)</label>
+                <select id="confidence-field" class="select">
+                    <option value="">Select...</option>
+                    <option value="1" {% if trade.confidence_level == 1 %}selected{% endif %}>1 - Very Low</option>
+                    <option value="2" {% if trade.confidence_level == 2 %}selected{% endif %}>2 - Low</option>
+                    <option value="3" {% if trade.confidence_level == 3 %}selected{% endif %}>3 - Medium</option>
+                    <option value="4" {% if trade.confidence_level == 4 %}selected{% endif %}>4 - High</option>
+                    <option value="5" {% if trade.confidence_level == 5 %}selected{% endif %}>5 - Very High</option>
+                </select>
+            </div>
+            
+            <!-- Emotional State -->
+            <div>
+                <label class="label">Emotional State</label>
+                <select id="emotional-state-field" class="select">
+                    <option value="">Select...</option>
+                    <option value="calm" {% if trade.emotional_state == 'calm' %}selected{% endif %}>😌 Calm</option>
+                    <option value="focused" {% if trade.emotional_state == 'focused' %}selected{% endif %}>🎯 Focused</option>
+                    <option value="rushed" {% if trade.emotional_state == 'rushed' %}selected{% endif %}>⚡ Rushed</option>
+                    <option value="fomo" {% if trade.emotional_state == 'fomo' %}selected{% endif %}>😰 FOMO</option>
+                    <option value="revenge" {% if trade.emotional_state == 'revenge' %}selected{% endif %}>😤 Revenge</option>
+                    <option value="tired" {% if trade.emotional_state == 'tired' %}selected{% endif %}>😴 Tired</option>
+                    <option value="anxious" {% if trade.emotional_state == 'anxious' %}selected{% endif %}>😟 Anxious</option>
+                </select>
+            </div>
+            
+            <!-- Followed Plan -->
+            <div>
+                <label class="label">Followed Plan?</label>
+                <select id="followed-plan-field" class="select">
+                    <option value="">Select...</option>
+                    <option value="true" {% if trade.followed_plan == true %}selected{% endif %}>✅ Yes</option>
+                    <option value="false" {% if trade.followed_plan == false %}selected{% endif %}>❌ No</option>
+                </select>
+            </div>
+        </div>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- Stop Reason -->
+            <div>
+                <label class="label">🛑 Stop Placement Reason</label>
+                <textarea id="stop-reason-field" rows="2" class="input resize-none" 
+                    placeholder="Why is your stop placed there? (Where setup is WRONG, not money stop)">{{ trade.stop_reason or '' }}</textarea>
+            </div>
+            
+            <!-- Target Reason -->
+            <div>
+                <label class="label">🎯 Target Reason</label>
+                <textarea id="target-reason-field" rows="2" class="input resize-none" 
+                    placeholder="Why is your target placed there? (Swing high, range boundary, measured move?)">{{ trade.target_reason or '' }}</textarea>
+            </div>
+            
+            <!-- Invalidation -->
+            <div class="md:col-span-2">
+                <label class="label">⚠️ Invalidation Condition</label>
+                <textarea id="invalidation-field" rows="2" class="input resize-none" 
+                    placeholder="What would prove this trade idea WRONG? When should you exit regardless of stop?">{{ trade.invalidation_condition or '' }}</textarea>
+            </div>
+        </div>
+    </div>
+
     <!-- Personal Notes Section -->
     <div class="card">
         <div class="flex justify-between items-center mb-4">
@@ -200,37 +326,37 @@
                 ✍️ My Notes & Review
             </h2>
             <button onclick="saveNotes()" class="btn btn-primary" id="save-notes-btn">
-                💾 Save Notes
+                💾 Save All
             </button>
         </div>
         
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- Entry Reason -->
+            <div>
+                <label class="label">📈 Entry Setup (Brooks Label)</label>
+                <textarea id="entry-reason-field" rows="3" class="input resize-none" 
+                    placeholder="What Brooks setup did you see? (e.g., H2 pullback, breakout pullback, failed breakout fade...)">{{ trade.entry_reason or '' }}</textarea>
+            </div>
+            
             <!-- General Notes -->
             <div>
                 <label class="label">📝 Trade Notes</label>
-                <textarea id="notes-field" rows="4" class="input resize-none" 
-                    placeholder="What happened during this trade? Context, thoughts, observations...">{{ trade.notes or '' }}</textarea>
-            </div>
-            
-            <!-- Entry Reason -->
-            <div>
-                <label class="label">🎯 Entry Reason</label>
-                <textarea id="entry-reason-field" rows="4" class="input resize-none" 
-                    placeholder="Why did you enter this trade? What setup did you see?">{{ trade.entry_reason or '' }}</textarea>
+                <textarea id="notes-field" rows="3" class="input resize-none" 
+                    placeholder="What happened during this trade? Context, market behavior...">{{ trade.notes or '' }}</textarea>
             </div>
             
             <!-- Mistakes -->
             <div>
                 <label class="label">❌ Mistakes Made</label>
                 <textarea id="mistakes-field" rows="3" class="input resize-none" 
-                    placeholder="What mistakes did you make? What would you do differently?">{{ trade.mistakes or '' }}</textarea>
+                    placeholder="What mistakes did you make? Selection error or execution error?">{{ trade.mistakes or '' }}</textarea>
             </div>
             
             <!-- Lessons -->
             <div>
                 <label class="label">💡 Lessons Learned</label>
                 <textarea id="lessons-field" rows="3" class="input resize-none" 
-                    placeholder="What did you learn from this trade? Any insights?">{{ trade.lessons or '' }}</textarea>
+                    placeholder="What rule will you follow for the next 20 trades?">{{ trade.lessons or '' }}</textarea>
             </div>
         </div>
         
@@ -240,7 +366,7 @@
     <!-- Actions -->
     <div class="flex flex-wrap gap-3">
         <a href="/trades" class="btn btn-secondary">← Back to Trades</a>
-        <button onclick="refreshReview()" class="btn btn-primary">🔄 Refresh Review</button>
+        <button onclick="refreshReview()" class="btn btn-primary">🔄 Regenerate Review</button>
         <button onclick="deleteTrade({{ trade.id }})" class="btn btn-ghost text-danger-400 hover:bg-danger-500/10">
             🗑️ Delete Trade
         </button>
@@ -255,22 +381,52 @@ const TRADE_ID = {{ trade.id }};
 // Load review asynchronously when page loads
 document.addEventListener('DOMContentLoaded', loadReview);
 
-async function loadReview() {
-    // Quick start toast (0.5s)
-    showStartToast('AI analysis');
+async function loadReview(force = false) {
+    // Reset and show loading
+    resetLoadingSteps();
+    
+    // Quick start toast only if generating new
+    if (force) {
+        showStartToast('Regenerating AI analysis');
+        updateStep(1, 'active', 'Skipping cache (force refresh)...');
+    } else {
+        showStartToast('Loading review');
+        updateStep(1, 'active', 'Checking cached review...');
+    }
     
     try {
-        const response = await fetch(`/api/trades/${TRADE_ID}/review`);
+        // Simulate progress for better UX
+        setTimeout(() => updateStep(1, 'done'), 300);
+        setTimeout(() => updateStep(2, 'active', 'Fetching OHLCV data...'), 500);
+        
+        const url = force 
+            ? `/api/trades/${TRADE_ID}/review?force=true`
+            : `/api/trades/${TRADE_ID}/review`;
+        const response = await fetch(url);
         const data = await response.json();
         
         document.getElementById('review-loading').classList.add('hidden');
         
         if (data.success && data.review) {
             displayReview(data.review);
-            // Quick finish toast with brief summary
-            const grade = data.review.grade || '?';
-            const setup = data.review.setup_classification || 'analyzed';
-            showFinishToast('AI analysis', `Grade ${grade}, ${setup}`);
+            
+            // Show cache status
+            if (data.cached) {
+                document.getElementById('cache-badge').classList.remove('hidden');
+                showFinishToast('Review loaded', 'From cache (instant)');
+            } else {
+                document.getElementById('cache-badge').classList.add('hidden');
+                const grade = data.review.grade || '?';
+                const setup = data.review.setup_classification || 'analyzed';
+                showFinishToast('AI analysis complete', `Grade ${grade}, ${setup}`);
+            }
+            
+            // Show generated time
+            if (data.generated_at) {
+                document.getElementById('review-meta').classList.remove('hidden');
+                const genDate = new Date(data.generated_at);
+                document.getElementById('generated-at').textContent = genDate.toLocaleString();
+            }
         } else {
             document.getElementById('review-error').classList.remove('hidden');
             document.getElementById('error-message').textContent = data.error || 'Review not available';
@@ -281,6 +437,29 @@ async function loadReview() {
         document.getElementById('review-error').classList.remove('hidden');
         document.getElementById('error-message').textContent = 'Failed to load review: ' + err.message;
         showToast('AI analysis failed', 'error');
+    }
+}
+
+function resetLoadingSteps() {
+    for (let i = 1; i <= 5; i++) {
+        const step = document.getElementById(`step-${i}`);
+        step.className = 'flex items-center gap-2 text-dark-500';
+        step.querySelector('span:first-child').className = 'w-5 h-5 rounded-full border border-dark-600 flex items-center justify-center text-xs';
+    }
+}
+
+function updateStep(num, status, text) {
+    const step = document.getElementById(`step-${num}`);
+    if (!step) return;
+    
+    if (status === 'active') {
+        step.className = 'flex items-center gap-2 text-accent-400';
+        step.querySelector('span:first-child').className = 'w-5 h-5 rounded-full border border-accent-500 bg-accent-500/20 flex items-center justify-center text-xs animate-pulse';
+        document.getElementById('loading-status').textContent = text || 'Processing...';
+    } else if (status === 'done') {
+        step.className = 'flex items-center gap-2 text-success-400';
+        step.querySelector('span:first-child').innerHTML = '✓';
+        step.querySelector('span:first-child').className = 'w-5 h-5 rounded-full bg-success-500/20 border border-success-500 flex items-center justify-center text-xs';
     }
 }
 
@@ -357,11 +536,23 @@ async function saveNotes() {
     btn.disabled = true;
     btn.textContent = '⏳ Saving...';
     
+    // Collect all fields including Brooks intent fields
+    const followedPlanVal = document.getElementById('followed-plan-field').value;
+    
     const data = {
+        // Notes
         notes: document.getElementById('notes-field').value,
         entry_reason: document.getElementById('entry-reason-field').value,
         mistakes: document.getElementById('mistakes-field').value,
         lessons: document.getElementById('lessons-field').value,
+        // Brooks intent fields
+        trade_type: document.getElementById('trade-type-field').value || null,
+        confidence_level: document.getElementById('confidence-field').value ? parseInt(document.getElementById('confidence-field').value) : null,
+        emotional_state: document.getElementById('emotional-state-field').value || null,
+        followed_plan: followedPlanVal === 'true' ? true : (followedPlanVal === 'false' ? false : null),
+        stop_reason: document.getElementById('stop-reason-field').value || null,
+        target_reason: document.getElementById('target-reason-field').value || null,
+        invalidation_condition: document.getElementById('invalidation-field').value || null,
     };
     
     try {
@@ -372,19 +563,19 @@ async function saveNotes() {
         });
         
         if (response.ok) {
-            showToast('Notes saved!');
+            showToast('Trade details saved!');
             status.textContent = '✓ Saved just now';
             status.classList.remove('hidden');
             setTimeout(() => status.classList.add('hidden'), 3000);
         } else {
-            showToast('Failed to save notes', 'error');
+            showToast('Failed to save', 'error');
         }
     } catch (err) {
         showToast('Error: ' + err.message, 'error');
     }
     
     btn.disabled = false;
-    btn.textContent = '💾 Save Notes';
+    btn.textContent = '💾 Save All';
 }
 
 async function deleteTrade(id) {
@@ -406,7 +597,9 @@ function refreshReview() {
     document.getElementById('review-content').classList.add('hidden');
     document.getElementById('review-error').classList.add('hidden');
     document.getElementById('review-grade').classList.add('hidden');
-    loadReview();
+    document.getElementById('cache-badge').classList.add('hidden');
+    document.getElementById('review-meta').classList.add('hidden');
+    loadReview(true);  // Force regenerate
 }
 </script>
 {% endblock %}

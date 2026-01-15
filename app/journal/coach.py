@@ -22,18 +22,19 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class TradeReview:
-    """Complete review of a trade."""
+    """Complete Brooks Audit review of a trade."""
 
+    # Required fields (no defaults) - must come first
     trade_id: int
     ticker: str
 
-    # Context analysis
-    regime: str
-    always_in: str
-    context_description: str
+    # Context analysis (multi-timeframe)
+    regime: str  # Daily regime
+    always_in: str  # Always-in direction
+    context_description: str  # Coaching summary
 
-    # Setup classification
-    setup_classification: str
+    # Setup classification (Brooks taxonomy)
+    setup_classification: str  # Primary setup label
     setup_quality: Literal["good", "marginal", "poor"]
 
     # Trader's equation
@@ -56,6 +57,18 @@ class TradeReview:
     # Overall grade
     grade: Literal["A", "B", "C", "D", "F"]
     grade_explanation: str
+
+    # Optional fields (with defaults) - must come after required fields
+    is_second_entry: bool = False
+    with_trend_or_counter: str = "neutral"
+    signal_bar_quality: str = "unknown"
+    entry_location: str = "unknown"
+    traders_equation: str = "unknown"
+    exit_quality: str = "unknown"
+    selection_vs_execution: str = "unknown"
+    keep_doing: str = ""
+    stop_doing: str = ""
+    better_alternative: str = ""
 
 
 class TradeCoach:
@@ -99,7 +112,7 @@ class TradeCoach:
             # Get market context data
             ohlcv_context = self._get_ohlcv_context_string(trade)
 
-            # Use LLM for comprehensive analysis
+            # Use LLM for comprehensive Brooks Audit
             if self.llm_analyzer.is_available:
                 llm_analysis = self.llm_analyzer.analyze_trade(
                     ticker=trade.ticker,
@@ -113,26 +126,77 @@ class TradeCoach:
                     ohlcv_context=ohlcv_context,
                     mae=trade.mae,
                     mfe=trade.mfe,
+                    # Brooks intent fields
+                    timeframe=trade.timeframe or "5m",
+                    trade_type=trade.trade_type,
+                    entry_time=trade.entry_time,
+                    exit_time=trade.exit_time,
+                    size=trade.size,
+                    pnl_dollars=trade.pnl_dollars,
+                    hold_time_minutes=trade.hold_time_minutes,
+                    stop_reason=trade.stop_reason,
+                    target_reason=trade.target_reason,
+                    invalidation_condition=trade.invalidation_condition,
+                    confidence_level=trade.confidence_level,
+                    emotional_state=trade.emotional_state,
+                    followed_plan=trade.followed_plan,
+                    account_type=trade.account_type or "paper",
+                    mistakes=trade.mistakes,
+                    lessons=trade.lessons,
                 )
 
                 if "error" not in llm_analysis and "raw_analysis" not in llm_analysis:
+                    # Extract nested fields from Brooks Audit response
+                    context = llm_analysis.get("context", {})
+                    setup = llm_analysis.get("setup", {})
+                    entry_quality = llm_analysis.get("entry_quality", {})
+                    risk_reward = llm_analysis.get("risk_reward", {})
+                    management = llm_analysis.get("management", {})
+                    coaching = llm_analysis.get("coaching", {})
+                    
+                    # Handle both flat and nested response formats
+                    regime = context.get("daily_regime") or llm_analysis.get("regime", "unknown")
+                    always_in = context.get("always_in_direction") or llm_analysis.get("always_in", "neutral")
+                    
+                    what_good = coaching.get("what_was_good") or llm_analysis.get("what_was_good", [])
+                    what_flawed = coaching.get("what_was_flawed") or llm_analysis.get("what_was_flawed", [])
+                    
                     return TradeReview(
                         trade_id=trade.id,
                         ticker=trade.ticker,
-                        regime=llm_analysis.get("regime", "unknown"),
-                        always_in=llm_analysis.get("always_in", "neutral"),
-                        context_description=llm_analysis.get("overall_coaching", ""),
-                        setup_classification=llm_analysis.get("setup_classification", "unclassified"),
-                        setup_quality=llm_analysis.get("setup_quality", "marginal"),
-                        risk_reward_assessment=llm_analysis.get("risk_reward_assessment", ""),
-                        probability_assessment=llm_analysis.get("probability_assessment", ""),
+                        # Context
+                        regime=regime,
+                        always_in=always_in,
+                        context_description=llm_analysis.get("coaching_summary", ""),
+                        # Setup
+                        setup_classification=setup.get("primary_label") or llm_analysis.get("setup_classification", "unclassified"),
+                        setup_quality=entry_quality.get("entry_quality_score", "C")[0].lower() if entry_quality.get("entry_quality_score") else llm_analysis.get("setup_quality", "marginal"),
+                        is_second_entry=setup.get("is_second_entry", False),
+                        with_trend_or_counter=setup.get("with_trend_or_counter", "neutral"),
+                        # Entry quality
+                        signal_bar_quality=entry_quality.get("signal_bar_quality", "unknown"),
+                        entry_location=entry_quality.get("entry_location", "unknown"),
+                        # Risk/Reward
+                        risk_reward_assessment=risk_reward.get("target_notes", "") or llm_analysis.get("risk_reward_assessment", ""),
+                        probability_assessment=risk_reward.get("probability_estimate", "") or llm_analysis.get("probability_assessment", ""),
+                        traders_equation=risk_reward.get("traders_equation", "unknown"),
+                        # Management
+                        exit_quality=management.get("exit_quality", "unknown"),
+                        selection_vs_execution=coaching.get("selection_vs_execution", "unknown"),
+                        # Errors
                         errors_detected=llm_analysis.get("errors", []),
-                        what_was_good=llm_analysis.get("what_was_good", []),
-                        what_was_flawed=llm_analysis.get("what_was_flawed", []),
-                        rule_for_next_time=llm_analysis.get("rule_for_next_time", ""),
+                        # Coaching
+                        what_was_good=what_good if isinstance(what_good, list) else [what_good] if what_good else [],
+                        what_was_flawed=what_flawed if isinstance(what_flawed, list) else [what_flawed] if what_flawed else [],
+                        keep_doing=coaching.get("keep_doing", ""),
+                        stop_doing=coaching.get("stop_doing", ""),
+                        rule_for_next_time=coaching.get("rule_for_next_20_trades", "") or llm_analysis.get("rule_for_next_time", ""),
+                        better_alternative=coaching.get("better_alternative", ""),
+                        # Metrics
                         r_multiple=trade.r_multiple or 0,
                         mae=trade.mae,
                         mfe=trade.mfe,
+                        # Grade
                         grade=llm_analysis.get("grade", "C"),
                         grade_explanation=llm_analysis.get("grade_explanation", ""),
                     )
@@ -144,27 +208,98 @@ class TradeCoach:
             session.close()
 
     def _get_ohlcv_context_string(self, trade: Trade) -> str:
-        """Get OHLCV data as a string for LLM context."""
+        """
+        Get OHLCV data as a string for LLM context.
+        
+        Fetches different data based on trade timeframe:
+        - 5m (scalp): 30 daily bars, 60 hourly bars, 234 5-min bars
+        - 2h (swing): 60 daily bars, 120 hourly bars
+        - 1d (position): 100+ daily bars
+        """
         try:
             end_date = datetime.combine(trade.trade_date, datetime.min.time())
-            start_date = end_date - timedelta(days=30)
-
-            df = get_cached_ohlcv(trade.ticker, "1d", start_date, end_date)
-
-            if df.empty:
+            timeframe = trade.timeframe or "5m"
+            
+            logger.info(f"📊 Fetching multi-timeframe OHLCV for {trade.ticker} (trade timeframe: {timeframe})")
+            
+            all_context = []
+            
+            # Brooks-specified bar counts for comprehensive context:
+            # - Daily: 60 bars (multi-week trend/range context)
+            # - 2-Hour: 120 bars (structure, legs, wedges, tests)
+            # - 5-Min: 234 bars (3 trading days = 78 bars/day × 3)
+            
+            if timeframe == "5m":
+                # 5-min scalp/day trades: Full Brooks package
+                all_context.append(self._fetch_ohlcv_section(trade.ticker, "1d", end_date, 60, "DAILY"))
+                all_context.append(self._fetch_ohlcv_section(trade.ticker, "2h", end_date, 120, "2-HOUR"))
+                all_context.append(self._fetch_ohlcv_section(trade.ticker, "5m", end_date, 234, "5-MINUTE"))
+            
+            elif timeframe == "2h":
+                # 2-hour swing trades: Daily + 2H context
+                all_context.append(self._fetch_ohlcv_section(trade.ticker, "1d", end_date, 60, "DAILY"))
+                all_context.append(self._fetch_ohlcv_section(trade.ticker, "2h", end_date, 120, "2-HOUR"))
+            
+            elif timeframe == "1d":
+                # Daily position trades: Extended daily context
+                all_context.append(self._fetch_ohlcv_section(trade.ticker, "1d", end_date, 120, "DAILY"))
+            
+            else:
+                # Default to 5m timeframe with full Brooks package
+                all_context.append(self._fetch_ohlcv_section(trade.ticker, "1d", end_date, 60, "DAILY"))
+                all_context.append(self._fetch_ohlcv_section(trade.ticker, "2h", end_date, 120, "2-HOUR"))
+                all_context.append(self._fetch_ohlcv_section(trade.ticker, "5m", end_date, 234, "5-MINUTE"))
+            
+            result = "\n\n".join([ctx for ctx in all_context if ctx])
+            if not result:
                 return "No market data available"
-
-            # Format last 10 bars for context
-            recent = df.tail(10)
-            lines = ["Date | Open | High | Low | Close | Volume"]
-            for _, row in recent.iterrows():
-                dt = row["datetime"].strftime("%Y-%m-%d") if hasattr(row["datetime"], "strftime") else str(row["datetime"])[:10]
-                lines.append(f"{dt} | {row['open']:.2f} | {row['high']:.2f} | {row['low']:.2f} | {row['close']:.2f} | {int(row['volume'])}")
-
-            return "\n".join(lines)
+            return result
+            
         except Exception as e:
             logger.warning(f"Failed to get OHLCV context: {e}")
             return "Market data unavailable"
+    
+    def _fetch_ohlcv_section(self, ticker: str, interval: str, end_date: datetime, num_bars: int, label: str) -> str:
+        """Fetch OHLCV data for a specific interval and format it."""
+        try:
+            # Calculate start date based on interval
+            if interval == "1d":
+                start_date = end_date - timedelta(days=num_bars + 10)  # Extra padding
+            elif interval == "1h":
+                start_date = end_date - timedelta(hours=num_bars + 10)
+            elif interval == "5m":
+                start_date = end_date - timedelta(minutes=num_bars * 5 + 60)
+            else:
+                start_date = end_date - timedelta(days=num_bars)
+            
+            logger.info(f"   📈 Fetching {label} ({interval}) bars for {ticker}: requesting {num_bars} bars")
+            
+            df = get_cached_ohlcv(ticker, interval, start_date, end_date)
+            
+            if df.empty:
+                logger.warning(f"   ⚠️ No {label} data returned for {ticker}")
+                return ""
+            
+            # Get the last N bars
+            recent = df.tail(num_bars)
+            logger.info(f"   ✅ Got {len(recent)} {label} candles for {ticker}")
+            
+            # Format for LLM
+            lines = [f"=== {label} CANDLES ({interval}) - {len(recent)} bars ==="]
+            lines.append("DateTime | Open | High | Low | Close | Volume")
+            
+            for _, row in recent.iterrows():
+                if interval == "1d":
+                    dt = row["datetime"].strftime("%Y-%m-%d") if hasattr(row["datetime"], "strftime") else str(row["datetime"])[:10]
+                else:
+                    dt = row["datetime"].strftime("%Y-%m-%d %H:%M") if hasattr(row["datetime"], "strftime") else str(row["datetime"])[:16]
+                lines.append(f"{dt} | {row['open']:.2f} | {row['high']:.2f} | {row['low']:.2f} | {row['close']:.2f} | {int(row['volume'])}")
+            
+            return "\n".join(lines)
+            
+        except Exception as e:
+            logger.warning(f"Failed to fetch {label} data for {ticker}: {e}")
+            return ""
 
     def _fallback_review(self, trade: Trade, ohlcv_context: str) -> TradeReview:
         """Basic rule-based review when LLM is unavailable."""

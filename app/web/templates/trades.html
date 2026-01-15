@@ -147,7 +147,7 @@
                         </td>
                         <td>
                             <div class="flex items-center space-x-1 opacity-50 group-hover:opacity-100 transition-opacity">
-                                <button onclick="openEditModal({{ trade.id }}, {{ trade.size or 0 }}, {{ trade.entry_price }}, {{ trade.exit_price or 0 }}, {{ trade.stop_price or 0 }}, '{{ trade.currency or "USD" }}', {{ trade.currency_rate or 1.0 }}, '{{ trade.entry_time.strftime('%Y-%m-%dT%H:%M:%S') if trade.entry_time else '' }}', '{{ trade.exit_time.strftime('%Y-%m-%dT%H:%M:%S') if trade.exit_time else '' }}')" 
+                                <button onclick="openEditModal({{ trade.id }}, {{ trade.size or 0 }}, {{ trade.entry_price }}, {{ trade.exit_price or 0 }}, {{ trade.stop_price or 0 }}, '{{ trade.currency or "USD" }}', {{ trade.currency_rate or 1.0 }}, '{{ trade.entry_time.strftime('%Y-%m-%dT%H:%M:%S') if trade.entry_time else '' }}', '{{ trade.exit_time.strftime('%Y-%m-%dT%H:%M:%S') if trade.exit_time else '' }}', '{{ trade.timeframe or "5m" }}')" 
                                         class="btn btn-ghost p-2 text-sm" title="Edit">
                                     ✏️
                                 </button>
@@ -223,7 +223,16 @@
                 </div>
             </div>
             
-            <div class="grid grid-cols-2 gap-4">
+            <div class="grid grid-cols-3 gap-4">
+                <div>
+                    <label class="label">Timeframe</label>
+                    <select id="edit-timeframe" class="select">
+                        <option value="5m">5 min (Scalp)</option>
+                        <option value="2h">2 hour (Swing)</option>
+                        <option value="1d">Daily (Position)</option>
+                    </select>
+                    <p class="text-xs text-dark-500 mt-1">Used for AI context data</p>
+                </div>
                 <div>
                     <label class="label">Currency</label>
                     <select id="edit-currency" class="select">
@@ -260,7 +269,7 @@
 let currentTradeId = null;
 let currentTradeDate = null;
 
-function openEditModal(id, shares, entry, exit, stop, currency, rate, entryTime, exitTime) {
+function openEditModal(id, shares, entry, exit, stop, currency, rate, entryTime, exitTime, timeframe) {
     currentTradeId = id;
     currentTradeDate = exitTime || entryTime;
     
@@ -272,6 +281,7 @@ function openEditModal(id, shares, entry, exit, stop, currency, rate, entryTime,
     document.getElementById('edit-stop').value = stop;
     document.getElementById('edit-currency').value = currency || 'USD';
     document.getElementById('edit-rate').value = rate;
+    document.getElementById('edit-timeframe').value = timeframe || '5m';
     
     if (entryTime) document.getElementById('edit-entry-time').value = entryTime;
     if (exitTime) document.getElementById('edit-exit-time').value = exitTime;
@@ -326,6 +336,7 @@ document.getElementById('edit-form').addEventListener('submit', async (e) => {
         currency_rate: parseFloat(document.getElementById('edit-rate').value),
         entry_time: document.getElementById('edit-entry-time').value || null,
         exit_time: document.getElementById('edit-exit-time').value || null,
+        timeframe: document.getElementById('edit-timeframe').value,
     };
     
     try {
@@ -374,14 +385,32 @@ async function recalculateMetrics() {
 }
 
 async function reclassifyTrades() {
+    // Ask if force reclassify
+    const force = confirm('Reclassify ALL trades? (Cancel to only classify unclassified trades)');
+    
     showStartToast('AI reclassification');
     try {
-        const response = await fetch('/api/reclassify-trades', { method: 'POST' });
+        const url = force ? '/api/reclassify-trades?force=true' : '/api/reclassify-trades';
+        const response = await fetch(url, { method: 'POST' });
         const data = await response.json();
-        showFinishToast('AI reclassification', `${data.count || 'all'} trades classified`);
+        
+        if (data.error) {
+            showToast(data.error, 'error');
+            return;
+        }
+        
+        const classified = data.classified || 0;
+        const skipped = data.skipped || 0;
+        const errors = data.errors || 0;
+        
+        let msg = `${classified} classified`;
+        if (skipped > 0) msg += `, ${skipped} skipped (already done)`;
+        if (errors > 0) msg += `, ${errors} failed`;
+        
+        showFinishToast('AI reclassification', msg);
         setTimeout(() => window.location.reload(), 1500);
     } catch (err) {
-        showToast('Reclassification failed', 'error');
+        showToast('Reclassification failed: ' + err.message, 'error');
     }
 }
 
