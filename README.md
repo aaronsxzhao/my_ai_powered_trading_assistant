@@ -8,7 +8,7 @@ A decision-support, journaling, analytics, and premarket briefing system for dis
 
 ```bash
 # 1. Create virtual environment (recommended)
-python -m venv venv
+python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # 2. Install dependencies
@@ -56,6 +56,8 @@ python -m app.main web
 # Or with custom port:
 python -m app.main web --port 3000
 ```
+
+> **Note**: After activating the virtual environment, `python` works. Before activation, use `python3`.
 
 Open http://localhost:8000 in your browser.
 
