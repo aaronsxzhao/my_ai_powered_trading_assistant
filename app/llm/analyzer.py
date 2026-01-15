@@ -520,13 +520,7 @@ Classify this trade. If you cannot classify with confidence, explain what specif
                 logger.debug("Parsed JSON by finding braces")
                 return result
 
-        # Log the response for debugging
-        logger.warning(f"Could not parse JSON. Response length: {len(response)}")
-        if len(response) < 500:
-            logger.warning(f"Full response: {response}")
-        else:
-            logger.warning(f"Response preview (first 300 chars): {response[:300]}")
-            logger.warning(f"Response preview (last 200 chars): {response[-200:]}")
+        logger.warning(f"Could not parse JSON from LLM response (length: {len(response)})")
         return None
 
     def analyze_market_context(

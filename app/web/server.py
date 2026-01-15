@@ -313,10 +313,10 @@ async def get_trade_review(trade_id: int, force: bool = False, check_only: bool 
                 "setup_classification": current_strategy or ai_setup or "Unknown",
                 "ai_setup_classification": ai_setup,  # Keep the AI's raw classification too
                 "setup_quality": review.setup_quality,
-                "what_was_good": review.what_was_good if isinstance(review.what_was_good, list) else [review.what_was_good] if review.what_was_good else [],
-                "what_was_flawed": review.what_was_flawed if isinstance(review.what_was_flawed, list) else [review.what_was_flawed] if review.what_was_flawed else [],
-                "errors_detected": review.errors_detected if isinstance(review.errors_detected, list) else [review.errors_detected] if review.errors_detected else [],
-                "rule_for_next_time": review.rule_for_next_time if isinstance(review.rule_for_next_time, list) else [review.rule_for_next_time] if review.rule_for_next_time else [],
+                "what_was_good": review.what_was_good or [],
+                "what_was_flawed": review.what_was_flawed or [],
+                "errors_detected": review.errors_detected or [],
+                "rule_for_next_time": review.rule_for_next_time or [],
             }
             
             # Cache and clear in_progress
@@ -790,10 +790,10 @@ async def analyze_all_trades(force: bool = False):
                             "setup_classification": current_strategy or ai_setup or "Unknown",
                             "ai_setup_classification": ai_setup,
                             "setup_quality": review.setup_quality,
-                            "what_was_good": review.what_was_good if isinstance(review.what_was_good, list) else [review.what_was_good] if review.what_was_good else [],
-                            "what_was_flawed": review.what_was_flawed if isinstance(review.what_was_flawed, list) else [review.what_was_flawed] if review.what_was_flawed else [],
-                            "errors_detected": review.errors_detected if isinstance(review.errors_detected, list) else [review.errors_detected] if review.errors_detected else [],
-                            "rule_for_next_time": review.rule_for_next_time if isinstance(review.rule_for_next_time, list) else [review.rule_for_next_time] if review.rule_for_next_time else [],
+                            "what_was_good": review.what_was_good or [],
+                            "what_was_flawed": review.what_was_flawed or [],
+                            "errors_detected": review.errors_detected or [],
+                            "rule_for_next_time": review.rule_for_next_time or [],
                         }
                         
                         # Cache the review

@@ -240,13 +240,9 @@ class YFinanceProvider(DataProvider):
                 )
 
                 if df.empty:
-                    logger.warning(f"⚠️ No data returned for {normalized_ticker} ({timeframe}) from {start.date()} to {end.date()}")
-                    # Try alternative date range for intraday
+                    # Try shorter date range for intraday
                     if interval in ['1m', '5m', '15m', '30m', '1h', '2h']:
-                        logger.info(f"📊 Trying shorter date range for intraday data...")
                         df = ticker_obj.history(period="5d", interval=interval, actions=False)
-                        if not df.empty:
-                            logger.info(f"✅ Got {len(df)} rows with 5-day period")
                     
                     if df.empty:
                         return pd.DataFrame(columns=OHLCV_COLUMNS)

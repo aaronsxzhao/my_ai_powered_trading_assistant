@@ -223,15 +223,15 @@ class TradeCoach:
                         # Errors
                         errors_detected=llm_analysis.get("errors", []),
                         # Coaching
-                        what_was_good=what_good if isinstance(what_good, list) else [what_good] if what_good else [],
-                        what_was_flawed=what_flawed if isinstance(what_flawed, list) else [what_flawed] if what_flawed else [],
+                        what_was_good=self._ensure_list(what_good),
+                        what_was_flawed=self._ensure_list(what_flawed),
                         keep_doing=coaching.get("keep_doing", ""),
                         stop_doing=coaching.get("stop_doing", ""),
                         rule_for_next_time=self._ensure_list(
                             coaching.get("rules_for_next_20_trades") or 
                             coaching.get("rule_for_next_20_trades") or 
                             llm_analysis.get("rules_for_next_time") or
-                            llm_analysis.get("rule_for_next_time") or []
+                            llm_analysis.get("rule_for_next_time")
                         ),
                         better_alternative=coaching.get("better_alternative", ""),
                         # Metrics
@@ -483,17 +483,13 @@ class TradeCoach:
             else:
                 start_date = end_date - timedelta(days=num_bars)
             
-            logger.info(f"   📈 Fetching {label} ({interval}) bars for {ticker}: requesting {num_bars} bars")
-            
             df = get_cached_ohlcv(ticker, interval, start_date, end_date)
             
             if df.empty:
-                logger.warning(f"   ⚠️ No {label} data returned for {ticker}")
                 return ""
             
             # Get the last N bars
             recent = df.tail(num_bars)
-            logger.info(f"   ✅ Got {len(recent)} {label} candles for {ticker}")
             
             # Format for LLM
             lines = [f"=== {label} CANDLES ({interval}) - {len(recent)} bars ==="]
