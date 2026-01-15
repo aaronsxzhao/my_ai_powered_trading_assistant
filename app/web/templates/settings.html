@@ -119,13 +119,9 @@
         <!-- System Prompt Tabs -->
         <div class="border-b border-dark-700 mb-4">
             <nav class="flex space-x-4">
-                <button onclick="showSystemTab('classification')" id="sys-tab-classification" 
-                    class="sys-tab px-4 py-2 text-sm font-medium border-b-2 border-accent-500 text-accent-400">
-                    Classification
-                </button>
                 <button onclick="showSystemTab('analysis')" id="sys-tab-analysis"
-                    class="sys-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-dark-400 hover:text-dark-200">
-                    Analysis
+                    class="sys-tab px-4 py-2 text-sm font-medium border-b-2 border-accent-500 text-accent-400">
+                    Trade Review
                 </button>
                 <button onclick="showSystemTab('market')" id="sys-tab-market"
                     class="sys-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-dark-400 hover:text-dark-200">
@@ -134,19 +130,8 @@
             </nav>
         </div>
         
-        <!-- System: Trade Classification -->
-        <div id="sys-classification" class="sys-panel">
-            <div class="mb-2 flex justify-between items-center">
-                <label class="text-sm font-medium text-dark-300">System: Trade Classification</label>
-                <span class="text-xs text-dark-500">AI persona for classifying setups</span>
-            </div>
-            <textarea id="system-trade_classification" rows="12" 
-                class="input font-mono text-sm">{{ system_prompts.trade_classification }}</textarea>
-            <button onclick="savePrompt('trade_classification', false)" class="btn btn-primary mt-3">💾 Save</button>
-        </div>
-        
         <!-- System: Trade Analysis -->
-        <div id="sys-analysis" class="sys-panel hidden">
+        <div id="sys-analysis" class="sys-panel">
             <div class="mb-2 flex justify-between items-center">
                 <label class="text-sm font-medium text-dark-300">System: Trade Analysis</label>
                 <span class="text-xs text-dark-500">AI persona for reviewing trades</span>
@@ -175,20 +160,49 @@
             Templates for trade data sent to AI. Use <code class="text-accent-400">{variable}</code> placeholders for dynamic values.
         </p>
         <div class="bg-dark-900/50 border border-dark-700 rounded-lg p-3 mb-4">
-            <div class="text-xs text-dark-400 mb-1">Available placeholders:</div>
-            <code class="text-xs text-accent-300">{ticker} {direction} {entry_price} {exit_price} {stop_price} {target_price} {r_multiple} {outcome} {entry_reason} {notes} {ohlcv_context} {mae_line} {mfe_line} {date}</code>
+            <div class="text-xs text-dark-400 mb-2">Available placeholders for <span class="text-purple-400">Trade Review</span>:</div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                <div>
+                    <div class="text-dark-500 mb-1">Trade Identity:</div>
+                    <code class="text-accent-300">{ticker} {market} {timezone} {trade_date} {timeframe} {tf_traded} {direction}</code>
+                </div>
+                <div>
+                    <div class="text-dark-500 mb-1">Execution:</div>
+                    <code class="text-accent-300">{entry_time} {entry_price} {exit_time} {exit_price} {size} {position_size} {order_type} {stop_price} {target_price}</code>
+                </div>
+                <div>
+                    <div class="text-dark-500 mb-1">Performance:</div>
+                    <code class="text-accent-300">{r_multiple} {outcome} {mae} {mfe} {exit_breakdown} {fees} {slippage}</code>
+                </div>
+                <div>
+                    <div class="text-dark-500 mb-1">Trader Intent:</div>
+                    <code class="text-accent-300">{intended_setup} {trade_type} {intended_trade_type} {entry_reason} {invalidation} {management_plan} {notes}</code>
+                </div>
+                <div>
+                    <div class="text-dark-500 mb-1">Session Context:</div>
+                    <code class="text-accent-300">{today_open} {pd_high} {pd_low} {pd_close} {news_flag} {env_note}</code>
+                </div>
+                <div>
+                    <div class="text-dark-500 mb-1">OHLCV Data:</div>
+                    <code class="text-accent-300">{daily_bars} {daily_60} {twohour_bars} {twohour_120} {fivemin_bars} {fivemin_234} {local_window} {local_window_101} {ohlcv_context}</code>
+                </div>
+                <div>
+                    <div class="text-dark-500 mb-1">Optional:</div>
+                    <code class="text-accent-300">{chart_notes}</code>
+                </div>
+            </div>
+            <div class="text-xs text-dark-500 mt-3 border-t border-dark-700 pt-2">
+                <span class="text-dark-400">Market Context placeholders:</span>
+                <code class="text-accent-300 ml-1">{ticker} {date} {timeframe} {ohlcv_context}</code>
+            </div>
         </div>
         
         <!-- User Prompt Tabs -->
         <div class="border-b border-dark-700 mb-4">
             <nav class="flex space-x-4">
-                <button onclick="showUserTab('classification')" id="user-tab-classification" 
-                    class="user-tab px-4 py-2 text-sm font-medium border-b-2 border-purple-500 text-purple-400">
-                    Classification
-                </button>
                 <button onclick="showUserTab('analysis')" id="user-tab-analysis"
-                    class="user-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-dark-400 hover:text-dark-200">
-                    Analysis
+                    class="user-tab px-4 py-2 text-sm font-medium border-b-2 border-purple-500 text-purple-400">
+                    Trade Review
                 </button>
                 <button onclick="showUserTab('market')" id="user-tab-market"
                     class="user-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-dark-400 hover:text-dark-200">
@@ -197,19 +211,8 @@
             </nav>
         </div>
         
-        <!-- User: Trade Classification -->
-        <div id="user-classification" class="user-panel">
-            <div class="mb-2 flex justify-between items-center">
-                <label class="text-sm font-medium text-dark-300">User: Trade Classification</label>
-                <span class="text-xs text-dark-500">Data template for classification</span>
-            </div>
-            <textarea id="user-trade_classification" rows="10" 
-                class="input font-mono text-sm">{{ user_prompts.trade_classification }}</textarea>
-            <button onclick="savePrompt('trade_classification', true)" class="btn bg-purple-600 hover:bg-purple-700 text-white mt-3">💾 Save</button>
-        </div>
-        
         <!-- User: Trade Analysis -->
-        <div id="user-analysis" class="user-panel hidden">
+        <div id="user-analysis" class="user-panel">
             <div class="mb-2 flex justify-between items-center">
                 <label class="text-sm font-medium text-dark-300">User: Trade Analysis</label>
                 <span class="text-xs text-dark-500">Data template for trade review</span>

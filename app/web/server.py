@@ -630,23 +630,6 @@ async def generate_eod():
     })
 
 
-@app.post("/api/reclassify")
-async def reclassify_trades():
-    """Reclassify unclassified trades with LLM (non-blocking)."""
-    import asyncio
-    
-    def _reclassify():
-        ingester = TradeIngester()
-        return ingester.reclassify_all_trades()
-    
-    reclassified, failed = await asyncio.to_thread(_reclassify)
-
-    return JSONResponse({
-        "reclassified": reclassified,
-        "failed": failed,
-    })
-
-
 @app.post("/api/recalculate-metrics")
 async def recalculate_all_metrics():
     """Recalculate R-multiple, P&L, and other metrics for all trades."""
@@ -889,13 +872,25 @@ async def settings_page(request: Request):
     """Settings page for prompts and candle counts."""
     from app.config_prompts import load_settings, SETTINGS_FILE, get_cache_settings
 
+    from app.config_prompts import get_editable_prompt
+    
     current_settings = load_settings()
+    
+    # Get editable prompts (without protected JSON schemas)
+    system_prompts = {
+        'trade_analysis': get_editable_prompt('trade_analysis', is_user_prompt=False),
+        'market_context': get_editable_prompt('market_context', is_user_prompt=False),
+    }
+    user_prompts = {
+        'trade_analysis': get_editable_prompt('trade_analysis', is_user_prompt=True),
+        'market_context': get_editable_prompt('market_context', is_user_prompt=True),
+    }
 
     return templates.TemplateResponse("settings.html", {
         "request": request,
         "candles": current_settings.get('candles', {}),
-        "system_prompts": current_settings.get('system_prompts', {}),
-        "user_prompts": current_settings.get('user_prompts', {}),
+        "system_prompts": system_prompts,
+        "user_prompts": user_prompts,
         "cache_settings": get_cache_settings(),
         "settings_file": str(SETTINGS_FILE),
         "data_provider": settings.data_provider,
@@ -1041,8 +1036,19 @@ async def update_strategy(strategy_id: int, request: Request):
         if not strategy:
             raise HTTPException(status_code=404, detail="Strategy not found")
         
-        if 'name' in data:
+        # Check for duplicate name before updating
+        if 'name' in data and data['name'] != strategy.name:
+            existing = session.query(Strategy).filter(
+                Strategy.name == data['name'],
+                Strategy.id != strategy_id
+            ).first()
+            if existing:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Strategy '{data['name']}' already exists. Use merge instead."
+                )
             strategy.name = data['name']
+        
         if 'category' in data:
             strategy.category = data['category']
         if 'description' in data:

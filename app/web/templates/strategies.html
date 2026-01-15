@@ -200,13 +200,16 @@ async function updateCategory(strategyId, category) {
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ category })
         });
+        const data = await response.json();
         if (response.ok) {
             showToast('Category updated', 'success');
             // Update row data attribute
             document.querySelector(`[data-id="${strategyId}"]`).dataset.category = category;
+        } else {
+            showToast(data.detail || 'Update failed', 'error');
         }
     } catch (err) {
-        showToast('Update failed', 'error');
+        showToast('Update failed: ' + err.message, 'error');
     }
 }
 
@@ -224,8 +227,13 @@ function closeEditModal() {
 
 async function saveStrategy() {
     const id = document.getElementById('edit-strategy-id').value;
-    const name = document.getElementById('edit-strategy-name').value;
+    const name = document.getElementById('edit-strategy-name').value.trim();
     const description = document.getElementById('edit-strategy-description').value;
+    
+    if (!name) {
+        showToast('Strategy name is required', 'error');
+        return;
+    }
     
     try {
         const response = await fetch(`/api/strategies/${id}`, {
@@ -233,14 +241,17 @@ async function saveStrategy() {
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ name, description })
         });
+        const data = await response.json();
         if (response.ok) {
             showToast('Strategy updated', 'success');
+            closeEditModal();
             setTimeout(() => window.location.reload(), 1000);
+        } else {
+            showToast(data.detail || 'Update failed', 'error');
         }
     } catch (err) {
-        showToast('Update failed', 'error');
+        showToast('Update failed: ' + err.message, 'error');
     }
-    closeEditModal();
 }
 
 // Delete strategy

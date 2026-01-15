@@ -239,6 +239,27 @@ Classify this trade. If you cannot classify with confidence, explain what specif
         account_type: Optional[str] = None,
         mistakes: Optional[str] = None,
         lessons: Optional[str] = None,
+        # New extended fields
+        trade_date: Optional[str] = None,
+        market: Optional[str] = None,
+        timezone: Optional[str] = None,
+        order_type: Optional[str] = None,
+        exit_breakdown: Optional[str] = None,
+        fees: Optional[float] = None,
+        slippage: Optional[float] = None,
+        intended_setup: Optional[str] = None,
+        management_plan: Optional[str] = None,
+        today_open: Optional[float] = None,
+        pd_high: Optional[float] = None,
+        pd_low: Optional[float] = None,
+        pd_close: Optional[float] = None,
+        news_flag: Optional[str] = None,
+        env_note: Optional[str] = None,
+        daily_bars: Optional[str] = None,
+        twohour_bars: Optional[str] = None,
+        fivemin_bars: Optional[str] = None,
+        local_window: Optional[str] = None,
+        chart_notes: Optional[str] = None,
     ) -> dict:
         """
         Comprehensive Brooks Audit of a completed trade.
@@ -285,31 +306,88 @@ Classify this trade. If you cannot classify with confidence, explain what specif
         entry_time_str = str(entry_time) if entry_time else "Not recorded"
         exit_time_str = str(exit_time) if exit_time else "Not recorded"
         
+        # Parse OHLCV context into separate sections if provided as combined string
+        daily_section = daily_bars or ""
+        twohour_section = twohour_bars or ""
+        fivemin_section = fivemin_bars or ""
+        
+        if ohlcv_context and not daily_bars:
+            # Parse combined context into sections
+            sections = ohlcv_context.split("===")
+            for section in sections:
+                if "DAILY" in section:
+                    daily_section = section.strip()
+                elif "2-HOUR" in section:
+                    twohour_section = section.strip()
+                elif "5-MINUTE" in section:
+                    fivemin_section = section.strip()
+        
+        # Format MAE/MFE
+        mae_str = f"{mae:.2f}R" if mae else "not recorded"
+        mfe_str = f"{mfe:.2f}R" if mfe else "not recorded"
+        
         user_prompt = user_template.format(
+            # Trade identity
             ticker=ticker,
-            account_type=account_type or "paper",
-            direction=direction.upper(),
+            market=market or "US stocks",
+            timezone=timezone or "US/Eastern",
+            trade_date=trade_date or str(entry_time)[:10] if entry_time else "unknown",
             timeframe=timeframe or "5m",
+            tf_traded=timeframe or "5m",  # Alias for user prompt compatibility
+            direction=direction.lower(),
+            # Execution details
             entry_time=entry_time_str,
             entry_price=f"{entry_price:.4f}",
-            entry_order_type="stop",  # Default
-            size=f"{size:.0f}" if size else "1",
             exit_time=exit_time_str,
             exit_price=f"{exit_price:.4f}",
-            exit_order_type="market",  # Default
+            size=f"{size:.0f}" if size else "1",
+            order_type=order_type or "market",
             stop_price=f"{stop_price:.4f}",
-            target_price=f"${target_price:.4f}" if target_price else "Not set",
+            target_price=f"${target_price:.4f}" if target_price else "not set",
+            exit_breakdown=exit_breakdown or "none",
+            fees=f"${fees:.2f}" if fees else "unknown",
+            slippage=f"${slippage:.4f}" if slippage else "unknown",
+            # Performance
             r_multiple=f"{r_multiple:+.2f}R",
             outcome=outcome_str,
+            mae=mae_str,
+            mfe=mfe_str,
+            # Trader intent
+            intended_setup=intended_setup or entry_reason or "not specified",
+            trade_type=trade_type or "not specified",
+            entry_reason=entry_reason or "not provided",
+            invalidation=invalidation_condition or "not provided",
+            management_plan=management_plan or "not specified",
+            # Session context
+            today_open=f"${today_open:.2f}" if today_open else "unknown",
+            pd_high=f"${pd_high:.2f}" if pd_high else "unknown",
+            pd_low=f"${pd_low:.2f}" if pd_low else "unknown",
+            pd_close=f"${pd_close:.2f}" if pd_close else "unknown",
+            news_flag=news_flag or "unknown",
+            env_note=env_note or "unknown",
+            # OHLCV data sections
+            daily_bars=daily_section or "No daily data available",
+            twohour_bars=twohour_section or "No 2-hour data available",
+            fivemin_bars=fivemin_section or "No 5-min data available",
+            local_window=local_window or "No local window data available",
+            chart_notes=chart_notes or "none",
+            # Aliases for user prompt compatibility (different naming conventions)
+            daily_60=daily_section or "No daily data available",
+            twohour_120=twohour_section or "No 2-hour data available",
+            fivemin_234=fivemin_section or "No 5-min data available",
+            local_window_101=local_window or "No local window data available",
+            position_size=f"{size:.0f}" if size else "1",
+            intended_trade_type=trade_type or "not specified",
+            # Legacy compatibility
+            account_type=account_type or "paper",
+            entry_order_type=order_type or "stop",
+            exit_order_type="market",
             pnl_dollars=f"${pnl_dollars:.2f}" if pnl_dollars else "Not calculated",
             hold_time=hold_time_str,
-            mae_line=f"- MAE: {mae:.2f}R (max adverse excursion)" if mae else "",
-            mfe_line=f"- MFE: {mfe:.2f}R (max favorable excursion)" if mfe else "",
-            entry_reason=entry_reason or "Not provided",
-            trade_type=trade_type or "Not specified",
+            mae_line=f"- MAE: {mae:.2f}R" if mae else "",
+            mfe_line=f"- MFE: {mfe:.2f}R" if mfe else "",
             stop_reason=stop_reason or "Not provided",
             target_reason=target_reason or "Not provided",
-            invalidation=invalidation_condition or "Not provided",
             confidence=f"{confidence_level}/5" if confidence_level else "Not rated",
             emotional_state=emotional_state or "Not recorded",
             followed_plan="Yes" if followed_plan else ("No" if followed_plan is False else "Not recorded"),

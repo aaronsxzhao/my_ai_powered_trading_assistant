@@ -74,7 +74,7 @@ class TradeReview:
 class TradeCoach:
     """
     Review trades using Brooks price action principles.
-    
+
     Uses LLM for intelligent analysis - no hardcoded pattern matching.
     Falls back to basic rule-based analysis if LLM unavailable.
     """
@@ -83,6 +83,7 @@ class TradeCoach:
         """Initialize coach."""
         self.analytics = TradeAnalytics()
         self._llm_analyzer = None
+        self._data_provider = None
 
     @property
     def llm_analyzer(self):
@@ -91,6 +92,14 @@ class TradeCoach:
             from app.llm.analyzer import get_analyzer
             self._llm_analyzer = get_analyzer()
         return self._llm_analyzer
+
+    @property
+    def data_provider(self):
+        """Lazy load data provider."""
+        if self._data_provider is None:
+            from app.data.providers import get_data_provider
+            self._data_provider = get_data_provider()
+        return self._data_provider
 
     def review_trade(self, trade_id: int) -> Optional[TradeReview]:
         """
@@ -109,8 +118,11 @@ class TradeCoach:
                 logger.warning(f"Trade {trade_id} not found")
                 return None
 
-            # Get market context data
+            # Get market context data (separate sections)
             ohlcv_context = self._get_ohlcv_context_string(trade)
+            
+            # Get prior day levels and session context
+            pd_high, pd_low, pd_close, today_open = self._get_session_context(trade)
 
             # Use LLM for comprehensive Brooks Audit
             if self.llm_analyzer.is_available:
@@ -143,6 +155,16 @@ class TradeCoach:
                     account_type=trade.account_type or "paper",
                     mistakes=trade.mistakes,
                     lessons=trade.lessons,
+                    # New extended fields
+                    trade_date=str(trade.trade_date) if trade.trade_date else None,
+                    market=getattr(trade, 'market', None) or "US stocks",
+                    timezone=getattr(trade, 'timezone', None) or "US/Eastern",
+                    intended_setup=trade.entry_reason,
+                    management_plan=trade.target_reason,
+                    pd_high=pd_high,
+                    pd_low=pd_low,
+                    pd_close=pd_close,
+                    today_open=today_open,
                 )
 
                 if "error" not in llm_analysis and "raw_analysis" not in llm_analysis:
@@ -211,44 +233,59 @@ class TradeCoach:
         """
         Get OHLCV data as a string for LLM context.
         
+        IMPORTANT: Uses entry_time as the cutoff to avoid look-ahead bias.
+        Only data that was available at entry time is included.
+        
         Fetches different data based on trade timeframe:
-        - 5m (scalp): 30 daily bars, 60 hourly bars, 234 5-min bars
-        - 2h (swing): 60 daily bars, 120 hourly bars
-        - 1d (position): 100+ daily bars
+        - 5m (scalp): 60 daily bars, 120 2-hour bars, 234 5-min bars
+        - 2h (swing): 60 daily bars, 120 2-hour bars
+        - 1d (position): 120 daily bars
         """
         try:
-            end_date = datetime.combine(trade.trade_date, datetime.min.time())
+            # CRITICAL: Use entry_time as the cutoff point to avoid look-ahead bias
+            # This ensures we only analyze with data that was available when entering the trade
+            if trade.entry_time:
+                entry_cutoff = trade.entry_time
+                logger.info(f"📊 Using entry_time as cutoff: {entry_cutoff} (no look-ahead bias)")
+            else:
+                # Fallback to end of trade date if entry_time not recorded
+                entry_cutoff = datetime.combine(trade.trade_date, datetime.max.time().replace(microsecond=0))
+                logger.warning(f"⚠️ No entry_time recorded, using trade_date EOD: {entry_cutoff}")
+            
             timeframe = trade.timeframe or "5m"
             
-            logger.info(f"📊 Fetching multi-timeframe OHLCV for {trade.ticker} (trade timeframe: {timeframe})")
+            logger.info(f"📊 Fetching multi-timeframe OHLCV for {trade.ticker} (trade TF: {timeframe}, cutoff: {entry_cutoff})")
             
             all_context = []
             
             # Brooks-specified bar counts for comprehensive context:
-            # - Daily: 60 bars (multi-week trend/range context)
-            # - 2-Hour: 120 bars (structure, legs, wedges, tests)
-            # - 5-Min: 234 bars (3 trading days = 78 bars/day × 3)
+            # - Daily: 60 bars (multi-week trend/range context) - up to prior day close
+            # - 2-Hour: 120 bars (structure, legs, wedges, tests) - up to entry time
+            # - 5-Min: 234 bars (3 trading days) - up to entry time
+            
+            # For daily bars, use the day BEFORE entry to avoid partial day data
+            daily_cutoff = datetime.combine(trade.trade_date - timedelta(days=1), datetime.max.time())
             
             if timeframe == "5m":
                 # 5-min scalp/day trades: Full Brooks package
-                all_context.append(self._fetch_ohlcv_section(trade.ticker, "1d", end_date, 60, "DAILY"))
-                all_context.append(self._fetch_ohlcv_section(trade.ticker, "2h", end_date, 120, "2-HOUR"))
-                all_context.append(self._fetch_ohlcv_section(trade.ticker, "5m", end_date, 234, "5-MINUTE"))
+                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "1d", daily_cutoff, 60, "DAILY (up to prior day close)"))
+                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "2h", entry_cutoff, 120, "2-HOUR (up to entry time)"))
+                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "5m", entry_cutoff, 234, "5-MINUTE (up to entry time)"))
             
             elif timeframe == "2h":
                 # 2-hour swing trades: Daily + 2H context
-                all_context.append(self._fetch_ohlcv_section(trade.ticker, "1d", end_date, 60, "DAILY"))
-                all_context.append(self._fetch_ohlcv_section(trade.ticker, "2h", end_date, 120, "2-HOUR"))
+                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "1d", daily_cutoff, 60, "DAILY (up to prior day close)"))
+                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "2h", entry_cutoff, 120, "2-HOUR (up to entry time)"))
             
             elif timeframe == "1d":
                 # Daily position trades: Extended daily context
-                all_context.append(self._fetch_ohlcv_section(trade.ticker, "1d", end_date, 120, "DAILY"))
+                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "1d", daily_cutoff, 120, "DAILY (up to prior day close)"))
             
             else:
                 # Default to 5m timeframe with full Brooks package
-                all_context.append(self._fetch_ohlcv_section(trade.ticker, "1d", end_date, 60, "DAILY"))
-                all_context.append(self._fetch_ohlcv_section(trade.ticker, "2h", end_date, 120, "2-HOUR"))
-                all_context.append(self._fetch_ohlcv_section(trade.ticker, "5m", end_date, 234, "5-MINUTE"))
+                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "1d", daily_cutoff, 60, "DAILY (up to prior day close)"))
+                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "2h", entry_cutoff, 120, "2-HOUR (up to entry time)"))
+                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "5m", entry_cutoff, 234, "5-MINUTE (up to entry time)"))
             
             result = "\n\n".join([ctx for ctx in all_context if ctx])
             if not result:
@@ -259,6 +296,128 @@ class TradeCoach:
             logger.warning(f"Failed to get OHLCV context: {e}")
             return "Market data unavailable"
     
+    def _fetch_ohlcv_section_with_cutoff(self, ticker: str, interval: str, cutoff_time: datetime, num_bars: int, label: str) -> str:
+        """Fetch OHLCV data up to a specific cutoff time (no future data).
+        
+        Args:
+            ticker: Stock ticker
+            interval: Time interval (1d, 2h, 5m, etc.)
+            cutoff_time: Maximum timestamp - no data after this point
+            num_bars: Number of bars to fetch
+            label: Label for this section
+        """
+        try:
+            # Calculate start date based on interval
+            if interval == "1d":
+                start_date = cutoff_time - timedelta(days=num_bars + 10)
+            elif interval == "2h":
+                start_date = cutoff_time - timedelta(hours=num_bars * 2 + 20)
+            elif interval == "1h":
+                start_date = cutoff_time - timedelta(hours=num_bars + 10)
+            elif interval == "5m":
+                start_date = cutoff_time - timedelta(minutes=num_bars * 5 + 100)
+            else:
+                start_date = cutoff_time - timedelta(days=num_bars + 10)
+            
+            ohlcv = self.data_provider.get_ohlcv(
+                ticker,
+                interval,
+                start_date,
+                cutoff_time  # Use cutoff_time as end date
+            )
+            
+            if ohlcv is None or ohlcv.empty:
+                logger.warning(f"No {interval} data returned for {ticker}")
+                return f"=== {label} ===\nNo data available"
+            
+            # Filter to ensure no data after cutoff (extra safety)
+            if 'timestamp' in ohlcv.columns:
+                ohlcv = ohlcv[ohlcv['timestamp'] <= cutoff_time]
+            
+            # Limit to requested number of bars (most recent ones before cutoff)
+            ohlcv = ohlcv.tail(num_bars)
+            
+            if ohlcv.empty:
+                return f"=== {label} ===\nNo data available before cutoff"
+            
+            # Format as readable string
+            lines = [f"=== {label} ==="]
+            lines.append(f"Cutoff: {cutoff_time.strftime('%Y-%m-%d %H:%M')}")
+            lines.append(f"Bars: {len(ohlcv)}")
+            lines.append("timestamp, open, high, low, close, volume")
+            
+            for _, row in ohlcv.iterrows():
+                ts = row.get('timestamp', row.name)
+                if hasattr(ts, 'strftime'):
+                    ts_str = ts.strftime('%Y-%m-%d %H:%M')
+                else:
+                    ts_str = str(ts)
+                
+                lines.append(
+                    f"{ts_str}, {row['open']:.4f}, {row['high']:.4f}, "
+                    f"{row['low']:.4f}, {row['close']:.4f}, {int(row.get('volume', 0))}"
+                )
+            
+            return "\n".join(lines)
+            
+        except Exception as e:
+            logger.warning(f"Failed to fetch {interval} data for {ticker}: {e}")
+            return f"=== {label} ===\nData fetch failed: {e}"
+
+    def _get_session_context(self, trade: Trade) -> tuple:
+        """Get prior day levels and today's open for session context.
+        
+        Uses data available BEFORE entry (no look-ahead bias).
+        
+        Returns:
+            tuple: (pd_high, pd_low, pd_close, today_open)
+        """
+        try:
+            # Use the day before trade date to get prior day data (available at market open)
+            prior_day_date = trade.trade_date - timedelta(days=1)
+            start_date = prior_day_date - timedelta(days=5)
+            end_date = datetime.combine(prior_day_date, datetime.max.time())
+            
+            ohlcv = self.data_provider.get_ohlcv(
+                trade.ticker,
+                "1d",
+                start_date,
+                end_date
+            )
+            
+            if ohlcv is None or ohlcv.empty:
+                return None, None, None, None
+            
+            # Prior day is the last complete day before trade date
+            prior_day = ohlcv.iloc[-1]
+            
+            # For today's open, we need to fetch the trade date's data
+            # but only the open (which is known at market open)
+            trade_day_start = datetime.combine(trade.trade_date, datetime.min.time())
+            trade_day_end = datetime.combine(trade.trade_date, datetime.max.time())
+            
+            today_ohlcv = self.data_provider.get_ohlcv(
+                trade.ticker,
+                "1d", 
+                trade_day_start,
+                trade_day_end
+            )
+            
+            today_open = None
+            if today_ohlcv is not None and not today_ohlcv.empty:
+                today_open = today_ohlcv.iloc[-1]['open']
+            
+            return (
+                prior_day['high'],
+                prior_day['low'],
+                prior_day['close'],
+                today_open
+            )
+            
+        except Exception as e:
+            logger.warning(f"Failed to get session context: {e}")
+            return None, None, None, None
+
     def _fetch_ohlcv_section(self, ticker: str, interval: str, end_date: datetime, num_bars: int, label: str) -> str:
         """Fetch OHLCV data for a specific interval and format it."""
         try:

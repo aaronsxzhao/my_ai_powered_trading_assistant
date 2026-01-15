@@ -85,11 +85,13 @@
                         {% endif %}
                     </div>
                 </div>
-                <div class="stat-card">
+                <div class="stat-card overflow-hidden">
                     <div class="text-sm text-dark-400 mb-1">Strategy</div>
-                    <div class="text-sm font-medium text-accent-400">{{ trade.strategy.name if trade.strategy else 'Unclassified' }}</div>
+                    <div class="text-sm font-medium text-accent-400 truncate max-w-full" title="{{ trade.strategy.name if trade.strategy else 'Unclassified' }}">
+                        {{ trade.strategy.name if trade.strategy else 'Unclassified' }}
+                    </div>
                     {% if trade.ai_setup_classification and trade.strategy and trade.ai_setup_classification != trade.strategy.name %}
-                    <div class="text-xs text-dark-500 mt-1">AI: {{ trade.ai_setup_classification }}</div>
+                    <div class="text-xs text-dark-500 mt-1 truncate" title="AI: {{ trade.ai_setup_classification }}">AI: {{ trade.ai_setup_classification }}</div>
                     {% endif %}
                     <button onclick="openStrategyModal()" class="text-xs text-dark-400 hover:text-accent-400 mt-1">✏️ Edit</button>
                 </div>

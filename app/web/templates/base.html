@@ -115,8 +115,9 @@
             
             /* Stats */
             .stat-card {
-                @apply bg-gradient-to-br from-dark-700/50 to-dark-800/50 rounded-2xl p-5 
-                       border border-dark-600/30 text-center transition-all duration-300 hover:scale-[1.02];
+                @apply bg-gradient-to-br from-dark-700/50 to-dark-800/50 rounded-2xl p-5
+                       border border-dark-600/30 text-center transition-all duration-300 hover:scale-[1.02]
+                       min-w-0 overflow-hidden;
             }
             .stat-value {
                 @apply text-3xl font-bold bg-gradient-to-r from-white to-dark-200 bg-clip-text text-transparent;

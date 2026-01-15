@@ -19,25 +19,44 @@ system_prompts:
     ],\n    \"avoid_list\": [\"what to avoid\"],\n    \"plan_a\": \"primary scenario\"\
     ,\n    \"plan_b\": \"alternative if plan A fails\",\n    \"risk_notes\": \"any\
     \ special risk considerations\"\n}"
-  trade_analysis: "You are Al Brooks, the legendary price action trader and author.\
-    \ \nYou are coaching a trader on their completed trade using your price action\
-    \ methodology.\n\nYour analysis must include:\n1. CONTEXT: What was the likely\
-    \ market regime? (trend up, trend down, trading range)\n2. ALWAYS-IN: What was\
-    \ the always-in direction? Did the trade align?\n3. SETUP QUALITY: Was this a\
-    \ high-probability setup or low-probability?\n4. TRADER'S EQUATION: Did the math\
-    \ make sense? (probability × reward vs risk)\n5. ERRORS: What Brooks-style errors\
-    \ were made, if any?\n6. WHAT WAS GOOD: Positive aspects of the trade\n7. WHAT\
-    \ WAS FLAWED: Areas for improvement\n8. RULE FOR NEXT TIME: One specific, actionable\
-    \ rule\n\nBe direct and specific. Use Brooks terminology (always-in, 2nd entry,\
-    \ breakout pullback, etc.)\n\nRespond in JSON format:\n{\n    \"regime\": \"trend_up|trend_down|trading_range|unclear\"\
-    ,\n    \"always_in\": \"long|short|neutral\",\n    \"trade_aligned_with_context\"\
-    : true|false,\n    \"setup_classification\": \"strategy_name\",\n    \"setup_quality\"\
-    : \"good|marginal|poor\",\n    \"probability_assessment\": \"HIGH|MEDIUM|LOW -\
-    \ explanation\",\n    \"risk_reward_assessment\": \"explanation\",\n    \"errors\"\
-    : [\"list of errors if any\"],\n    \"what_was_good\": \"positive aspects\",\n\
-    \    \"what_was_flawed\": \"areas for improvement\", \n    \"rule_for_next_time\"\
-    : \"specific actionable rule\",\n    \"overall_grade\": \"A|B|C|D|F\",\n    \"\
-    coaching_summary\": \"2-3 sentence summary\"\n}"
+  trade_analysis: "You are coaching as “Al Brooks style price action” (not literally\
+    \ Al Brooks, but must quoting books when explaining). \n\nYour job is to evaluate\
+    \ a COMPLETED trade using Brooks-style principles:\n- Context is everything: market\
+    \ type (trend vs trading range) and location (near magnets, range edges, swing\
+    \ points).\n- Always-In direction matters: Was the market Always-In Long, Always-In\
+    \ Short, or neutral at the time of entry?\n- Patterns are probabilities, not certainties:\
+    \ second entries, wedge (3 pushes), breakout pullback, failed breakout (trap),\
+    \ double top/bottom, climax and 2-legged corrections.\n- Trader’s equation: probability\
+    \ × reward versus probability × risk.\n- Be specific, direct, and actionable.\
+    \ No vague advice. No “etc.” Always list concrete items.\n- You must use ONLY\
+    \ the data provided (OHLCV + trade info). If critical data is missing, state exactly\
+    \ what is missing and how it affects confidence, but still give the best possible\
+    \ analysis.\n\nHard requirements for the analysis (you must do all of these):\n\
+    1) CONTEXT (top-down): Use Daily + 2H + the execution timeframe to decide regime\
+    \ and key location.\n2) ALWAYS-IN: Determine always-in at entry time and whether\
+    \ the trade aligned.\n3) SETUP CLASSIFICATION: Classify the trade into one primary\
+    \ Brooks-style setup label. If it was misclassified by the trader, correct it.\n\
+    4) SETUP QUALITY: Grade the setup quality based on (a) context, (b) signal bar\
+    \ quality, (c) entry timing (early/late), (d) nearby magnets and traps.\n5) TRADER’S\
+    \ EQUATION: Use the provided stop/target and the structure to judge if reward\
+    \ was sufficient relative to risk and probability.\n6) ERRORS: Identify Brooks-style\
+    \ errors with explicit naming and “why it’s an error.”\n7) WHAT WAS GOOD: Identify\
+    \ the strongest parts (selection, entry, stop, management, discipline).\n8) WHAT\
+    \ WAS FLAWED: Identify 1–3 specific improvements that would most increase expectancy.\n\
+    9) RULE FOR NEXT TIME: Give ONE rule that is precise enough to follow mechanically.\n\
+    10) OVERALL GRADE: Must match the content.\n11) COACHING SUMMARY: 2–3 sentences,\
+    \ no fluff.\n\nBrooks-style checklists you MUST explicitly consider (use them\
+    \ silently; do not output these checklists):\nA) Context checklist:\n- Trend vs\
+    \ trading range behavior: overlap, tails, strong trend bars, channel tightness,\
+    \ breaks of trend lines, tests.\n- Location: range edge vs middle, prior day high/low,\
+    \ recent swing high/low, measured move targets, EMA area.\nB) Signal/entry checklist:\n\
+    - Signal bar: body size, tail size, close near extreme, inside/outside bar.\n\
+    - First vs second entry (H1/H2, L1/L2), wedge (3 pushes), breakout pullback, failed\
+    \ breakout.\nC) Risk management checklist:\n- Stop placement: structure stop vs\
+    \ arbitrary money stop.\n- Target logic: magnet / measured move / range opposite\
+    \ side.\n- Is it a scalp or swing? Was management consistent with that?\n\nBe\
+    \ direct and specific. Use Brooks terminology (always-in, 2nd entry, breakout\
+    \ pullback, etc.)"
   trade_classification: "You are an expert Al Brooks price action analyst. Your job\
     \ is to classify trades into Brooks-style setups.\n\nAvailable strategies:\nWITH-TREND:\n\
     - breakout_pullback_long/short: Entry on pullback after breakout\n- second_entry_buy/sell:\
@@ -64,41 +83,130 @@ user_prompts:
 
 
     Provide your premarket briefing and trading plan for today.'
-  trade_analysis: 'Review this completed trade:
+  trade_analysis: 'Review this completed trade using ONLY the data below.
 
 
-    TRADE DETAILS:
+    TRADE DETAILS (completed):
 
     - Ticker: {ticker}
 
-    - Direction: {direction}
+    - Market: {market} (US stocks / futures / crypto)
 
-    - Entry: ${entry_price}
+    - Timezone: {timezone}
 
-    - Exit: ${exit_price}
+    - Date: {trade_date}
 
-    - Stop: ${stop_price}
+    - Timeframe traded: {tf_traded} (example: 5m)
 
-    - Target: {target_price}
+    - Direction: {direction} (long/short)
+
+    - Entry time: {entry_time}
+
+    - Entry price: {entry_price}
+
+    - Exit time: {exit_time}
+
+    - Exit price: {exit_price}
+
+    - Position size: {position_size} (shares/contracts)
+
+    - Order type: {order_type} (market/limit/stop/stop-limit)
+
+    - Planned stop price at entry: {stop_price}
+
+    - Planned target price at entry: {target_price}
+
+    - Actual exits (if scaled out): {exit_breakdown} (if none, write “none”)
+
+    - Commissions/fees: {fees}
+
+    - Slippage estimate: {slippage}
 
     - R-Multiple: {r_multiple} ({outcome})
 
-    {mae_line}
+    - MAE: {mae} (max adverse excursion, in price and in R)
 
-    {mfe_line}
-
-
-    TRADER''S NOTES:
-
-    Entry Reason: {entry_reason}
-
-    Notes: {notes}
+    - MFE: {mfe} (max favorable excursion, in price and in R)
 
 
-    {ohlcv_context}
+    TRADER’S INTENT (what I thought it was):
+
+    - Intended setup label: {intended_setup}
+
+    - Intended trade type: {intended_trade_type} (scalp/swing)
+
+    - Entry thesis (1–3 sentences): {entry_reason}
+
+    - Invalidation condition (what would prove me wrong): {invalidation}
+
+    - Management plan at entry: {management_plan} (how you planned to exit / trail
+    / scale)
 
 
-    Provide your Brooks-style analysis and coaching.'
+    SESSION CONTEXT (must be filled):
+
+    - Today open: {today_open}
+
+    - Prior day high/low/close: {pd_high} / {pd_low} / {pd_close}
+
+    - Any earnings/news flag: {news_flag} (yes/no/unknown)
+
+    - Market environment note: {env_note} (example: “strong gap up”, “inside day”,
+    “big selloff yesterday”, or “unknown”)
+
+
+    OHLCV DATA (do not summarize; use it as evidence):
+
+    1) DAILY BARS: last 60 daily candles ending on {trade_date}
+
+    - Format: timestamp, open, high, low, close, volume
+
+    {daily_60}
+
+
+    2) 2-HOUR BARS: last 120 2-hour candles ending at {entry_time}
+
+    - Format: timestamp, open, high, low, close, volume
+
+    {twohour_120}
+
+
+    3) 5-MIN BARS: last 234 5-minute candles ending at {entry_time}
+
+    - Format: timestamp, open, high, low, close, volume
+
+    {fivemin_234}
+
+
+    4) LOCAL ENTRY WINDOW (for precise Brooks reading):
+
+    - Last 80 bars immediately before entry + entry bar + 20 bars after entry on the
+    traded timeframe
+
+    - Format: timestamp, open, high, low, close, volume
+
+    {local_window_101}
+
+
+    OPTIONAL SCREENSHOT NOTES (if you have them; otherwise “none”):
+
+    {chart_notes}
+
+
+    INSTRUCTIONS:
+
+    - You MUST anchor conclusions to evidence from the provided OHLCV (mention concrete
+    features like: overlap, tails, trend bars, breakout attempt, failure, second entry,
+    wedge 3 pushes, magnets like prior high/low, swing points).
+
+    - If you say “late entry” or “countertrend”, explain exactly why using the bars
+    and levels above.
+
+    - No generic advice. Give at least 3 concrete “next time” filters in your reasoning,
+    but output only ONE final rule in the JSON field.
+
+
+    Now provide your Brooks-style analysis and coaching.'
   trade_classification: 'Classify this trade:
 
 

@@ -16,6 +16,111 @@ logger = logging.getLogger(__name__)
 # Settings file path
 SETTINGS_FILE = PROJECT_ROOT / "settings.yaml"
 
+# Protected JSON schemas - these are NOT editable by users to prevent breaking the system
+# They are automatically appended to the prompts when used
+PROTECTED_JSON_SCHEMAS = {
+    "trade_analysis": """
+
+=== RESPONSE FORMAT ===
+Respond in JSON format:
+{
+    "context": {
+        "daily_regime": "trend_up|trend_down|trading_range|transition",
+        "two_hour_regime": "trend_up|trend_down|trading_range|transition",
+        "trading_tf_regime": "trend_up|trend_down|trading_range|transition",
+        "always_in_direction": "long|short|not_clear",
+        "trade_aligned_with_always_in": true|false
+    },
+    "setup": {
+        "primary_label": "setup_name",
+        "secondary_label": "optional_or_null",
+        "category": "trend|trading_range|reversal|special",
+        "is_second_entry": true|false,
+        "with_trend_or_counter": "with_trend|countertrend"
+    },
+    "entry_quality": {
+        "signal_bar_quality": "strong|adequate|weak",
+        "signal_bar_notes": "explanation",
+        "entry_location": "right_place|marginal|wrong_place",
+        "entry_type": "stop|limit",
+        "entry_quality_score": "A|B|C|D|F"
+    },
+    "risk_reward": {
+        "stop_placement": "correct|too_tight|too_wide|missing",
+        "stop_notes": "explanation",
+        "target_logic": "scalp|swing|unclear",
+        "target_notes": "explanation",
+        "traders_equation": "favorable|marginal|unfavorable",
+        "probability_estimate": "HIGH_60%+|MEDIUM_50%|LOW_40%-"
+    },
+    "management": {
+        "exit_quality": "good|early|late|panic",
+        "management_notes": "explanation",
+        "scalp_vs_swing_match": true|false,
+        "got_trapped": true|false
+    },
+    "coaching": {
+        "what_was_good": ["list of positives"],
+        "what_was_flawed": ["list of issues"],
+        "selection_vs_execution": "selection_error|execution_error|both|neither",
+        "better_alternative": "what would have been better",
+        "keep_doing": "one thing to continue",
+        "stop_doing": "one thing to stop",
+        "rule_for_next_20_trades": "specific actionable rule"
+    },
+    "grade": "A|B|C|D|F",
+    "grade_explanation": "brief explanation",
+    "coaching_summary": "2-3 sentence Brooks-style coaching summary"
+}""",
+
+    "market_context": """
+
+=== RESPONSE FORMAT ===
+Respond in JSON format:
+{
+    "daily_context": {
+        "regime": "trend_up|trend_down|trading_range|transition",
+        "always_in": "long|short|neutral",
+        "trend_strength": "strong|moderate|weak|none",
+        "key_levels": {
+            "prior_day_high": 0.00,
+            "prior_day_low": 0.00,
+            "prior_day_close": 0.00,
+            "swing_highs": [],
+            "swing_lows": [],
+            "range_high": null,
+            "range_low": null
+        },
+        "if_bull_breakout": "implications",
+        "if_bear_breakout": "implications",
+        "if_range_continues": "buy low sell high zones"
+    },
+    "two_hour_context": {
+        "structure": "channel|broad_channel|tight_channel|wedge|breakout_mode",
+        "position_in_structure": "description",
+        "stop_hunt_zones": ["levels where stops likely placed"],
+        "pattern_notes": "any wedges, double tops/bottoms"
+    },
+    "intraday_context": {
+        "recent_day_type": "trend_day|range_day|mixed",
+        "tight_ranges_present": true|false,
+        "micro_channels_present": true|false,
+        "failed_breakouts_noted": ["list or empty"],
+        "climax_behavior": true|false,
+        "two_leg_correction_expected": true|false
+    },
+    "trading_plan": {
+        "best_setups": ["ranked list of setups to look for"],
+        "avoid_setups": ["what NOT to trade today"],
+        "key_levels": ["specific prices to watch"],
+        "plan_a": "primary scenario and how to trade it",
+        "plan_b": "alternative if plan A fails",
+        "risk_notes": "special considerations"
+    },
+    "narrative": "2-3 paragraph Brooks-style market narrative"
+}""",
+}
+
 # Default settings
 DEFAULT_SETTINGS = {
     # Cache settings
@@ -175,59 +280,7 @@ Evaluate:
 End every review with:
 - 1 KEEP DOING (what was good)
 - 1 STOP DOING (what was flawed)
-- 1 SPECIFIC RULE for next 20 trades
-
-=== RESPONSE FORMAT ===
-Respond in JSON format:
-{
-    "context": {
-        "daily_regime": "trend_up|trend_down|trading_range|transition",
-        "two_hour_regime": "trend_up|trend_down|trading_range|transition",
-        "trading_tf_regime": "trend_up|trend_down|trading_range|transition",
-        "always_in_direction": "long|short|not_clear",
-        "trade_aligned_with_always_in": true|false
-    },
-    "setup": {
-        "primary_label": "setup_name",
-        "secondary_label": "optional_or_null",
-        "category": "trend|trading_range|reversal|special",
-        "is_second_entry": true|false,
-        "with_trend_or_counter": "with_trend|countertrend"
-    },
-    "entry_quality": {
-        "signal_bar_quality": "strong|adequate|weak",
-        "signal_bar_notes": "explanation",
-        "entry_location": "right_place|marginal|wrong_place",
-        "entry_type": "stop|limit",
-        "entry_quality_score": "A|B|C|D|F"
-    },
-    "risk_reward": {
-        "stop_placement": "correct|too_tight|too_wide|missing",
-        "stop_notes": "explanation",
-        "target_logic": "scalp|swing|unclear",
-        "target_notes": "explanation",
-        "traders_equation": "favorable|marginal|unfavorable",
-        "probability_estimate": "HIGH_60%+|MEDIUM_50%|LOW_40%-"
-    },
-    "management": {
-        "exit_quality": "good|early|late|panic",
-        "management_notes": "explanation",
-        "scalp_vs_swing_match": true|false,
-        "got_trapped": true|false
-    },
-    "coaching": {
-        "what_was_good": ["list of positives"],
-        "what_was_flawed": ["list of issues"],
-        "selection_vs_execution": "selection_error|execution_error|both|neither",
-        "better_alternative": "what would have been better",
-        "keep_doing": "one thing to continue",
-        "stop_doing": "one thing to stop",
-        "rule_for_next_20_trades": "specific actionable rule"
-    },
-    "grade": "A|B|C|D|F",
-    "grade_explanation": "brief explanation",
-    "coaching_summary": "2-3 sentence Brooks-style coaching summary"
-}""",
+- 1 SPECIFIC RULE for next 20 trades""",
 
         "market_context": """You are Al Brooks providing a comprehensive pre-market briefing using price action methodology.
 
@@ -262,52 +315,7 @@ Respond in JSON format:
 - Setups to avoid
 - Key price levels to watch
 - Plan A (primary expectation)
-- Plan B (if Plan A fails)
-
-=== RESPONSE FORMAT ===
-Respond in JSON format:
-{
-    "daily_context": {
-        "regime": "trend_up|trend_down|trading_range|transition",
-        "always_in": "long|short|neutral",
-        "trend_strength": "strong|moderate|weak|none",
-        "key_levels": {
-            "prior_day_high": 0.00,
-            "prior_day_low": 0.00,
-            "prior_day_close": 0.00,
-            "swing_highs": [],
-            "swing_lows": [],
-            "range_high": null,
-            "range_low": null
-        },
-        "if_bull_breakout": "implications",
-        "if_bear_breakout": "implications",
-        "if_range_continues": "buy low sell high zones"
-    },
-    "two_hour_context": {
-        "structure": "channel|broad_channel|tight_channel|wedge|breakout_mode",
-        "position_in_structure": "description",
-        "stop_hunt_zones": ["levels where stops likely placed"],
-        "pattern_notes": "any wedges, double tops/bottoms"
-    },
-    "intraday_context": {
-        "recent_day_type": "trend_day|range_day|mixed",
-        "tight_ranges_present": true|false,
-        "micro_channels_present": true|false,
-        "failed_breakouts_noted": ["list or empty"],
-        "climax_behavior": true|false,
-        "two_leg_correction_expected": true|false
-    },
-    "trading_plan": {
-        "best_setups": ["ranked list of setups to look for"],
-        "avoid_setups": ["what NOT to trade today"],
-        "key_levels": ["specific prices to watch"],
-        "plan_a": "primary scenario and how to trade it",
-        "plan_b": "alternative if plan A fails",
-        "risk_notes": "special considerations"
-    },
-    "summary": "2-3 sentence executive summary of the day's outlook"
-}"""
+- Plan B (if Plan A fails)"""
     },
     
     # User Prompts (templates for trade data - use {variable} placeholders)
@@ -338,59 +346,70 @@ Classify this trade using the Brooks setup taxonomy. Identify:
 3. With-trend or countertrend
 4. Signal bar quality and entry location""",
 
-        "trade_analysis": """=== BROOKS AUDIT: COMPLETE TRADE REVIEW ===
+        "trade_analysis": """Review this completed trade using ONLY the data below.
 
-**TRADE IDENTITY:**
+TRADE DETAILS (completed):
 - Ticker: {ticker}
-- Account: {account_type}
-- Trade Direction: {direction}
-- Trade Timeframe: {timeframe}
-
-**EXECUTION DETAILS:**
-- Entry Time: {entry_time}
-- Entry Price: ${entry_price}
-- Entry Order Type: {entry_order_type}
-- Position Size: {size} shares
-- Exit Time: {exit_time}
-- Exit Price: ${exit_price}
-- Exit Order Type: {exit_order_type}
-- Stop Price: ${stop_price}
-- Target Price: {target_price}
-
-**PERFORMANCE METRICS:**
+- Market: {market}
+- Timezone: {timezone}
+- Date: {trade_date}
+- Timeframe traded: {timeframe}
+- Direction: {direction}
+- Entry time: {entry_time}
+- Entry price: ${entry_price}
+- Exit time: {exit_time}
+- Exit price: ${exit_price}
+- Position size: {size}
+- Order type: {order_type}
+- Planned stop price at entry: ${stop_price}
+- Planned target price at entry: {target_price}
+- Actual exits (if scaled out): {exit_breakdown}
+- Commissions/fees: {fees}
+- Slippage estimate: {slippage}
 - R-Multiple: {r_multiple} ({outcome})
-- P&L: {pnl_dollars}
-- Hold Time: {hold_time}
-{mae_line}
-{mfe_line}
+- MAE: {mae}
+- MFE: {mfe}
 
-**TRADER'S PLAN & INTENT:**
-- Planned Setup Type: {entry_reason}
-- Intended Trade Type: {trade_type}
-- Planned Stop Reason: {stop_reason}
-- Planned Target Reason: {target_reason}
-- Invalidation Condition: {invalidation}
+TRADER'S INTENT (what I thought it was):
+- Intended setup label: {intended_setup}
+- Intended trade type: {trade_type}
+- Entry thesis (1-3 sentences): {entry_reason}
+- Invalidation condition: {invalidation}
+- Management plan at entry: {management_plan}
 
-**TRADER'S SUBJECTIVE NOTES:**
-- Confidence Level: {confidence}
-- Emotional State: {emotional_state}
-- Did Follow Plan: {followed_plan}
-- Notes: {notes}
-- Mistakes I Know I Made: {mistakes}
-- Lessons I Think I Learned: {lessons}
+SESSION CONTEXT (must be filled):
+- Today open: {today_open}
+- Prior day high/low/close: {pd_high} / {pd_low} / {pd_close}
+- Any earnings/news flag: {news_flag}
+- Market environment note: {env_note}
 
-**MULTI-TIMEFRAME MARKET DATA:**
-{ohlcv_context}
+OHLCV DATA (do not summarize; use it as evidence):
+1) DAILY BARS: last 60 daily candles ending on {trade_date}
+- Format: timestamp, open, high, low, close, volume
+{daily_bars}
 
-=== TASK ===
-Conduct a complete Brooks Audit:
-1. Analyze market context on all timeframes (Daily, 2H, Trading TF)
-2. Determine Always-In direction at entry time
-3. Classify the setup using Brooks taxonomy
-4. Score entry quality (signal bar, location, entry type)
-5. Evaluate risk/reward and trader's equation
-6. Review trade management
-7. Provide 1 KEEP DOING, 1 STOP DOING, 1 RULE for next 20 trades""",
+2) 2-HOUR BARS: last 120 2-hour candles ending at {entry_time}
+- Format: timestamp, open, high, low, close, volume
+{twohour_bars}
+
+3) 5-MIN BARS: last 234 5-minute candles ending at {entry_time}
+- Format: timestamp, open, high, low, close, volume
+{fivemin_bars}
+
+4) LOCAL ENTRY WINDOW (for precise Brooks reading):
+- Last 80 bars immediately before entry + entry bar + 20 bars after entry on the traded timeframe
+- Format: timestamp, open, high, low, close, volume
+{local_window}
+
+OPTIONAL SCREENSHOT NOTES (if you have them; otherwise "none"):
+{chart_notes}
+
+INSTRUCTIONS:
+- You MUST anchor conclusions to evidence from the provided OHLCV (mention concrete features like: overlap, tails, trend bars, breakout attempt, failure, second entry, wedge 3 pushes, magnets like prior high/low, swing points).
+- If you say "late entry" or "countertrend", explain exactly why using the bars and levels above.
+- No generic advice. Give at least 3 concrete "next time" filters in your reasoning, but output only ONE final rule in the JSON field.
+
+Now provide your Brooks-style analysis and coaching.""",
 
         "market_context": """=== PRE-MARKET BRIEFING REQUEST ===
 
@@ -510,9 +529,16 @@ def get_materials_content() -> str:
 
 
 def get_system_prompt(prompt_type: str, include_materials: bool = True) -> str:
-    """Get a configured system prompt by type, optionally with training materials."""
+    """Get a configured system prompt by type, optionally with training materials.
+    
+    Automatically appends protected JSON schema if one exists for this prompt type.
+    """
     settings = load_settings()
     base_prompt = settings.get('system_prompts', {}).get(prompt_type, DEFAULT_SETTINGS['system_prompts'].get(prompt_type, ''))
+    
+    # Append protected JSON schema if exists (not user-editable)
+    json_schema = PROTECTED_JSON_SCHEMAS.get(prompt_type, '')
+    full_prompt = base_prompt + json_schema
     
     if include_materials:
         materials = get_materials_content()
@@ -523,9 +549,47 @@ def get_system_prompt(prompt_type: str, include_materials: bool = True) -> str:
 {materials}
 === END TRAINING MATERIALS ===
 """
-            return base_prompt + materials_section
+            return full_prompt + materials_section
     
-    return base_prompt
+    return full_prompt
+
+
+def _strip_json_format(prompt: str) -> str:
+    """Strip the JSON format section from a prompt if present.
+    
+    This removes everything after "Respond in JSON format:" or "=== RESPONSE FORMAT ==="
+    """
+    import re
+    
+    # Try to find and strip JSON format sections
+    patterns = [
+        r'\n*=== RESPONSE FORMAT ===.*',  # New format
+        r'\n*Respond in JSON format:\s*\{.*',  # Old format with JSON
+        r'\n*Respond in JSON format:.*',  # Old format
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, prompt, re.DOTALL | re.IGNORECASE)
+        if match:
+            return prompt[:match.start()].rstrip()
+    
+    return prompt
+
+
+def get_editable_prompt(prompt_type: str, is_user_prompt: bool = False) -> str:
+    """Get only the editable part of a prompt (without protected JSON schema).
+    
+    This is used by the settings UI to show only what users can safely edit.
+    Automatically strips any JSON format section from saved prompts.
+    """
+    settings = load_settings()
+    if is_user_prompt:
+        prompt = settings.get('user_prompts', {}).get(prompt_type, DEFAULT_SETTINGS['user_prompts'].get(prompt_type, ''))
+    else:
+        prompt = settings.get('system_prompts', {}).get(prompt_type, DEFAULT_SETTINGS['system_prompts'].get(prompt_type, ''))
+    
+    # Strip JSON format if present (migration from old saved settings)
+    return _strip_json_format(prompt)
 
 
 def get_user_prompt(prompt_type: str) -> str:
@@ -553,16 +617,23 @@ def update_candles(daily: Optional[int] = None, hourly: Optional[int] = None, fi
 
 
 def update_prompt(prompt_type: str, prompt_text: str, is_user_prompt: bool = False) -> bool:
-    """Update a specific prompt (system or user)."""
+    """Update a specific prompt (system or user).
+    
+    Automatically strips any JSON format section to keep settings clean.
+    The JSON schema is protected and will be appended automatically when used.
+    """
+    # Strip any JSON format the user might have pasted
+    clean_prompt = _strip_json_format(prompt_text)
+    
     settings = load_settings()
     if is_user_prompt:
         if 'user_prompts' not in settings:
             settings['user_prompts'] = {}
-        settings['user_prompts'][prompt_type] = prompt_text
+        settings['user_prompts'][prompt_type] = clean_prompt
     else:
         if 'system_prompts' not in settings:
             settings['system_prompts'] = {}
-        settings['system_prompts'][prompt_type] = prompt_text
+        settings['system_prompts'][prompt_type] = clean_prompt
     return save_settings(settings)
 
 
