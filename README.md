@@ -2,9 +2,9 @@
 
 A decision-support, journaling, analytics, and premarket briefing system for discretionary day traders, grounded in Al Brooks price action concepts.
 
-⚠️ **ADVISORY ONLY**: This system does NOT auto-trade. It is read-only market data + analysis by default.
+**ADVISORY ONLY**: This system does NOT auto-trade. It provides read-only market data + AI-powered analysis.
 
-## 🚀 Quick Start
+## Quick Start
 
 ```bash
 # 1. Create virtual environment (recommended)
@@ -16,8 +16,7 @@ pip install -r requirements.txt
 
 # 3. Set up .env file
 cp env.example .env
-# Then edit .env with your settings:
-nano .env  # or use any text editor
+# Edit .env with your API keys (see below)
 
 # 4. Start the web interface
 python -m app.main web
@@ -34,265 +33,165 @@ pkill -f "python -m app.main web"
 Create a `.env` file in the project root:
 
 ```bash
-# LLM Configuration (for AI-powered analysis)
+# LLM Configuration (REQUIRED for AI analysis)
 LLM_API_KEY=your_api_key_here
 LLM_BASE_URL=https://your-llm-proxy.com/v1
 LLM_MODEL=claude-sonnet-4.5
-LLM_WORKERS=20  # Number of concurrent LLM calls (default: 20)
+LLM_WORKERS=20  # Concurrent LLM calls (default: 20)
 
 # Data Provider (optional - defaults to yfinance)
 DATA_PROVIDER=polygon  # or yfinance
 POLYGON_API_KEY=your_polygon_key_here
+
+# Robinhood Integration (optional)
+ROBINHOOD_USERNAME=your_username
+ROBINHOOD_PASSWORD=your_password
 ```
 
-That's it! The web interface lets you:
-- Add and review trades
-- Upload CSV files  
-- Manage tickers
-- Generate reports
-- View statistics
-
-## 🌐 Web Interface
+## Web Interface
 
 Start the web UI:
 ```bash
-brooks web
+python -m app.main web
 # Or with custom port:
-brooks web --port 3000
+python -m app.main web --port 3000
 ```
 
 Open http://localhost:8000 in your browser.
 
 **Stop the application:**
 ```bash
-# Option 1: Press Ctrl+C in the terminal running the server
-
+# Option 1: Press Ctrl+C in the terminal
 # Option 2: Kill from another terminal
 pkill -f "app.main web"
 ```
 
-![Dashboard](docs/screenshot-dashboard.png)
+### Features
 
-**Features:**
-- 📊 Dashboard with stats and recent trades
-- ➕ Add trades with auto R-multiple calculation
-- 📥 Drag & drop CSV import
-- 📈 Ticker management
-- 📋 Report generation
-- 🧠 AI-powered trade review
+- **Dashboard** - Stats, recent trades, strategy performance
+- **Trade Journal** - Add/edit trades with automatic P&L calculation
+- **AI Coaching Review** - Brooks-style trade analysis with manual trigger and cancel button
+- **Bulk Import** - CSV upload with timezone support (TradingView, Robinhood, generic)
+- **Strategy Management** - Categorize, merge, and track strategies
+- **Settings** - Customize prompts, manage tickers, upload training materials
+- **Dark/Light Mode** - Toggle theme preference
 
-## 📁 Key File Locations
+## Key Features
 
-| File/Folder | Purpose |
-|-------------|---------|
-| `tickers.txt` | **Edit this** to add/remove your favorite tickers |
-| `imports/` | **Drop CSV files here** for bulk trade import |
-| `.env` | Your API keys (OPENAI_API_KEY required) |
-| `config.yaml` | Other settings |
-| `outputs/` | Generated reports by date |
+### AI-Powered Trade Analysis
 
-## Features
+Click "Generate Review" on any trade to get:
+- **Setup Classification** - AI identifies Brooks-style setups
+- **Context Analysis** - Daily/2H/5min regime and always-in direction
+- **Entry Quality** - Signal bar analysis, entry location
+- **Coaching** - What was good, areas to improve, rules for next time
+- **Grade** - A through F with explanation
 
-### 🤖 LLM-Powered Analysis (Not Hardcoded!)
+Features:
+- **Manual Trigger** - AI review only runs when you click the button
+- **Cancel Button** - Stop generation mid-process
+- **Caching** - Reviews are cached and reused
+- **No Look-Ahead Bias** - Only uses data available at entry time
 
-All analysis is done by Claude/GPT - no rigid pattern matching:
-- **Setup Classification**: LLM analyzes your trades and classifies them into Brooks-style setups
-- **Trade Review**: Intelligent coaching based on context, not templates
-- **Market Analysis**: Dynamic premarket reports based on actual price action
-- **Strategy Suggestions**: AI recommends strategies for your trading style
+### Trade Journal
 
-### 1. Trade Journal + Post-Trade Coach (Brooks-style)
-- Manual trade entry or **bulk CSV import** from `imports/` folder
-- Automatic computation of:
-  - R-multiple (PnL / initial risk)
-  - MAE/MFE (Maximum Adverse/Favorable Excursion)
-  - Hold time, slippage, win/loss, expectancy
-- **LLM-powered** Brooks-style trade review:
-  - Context analysis (trend vs trading range, always-in direction)
-  - **AI classifies** your setup (breakout pullback, 2nd entry, wedge, etc.)
-  - Trader's equation evaluation (probability × reward vs risk)
-  - Error detection and personalized coaching
-  - Actionable rule for next time
+- **Stop Loss (SL) & Take Profit (TP)** - Separate fields for risk management
+- **Timezone Support** - Import trades in any timezone, displays in market timezone
+- **Multi-leg Trade Matching** - Position Accumulator algorithm for complex trades
+- **Currency Conversion** - Automatic USD conversion with historical rates
+- **Duration Tracking** - Human-readable hold time display
 
-### 2. Strategy Tracking + Edge Discovery
-- Strategy taxonomy (with-trend, countertrend, trading range, special)
-- Per-strategy statistics:
-  - Count, win rate, avg R, expectancy, profit factor
-  - MAE/MFE analysis, best time of day
-  - Recent 20-trade performance
-- Edge analysis: strengths, weaknesses, coaching focus
-- Weekly "coaching focus": behaviors to stop and double down on
+### Bulk Import
 
-### 3. Premarket / Before-Session Report
-- Multi-timeframe analysis (daily, 2h, 5m)
-- Regime detection (trend vs range)
-- Always-in direction
-- Magnet map (key levels, measured moves)
-- Plan A / Plan B with specific setups
-- Avoid list (low-quality conditions)
+Supports multiple formats:
+- **TradingView Order History** - Auto-detects from CSV headers
+- **Robinhood** - Direct API integration
+- **Generic CSV** - Flexible column mapping
 
-### 4. Daily + Weekly Review
-- EOD summary: PnL, best/worst trade, rule violations, improvement focus
-- Weekly summary: strategy leaderboard, leaks, top 3 rules for next week
+### International Stocks
 
-### 5. Extra Features
-- **Always-In inference engine**: Estimates always-in direction across timeframes
-- **Two legs correction detector**: Warns about expecting V-reversals too early
-- **Magnet map**: Prior day H/L/C, gaps, measured moves, swing points
-- **Risk controls checklist**: Max daily loss, losing streak warnings
+- Hong Kong (HKEX:0700 → 0700.HK)
+- China (SSE, SZSE)
+- UK, Japan, and more
+- Automatic fallback to yfinance for non-US stocks
 
-## Installation
+## CSV Import Format
 
-### Prerequisites
-- Python 3.11 or higher
-- OpenAI API key (for intelligent analysis)
-
-### Setup
-
-```bash
-# 1. Create virtual environment
-cd my_ai_powered_trading_assistant
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# 2. Install dependencies
-pip install -r requirements.txt
-
-# 3. Configure API key (REQUIRED for LLM analysis)
-cp env.example .env
-# Edit .env and add: OPENAI_API_KEY=your_key_here
-
-# 4. Initialize the system
-python -m app.main config init
-```
-
-## 📈 Managing Your Tickers
-
-Edit `tickers.txt` directly in any text editor:
-
-```txt
-# My favorite tickers
-SPY
-QQQ
-AAPL
-NVDA
-TSLA
-```
-
-Or use CLI:
-```bash
-brooks config tickers list
-brooks config tickers add AMZN
-brooks config tickers remove TSLA
-```
-
-## 📥 Bulk Importing Trades
-
-### Option 1: Drop CSVs in imports/ folder
-```bash
-# 1. Copy your CSV files to imports/
-cp my_trades.csv imports/
-
-# 2. Run bulk import (LLM will classify each trade!)
-brooks trade bulk-import
-```
-
-### Option 2: Import single file
-```bash
-brooks trade import path/to/trades.csv
-```
-
-### CSV Format
+### Generic CSV
 ```csv
-ticker,direction,entry_price,exit_price,stop_price,size,trade_date,notes
-SPY,long,475.50,478.00,474.00,100,2024-01-15,Strong pullback to EMA
-AAPL,short,185.00,182.50,187.00,50,2024-01-15,Failed breakout
+ticker,direction,entry_price,exit_price,size,trade_date,sl,tp,notes
+SPY,long,475.50,478.00,100,2024-01-15,474.00,480.00,Strong pullback
+AAPL,short,185.00,182.50,50,2024-01-15,187.00,180.00,Failed breakout
 ```
 
-See `imports/README.md` for detailed format instructions.
+| Column | Required | Description |
+|--------|----------|-------------|
+| ticker/symbol | Yes | Stock symbol |
+| entry_price | Yes | Entry price |
+| exit_price | Yes | Exit price |
+| direction/side | No | "long" or "short" (default: long) |
+| size/qty/shares | No | Position size (default: 1) |
+| trade_date/date | No | Trade date (default: today) |
+| sl/stop_loss | No | Stop Loss level |
+| tp/take_profit | No | Take Profit level |
+| strategy | No | Strategy name |
+| notes | No | Trade notes |
 
-### Reclassify Existing Trades
-```bash
-# Use LLM to reclassify all unclassified trades
-brooks trade reclassify
-```
+### TradingView Order History
 
-## Usage
+Upload directly from TradingView's export. The system auto-detects:
+- Order matching using Position Accumulator algorithm
+- Timezone conversion (select your local timezone on upload)
+- Multi-leg trade consolidation
 
-### CLI Commands
+## CLI Commands
 
-#### Trade Management
+### Trade Management
 
 ```bash
 # Add a trade manually
-brooks trade add \
+python -m app.main trade add \
   --ticker AAPL \
   --direction long \
   --entry 150.00 \
   --exit 152.00 \
-  --stop 148.50 \
+  --sl 148.50 \
+  --tp 154.00 \
   --size 100
 
-# Bulk import from imports/ folder (recommended!)
-brooks trade bulk-import
-
-# Import single CSV file
-brooks trade import trades.csv
-
-# Review a trade with LLM coaching
-brooks trade review 1
-
-# Use LLM to reclassify unclassified trades
-brooks trade reclassify
-
 # List recent trades
-brooks trade list --limit 20
+python -m app.main trade list --limit 20
 ```
 
-#### Reports
+### Reports
 
 ```bash
 # Generate premarket report
-brooks report premarket --date 2024-01-15
-
-# Generate premarket for specific ticker
-brooks report premarket --ticker AAPL
+python -m app.main report premarket --date 2024-01-15
 
 # Generate end-of-day report
-brooks report eod --date 2024-01-15
+python -m app.main report eod --date 2024-01-15
 
 # Generate weekly report
-brooks report weekly --week 2024-W03
+python -m app.main report weekly --week 2024-W03
 ```
 
-#### Statistics
+### Statistics
 
 ```bash
 # View strategy leaderboard
-brooks stats strategies
+python -m app.main stats strategies
 
 # Analyze your edge
-brooks stats edge
+python -m app.main stats edge
 
 # Get performance summary
-brooks stats summary --days 30
-```
-
-#### Configuration
-
-```bash
-# View current config
-brooks config show
-
-# Manage favorite tickers
-brooks config tickers list
-brooks config tickers add NVDA
-brooks config tickers remove TSLA
+python -m app.main stats summary --days 30
 ```
 
 ## Configuration
 
-Edit `config.yaml` to customize:
+### config.yaml
 
 ```yaml
 # Favorite tickers for premarket reports
@@ -308,166 +207,92 @@ risk:
   max_losing_streak: 3
   default_risk_per_trade_pct: 1.0
 
-# LLM enhancement (optional)
-llm:
-  enabled: false
-  model: gpt-4o
+# Data provider
+data_provider: polygon  # or yfinance
 ```
 
-## CSV Import Format
+### Settings Page
 
-The CSV should have these columns (case-insensitive):
-
-| Column | Required | Description |
-|--------|----------|-------------|
-| ticker/symbol | Yes | Stock symbol |
-| entry_price/entry | Yes | Entry price |
-| exit_price/exit | Yes | Exit price |
-| stop_price/stop | Recommended | Stop loss price |
-| direction/side | No | "long" or "short" (default: long) |
-| trade_date/date | No | Trade date (default: today) |
-| size/qty/shares | No | Position size (default: 1) |
-| strategy | No | Strategy name |
-| notes | No | Trade notes |
-
-## Sample Output
-
-### Premarket Report
-
-```markdown
-# Premarket Report: SPY
-**Date**: 2024-01-15
-**Current Price**: $475.32
-**Overall Bias**: LONG (high confidence)
-
-## Daily Chart Analysis
-- **Regime**: trend_up
-- **Always-In**: long
-- Strong uptrend with higher highs and higher lows
-
-## Plan A (Most Likely)
-**Scenario**: Uptrend continuation
-**Bias**: LONG
-
-**Setups to look for**:
-- 2nd entry buy on pullback
-- Breakout pullback after new high
-
-## ⚠️ Avoid List
-- Avoid shorting without clear reversal structure
-- Avoid chasing - wait for pullbacks
-```
-
-### Trade Review
-
-```markdown
-# Trade Review: AAPL (ID: 1)
-
-## Context
-- **Regime**: trend_up
-- **Always-In**: long
-- Strong uptrend with higher highs
-
-## Grade: B
-*Good trade with minor areas for improvement*
-
-## Coaching
-### What Was Good
-- ✅ Traded with the always-in direction (long)
-- ✅ Profitable trade: +1.50R
-
-### What Was Flawed
-- ❌ LEFT MONEY ON TABLE: MFE was 2.5R but only captured 1.5R
-
-### Rule for Next Time
-📌 RULE: In trending markets, trail stop below prior swing instead of fixed targets
-```
+The web interface Settings page allows you to:
+- **Manage Tickers** - Add/remove favorite tickers
+- **AI Prompts** - Customize system and user prompts for trade analysis
+- **Cache Settings** - Enable/disable review caching
+- **Training Materials** - Upload PDFs and documents for LLM context
+- **Strategy Management** - Edit, merge, categorize strategies
 
 ## Project Structure
 
 ```
 my_ai_powered_trading_assistant/
-├── tickers.txt              # ⭐ EDIT THIS - Your favorite tickers
-├── imports/                 # ⭐ DROP CSVs HERE - Bulk trade import
-│   └── README.md            # Import format instructions
-├── .env                     # Your API keys (OPENAI_API_KEY)
-├── config.yaml              # Other settings
+├── tickers.txt              # Your favorite tickers
+├── imports/                 # Drop CSVs here for bulk import
+├── .env                     # API keys
+├── config.yaml              # Settings
 ├── app/
-│   ├── main.py              # CLI entry point (Typer)
+│   ├── main.py              # CLI entry point
 │   ├── config.py            # Configuration management
+│   ├── config_prompts.py    # LLM prompt templates
 │   ├── data/
-│   │   ├── providers.py     # Market data (yfinance/Polygon/Alpaca)
-│   │   └── cache.py         # Local OHLCV caching
+│   │   ├── providers.py     # Market data (yfinance/Polygon)
+│   │   ├── cache.py         # OHLCV caching
+│   │   ├── currency.py      # Currency conversion
+│   │   └── robinhood.py     # Robinhood integration
 │   ├── features/
 │   │   ├── ohlc_features.py # Technical indicators
-│   │   ├── brooks_patterns.py # Fallback pattern detection
+│   │   ├── brooks_patterns.py # Pattern detection
 │   │   └── magnets.py       # Key level detection
 │   ├── journal/
 │   │   ├── models.py        # SQLAlchemy models
-│   │   ├── ingest.py        # Trade import + bulk import
-│   │   ├── analytics.py     # R-multiple, expectancy, stats
-│   │   └── coach.py         # LLM-powered trade review
+│   │   ├── ingest.py        # Trade import
+│   │   ├── analytics.py     # Statistics
+│   │   └── coach.py         # AI trade review
 │   ├── reports/
-│   │   ├── premarket.py     # LLM-powered premarket reports
+│   │   ├── premarket.py     # Premarket reports
 │   │   ├── eod.py           # End-of-day report
-│   │   ├── weekly.py        # Weekly summary
-│   │   └── render.py        # Markdown/chart rendering
+│   │   └── weekly.py        # Weekly summary
+│   ├── web/
+│   │   ├── server.py        # FastAPI web server
+│   │   └── templates/       # HTML templates
 │   └── llm/
-│       ├── analyzer.py      # 🧠 LLM analysis engine
-│       ├── client.py        # OpenAI-compatible client
+│       ├── analyzer.py      # LLM analysis engine
 │       └── prompts.py       # Prompt templates
-├── tests/                   # Pytest tests
-├── outputs/                 # Generated reports (by date)
-├── data/                    # SQLite database + cache
-└── docs/                    # Additional documentation
+├── outputs/                 # Generated reports
+├── data/                    # SQLite database
+└── materials/               # Training materials for LLM
 ```
-
-## Running Tests
-
-```bash
-# Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=app
-
-# Run specific test file
-pytest tests/test_analytics.py
-```
-
-## LLM Enhancement (Optional)
-
-To enable LLM narrative enhancement:
-
-1. Set your OpenAI API key in `.env`:
-```
-OPENAI_API_KEY=your_key_here
-```
-
-2. Enable in `config.yaml`:
-```yaml
-llm:
-  enabled: true
-  model: gpt-4o
-```
-
-The LLM will:
-- Convert computed findings into Brooks-style narrative
-- Never invent price data
-- Always cite computed context
 
 ## Brooks Price Action Concepts
 
-This system is built on Al Brooks price action methodology:
+This system implements Al Brooks price action methodology:
 
-- **Trend vs Trading Range**: Market regime classification
-- **Always-In**: The direction you should be if forced to have a position
-- **2nd Entry**: Second attempt after a failed first entry
-- **Breakout Pullback**: Pullback to retest breakout level
-- **Wedge/3-Push**: Three pushes with diminishing momentum
-- **Failed Breakout**: Price breaks level but fails to follow through
-- **Trader's Equation**: Probability × Reward must exceed Risk
-- **Magnets**: Price levels that attract price (prior H/L, gaps, measured moves)
+- **Trend vs Trading Range** - Market regime classification
+- **Always-In** - Direction you should be if forced to hold
+- **2nd Entry** - Second attempt after failed first entry
+- **Breakout Pullback** - Pullback to retest breakout level
+- **Wedge/3-Push** - Three pushes with diminishing momentum
+- **Failed Breakout** - Break that fails to follow through
+- **Trader's Equation** - Probability × Reward must exceed Risk
+- **Magnets** - Key levels that attract price
+
+## Troubleshooting
+
+### Common Issues
+
+**"LLM analysis unavailable"**
+- Check your `LLM_API_KEY` in `.env`
+- Verify `LLM_BASE_URL` is correct
+
+**Rate limiting on data fetch**
+- The system includes automatic retry with exponential backoff
+- For Polygon, ensure you have sufficient API credits
+- yfinance is free but slower
+
+**International stocks not loading**
+- Use format `HKEX:0700` or `0700.HK` for Hong Kong
+- System auto-converts to yfinance format
+
+**Cached review showing old data**
+- Click "Regenerate Review" to force a fresh analysis
 
 ## Disclaimer
 
