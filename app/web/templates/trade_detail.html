@@ -280,10 +280,10 @@
                     <ul id="flawed-list" class="space-y-1"></ul>
                 </div>
 
-                <!-- Rule for next time -->
+                <!-- Rules for next time -->
                 <div id="rule-section" class="hidden bg-accent-500/10 border border-accent-500/30 rounded-xl p-4">
-                    <div class="text-sm text-accent-400 font-medium mb-2">📌 Rule for Next Time</div>
-                    <div id="rule-text" class="text-accent-200"></div>
+                    <div class="text-sm text-accent-400 font-medium mb-2">📌 Rules for Next Time</div>
+                    <ul id="rule-list" class="space-y-1"></ul>
                 </div>
 
                 <!-- Grade explanation -->
@@ -739,10 +739,20 @@ function displayReview(review) {
             .join('');
     }
     
-    // Rule
+    // Rules - handle both array (new) and string (old cached) formats
     if (review.rule_for_next_time) {
-        document.getElementById('rule-section').classList.remove('hidden');
-        document.getElementById('rule-text').textContent = review.rule_for_next_time;
+        let rules = review.rule_for_next_time;
+        // Convert string to array if needed (old cached format)
+        if (typeof rules === 'string') {
+            rules = rules ? [rules] : [];
+        }
+        if (rules.length > 0) {
+            document.getElementById('rule-section').classList.remove('hidden');
+            const ruleList = document.getElementById('rule-list');
+            ruleList.innerHTML = rules
+                .map(item => `<li class="text-accent-200 text-sm">• ${item}</li>`)
+                .join('');
+        }
     }
     
     // Grade explanation

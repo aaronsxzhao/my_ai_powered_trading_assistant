@@ -316,7 +316,7 @@ async def get_trade_review(trade_id: int, force: bool = False, check_only: bool 
                 "what_was_good": review.what_was_good if isinstance(review.what_was_good, list) else [review.what_was_good] if review.what_was_good else [],
                 "what_was_flawed": review.what_was_flawed if isinstance(review.what_was_flawed, list) else [review.what_was_flawed] if review.what_was_flawed else [],
                 "errors_detected": review.errors_detected if isinstance(review.errors_detected, list) else [review.errors_detected] if review.errors_detected else [],
-                "rule_for_next_time": review.rule_for_next_time,
+                "rule_for_next_time": review.rule_for_next_time if isinstance(review.rule_for_next_time, list) else [review.rule_for_next_time] if review.rule_for_next_time else [],
             }
             
             # Cache and clear in_progress
@@ -793,7 +793,7 @@ async def analyze_all_trades(force: bool = False):
                             "what_was_good": review.what_was_good if isinstance(review.what_was_good, list) else [review.what_was_good] if review.what_was_good else [],
                             "what_was_flawed": review.what_was_flawed if isinstance(review.what_was_flawed, list) else [review.what_was_flawed] if review.what_was_flawed else [],
                             "errors_detected": review.errors_detected if isinstance(review.errors_detected, list) else [review.errors_detected] if review.errors_detected else [],
-                            "rule_for_next_time": review.rule_for_next_time,
+                            "rule_for_next_time": review.rule_for_next_time if isinstance(review.rule_for_next_time, list) else [review.rule_for_next_time] if review.rule_for_next_time else [],
                         }
                         
                         # Cache the review

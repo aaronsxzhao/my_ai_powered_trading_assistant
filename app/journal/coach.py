@@ -47,7 +47,7 @@ class TradeReview:
     # Coaching output
     what_was_good: list[str]
     what_was_flawed: list[str]
-    rule_for_next_time: str
+    rule_for_next_time: list[str]  # List of actionable rules
 
     # Metrics
     r_multiple: float
@@ -227,7 +227,12 @@ class TradeCoach:
                         what_was_flawed=what_flawed if isinstance(what_flawed, list) else [what_flawed] if what_flawed else [],
                         keep_doing=coaching.get("keep_doing", ""),
                         stop_doing=coaching.get("stop_doing", ""),
-                        rule_for_next_time=coaching.get("rule_for_next_20_trades", "") or llm_analysis.get("rule_for_next_time", ""),
+                        rule_for_next_time=self._ensure_list(
+                            coaching.get("rules_for_next_20_trades") or 
+                            coaching.get("rule_for_next_20_trades") or 
+                            llm_analysis.get("rules_for_next_time") or
+                            llm_analysis.get("rule_for_next_time") or []
+                        ),
                         better_alternative=coaching.get("better_alternative", ""),
                         # Metrics
                         r_multiple=trade.r_multiple or 0,
@@ -401,9 +406,19 @@ class TradeCoach:
             logger.warning(f"Failed to fetch {interval} data for {ticker}: {e}")
             return f"=== {label} ===\nData fetch failed: {e}"
 
+    def _ensure_list(self, value) -> list:
+        """Ensure value is a list (convert string to single-item list if needed)."""
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return value
+        if isinstance(value, str) and value:
+            return [value]
+        return []
+
     def _get_session_context(self, trade: Trade) -> tuple:
         """Get prior day levels and today's open for session context.
-        
+
         Uses data available BEFORE entry (no look-ahead bias).
         
         Returns:
@@ -546,7 +561,7 @@ class TradeCoach:
             errors_detected=errors,
             what_was_good=goods if goods else ["Trade was logged"],
             what_was_flawed=flaws if flaws else [],
-            rule_for_next_time="Set OPENAI_API_KEY for detailed coaching",
+            rule_for_next_time=["Set OPENAI_API_KEY for detailed coaching"],
             r_multiple=r,
             mae=trade.mae,
             mfe=trade.mfe,
@@ -957,9 +972,13 @@ class TradeCoach:
 
         lines.extend([
             "",
-            "### Rule for Next Time",
-            f"📌 {review.rule_for_next_time}",
+            "### Rules for Next Time",
         ])
+        if isinstance(review.rule_for_next_time, list):
+            for rule in review.rule_for_next_time:
+                lines.append(f"📌 {rule}")
+        else:
+            lines.append(f"📌 {review.rule_for_next_time}")
 
         return "\n".join(lines)
 
@@ -981,6 +1000,9 @@ class TradeCoach:
         if review.errors_detected:
             summary += f"Main issue: {review.errors_detected[0].split(':')[0]}. "
 
-        summary += f"Focus: {review.rule_for_next_time}"
+        if isinstance(review.rule_for_next_time, list) and review.rule_for_next_time:
+            summary += f"Focus: {review.rule_for_next_time[0]}"
+        elif review.rule_for_next_time:
+            summary += f"Focus: {review.rule_for_next_time}"
 
         return summary

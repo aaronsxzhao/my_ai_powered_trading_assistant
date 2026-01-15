@@ -66,7 +66,7 @@ Respond in JSON format:
         "better_alternative": "what would have been better",
         "keep_doing": "one thing to continue",
         "stop_doing": "one thing to stop",
-        "rule_for_next_20_trades": "specific actionable rule"
+        "rules_for_next_20_trades": ["list of specific actionable rules to follow"]
     },
     "grade": "A|B|C|D|F",
     "grade_explanation": "brief explanation",
