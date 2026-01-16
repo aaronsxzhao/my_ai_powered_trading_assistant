@@ -24,8 +24,14 @@ def _get_materials_for_trade(
     entry_reason: str = "",
     setup_type: str = "",
     ticker: str = "",
+    cancellation_check: callable = None,
 ) -> str:
     """Get relevant training materials using RAG, with fallback to simple reader."""
+    # Check for cancellation before expensive RAG operations
+    if cancellation_check and cancellation_check():
+        logger.debug("📚 Materials retrieval cancelled")
+        return ""
+    
     try:
         # Try RAG first (smarter retrieval)
         from app.materials_rag import get_relevant_materials, get_materials_rag
@@ -341,6 +347,8 @@ class LLMAnalyzer:
         strategy_alignment: Optional[str] = None,
         entry_exit_emotions: Optional[str] = None,
         entry_tp_distance: Optional[str] = None,
+        # Cancellation support
+        cancellation_check: callable = None,
     ) -> dict:
         """
         Comprehensive Brooks Audit of a completed trade.
@@ -348,9 +356,22 @@ class LLMAnalyzer:
         Args:
             stop_price: Stop Loss (SL) level - where trade is considered wrong
             target_price: Take Profit (TP) level - intended target
+            cancellation_check: Optional function that returns True if generation should stop
         
         Returns detailed Brooks-style review with coaching.
         """
+        # Check for cancellation at the start
+        if cancellation_check and cancellation_check():
+            logger.info("⏹️ Trade analysis cancelled before start")
+            return {"error": "Cancelled"}
+        
+        # Log received OHLCV data
+        ohlcv_len = len(ohlcv_context) if ohlcv_context else 0
+        logger.info(f"📊 analyze_trade received - OHLCV context: {ohlcv_len} chars, daily_bars: {len(daily_bars) if daily_bars else 0} chars")
+        if ohlcv_context and ohlcv_len > 0:
+            # Log first 200 chars of OHLCV for debugging
+            logger.debug(f"📊 OHLCV preview: {ohlcv_context[:200]}...")
+        
         # Use clearer internal names
         stop_loss = stop_price
         take_profit = target_price
@@ -377,18 +398,28 @@ class LLMAnalyzer:
             else:
                 reward = entry_price - exit_price
 
+        # Check for cancellation before loading prompts and materials
+        if cancellation_check and cancellation_check():
+            return {"error": "Cancelled"}
+        
         # Load configurable prompts
         from app.config_prompts import get_system_prompt, get_user_prompt
         system_prompt = get_system_prompt('trade_analysis')
         
-        # Get relevant training materials using RAG
+        # Get relevant training materials using RAG (with cancellation support)
         materials_context = _get_materials_for_trade(
             direction=direction,
             timeframe=timeframe or "5m",
             entry_reason=entry_reason or "",
             setup_type=trade_type or "",
             ticker=ticker,
+            cancellation_check=cancellation_check,
         )
+        
+        # Check for cancellation after RAG retrieval
+        if cancellation_check and cancellation_check():
+            return {"error": "Cancelled"}
+        
         if materials_context:
             system_prompt = f"{system_prompt}\n\n{materials_context}"
             logger.debug(f"📚 Added {len(materials_context)} chars of relevant training materials")
@@ -422,14 +453,32 @@ class LLMAnalyzer:
         
         if ohlcv_context and not daily_bars:
             # Parse combined context into sections
-            sections = ohlcv_context.split("===")
-            for section in sections:
-                if "DAILY" in section:
-                    daily_section = section.strip()
-                elif "2-HOUR" in section:
-                    twohour_section = section.strip()
-                elif "5-MINUTE" in section:
-                    fivemin_section = section.strip()
+            # Format is: "=== DAILY (...) ===\n...data...\n\n=== 2-HOUR (...) ===\n...data..."
+            import re
+            # Split by section headers (=== ... ===)
+            section_pattern = r'(===\s*[^=]+\s*===)'
+            parts = re.split(section_pattern, ohlcv_context)
+            
+            current_header = None
+            for part in parts:
+                part = part.strip()
+                if not part:
+                    continue
+                if part.startswith('===') and part.endswith('==='):
+                    current_header = part
+                elif current_header:
+                    # Combine header with content
+                    full_section = f"{current_header}\n{part}"
+                    if "DAILY" in current_header.upper():
+                        daily_section = full_section
+                    elif "2-HOUR" in current_header.upper():
+                        twohour_section = full_section
+                    elif "5-MINUTE" in current_header.upper() or "5-MIN" in current_header.upper():
+                        fivemin_section = full_section
+                    current_header = None
+            
+            # Debug log what was parsed
+            logger.debug(f"📊 OHLCV parsed - Daily: {len(daily_section)} chars, 2H: {len(twohour_section)} chars, 5M: {len(fivemin_section)} chars")
         
         # Format MAE/MFE
         mae_str = f"{mae:.2f}R" if mae else "not recorded"
@@ -516,7 +565,18 @@ class LLMAnalyzer:
             entry_tp_distance=entry_tp_distance or "Not provided",
         )
         user_prompt = user_template.format_map(format_vars)
+        
+        # Log OHLCV sections that will be sent to LLM
+        logger.info(f"📊 LLM prompt sections - Daily: {len(daily_section)} chars, 2H: {len(twohour_section)} chars, 5M: {len(fivemin_section)} chars")
+        if daily_section and len(daily_section) > 50:
+            logger.debug(f"📊 Daily bars preview: {daily_section[:150]}...")
+        else:
+            logger.warning(f"⚠️ Daily section is empty or too short: '{daily_section[:100] if daily_section else 'EMPTY'}'")
 
+        # Check for cancellation before expensive LLM call
+        if cancellation_check and cancellation_check():
+            return {"error": "Cancelled"}
+        
         response = self._call_llm(system_prompt, user_prompt, max_tokens=20000)
 
         if response:

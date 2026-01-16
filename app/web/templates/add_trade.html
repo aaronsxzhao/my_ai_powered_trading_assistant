@@ -51,6 +51,22 @@
                 </div>
 
                 <div class="grid grid-cols-2 gap-4">
+                    <!-- Entry Time -->
+                    <div>
+                        <label class="label">Entry Time</label>
+                        <input type="datetime-local" name="entry_time" 
+                            class="input" step="1">
+                    </div>
+
+                    <!-- Exit Time -->
+                    <div>
+                        <label class="label">Exit Time</label>
+                        <input type="datetime-local" name="exit_time" 
+                            class="input" step="1">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-3 gap-4">
                     <!-- Direction -->
                     <div>
                         <label class="label">Direction *</label>
@@ -65,6 +81,16 @@
                         <label class="label">Size (shares)</label>
                         <input type="number" name="size" 
                             class="input" placeholder="100" value="1" step="any">
+                    </div>
+
+                    <!-- Timeframe -->
+                    <div>
+                        <label class="label">Timeframe</label>
+                        <select name="timeframe" class="select">
+                            <option value="5m">5 min (Scalp)</option>
+                            <option value="2h">2 hour (Swing)</option>
+                            <option value="1d">Daily (Position)</option>
+                        </select>
                     </div>
                 </div>
 

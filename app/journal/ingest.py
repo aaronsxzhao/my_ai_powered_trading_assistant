@@ -248,12 +248,26 @@ class TradeIngester:
                 input_timezone=input_timezone,
             )
 
+            # If no entry_time provided, create one from trade_date (start of trading day)
+            if not trade.entry_time and trade.trade_date:
+                from datetime import time as dt_time
+                # Default to market open time (9:30 AM for US stocks)
+                trade.entry_time = datetime.combine(trade.trade_date, dt_time(9, 30, 0))
+            
+            # If no exit_time, set it same as entry_time or later
+            if not trade.exit_time and trade.entry_time:
+                trade.exit_time = trade.entry_time
+
             # Compute metrics
             trade.compute_metrics()
 
             session.add(trade)
             session.commit()
             session.refresh(trade)
+
+            # Recalculate trade numbers for all trades (so new trade gets correct number)
+            from app.journal.models import recalculate_trade_numbers
+            recalculate_trade_numbers()
 
             logger.info(f"Added trade: {trade}")
             return trade
@@ -330,6 +344,12 @@ class TradeIngester:
                     raise
 
         logger.info(f"Imported {imported} trades, {errors} errors")
+        
+        # Recalculate trade numbers after import
+        if imported > 0:
+            from app.journal.models import recalculate_trade_numbers
+            recalculate_trade_numbers()
+        
         return imported, errors, error_messages
 
     def _import_tv_balance_history(
@@ -427,6 +447,11 @@ class TradeIngester:
         summary = f"Imported {imported} trades from {len(df)} entries. Skipped {skipped} non-trade entries."
         logger.info(summary)
         error_messages.insert(0, summary)
+        
+        # Recalculate trade numbers after import
+        if imported > 0:
+            from app.journal.models import recalculate_trade_numbers
+            recalculate_trade_numbers()
         
         return imported, errors, error_messages
 
@@ -769,6 +794,11 @@ class TradeIngester:
             summary += f" {unmatched_count} open position(s) discarded (no matching close)."
         error_messages.insert(0, summary)
         
+        # Recalculate trade numbers after import
+        if imported > 0:
+            from app.journal.models import recalculate_trade_numbers
+            recalculate_trade_numbers()
+        
         return imported, errors, error_messages
 
     def import_from_robinhood(
@@ -1092,6 +1122,11 @@ class TradeIngester:
 
             session.delete(trade)
             session.commit()
+            
+            # Recalculate trade numbers after delete
+            from app.journal.models import recalculate_trade_numbers
+            recalculate_trade_numbers()
+            
             return True
 
         except Exception as e:

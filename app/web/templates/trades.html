@@ -79,7 +79,7 @@
                 <tbody>
                     {% for trade in trades %}
                     <tr class="group">
-                        <td class="text-dark-500 text-sm">#{{ trade.id }}</td>
+                        <td class="text-dark-500 text-sm">#{{ trade.trade_number or trade.id }}</td>
                         <td class="text-sm font-mono text-dark-400">
                             {% if trade.exit_time %}
                                 {{ trade.exit_time.strftime('%m/%d %H:%M') }}

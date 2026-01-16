@@ -103,6 +103,10 @@ class Trade(Base):
     __tablename__ = "trades"
 
     id = Column(Integer, primary_key=True)
+    
+    # Display order (chronological: oldest = 1)
+    # Separate from id so trades display in time order regardless of when added
+    trade_number = Column(Integer, index=True)
 
     # Basic trade info
     ticker = Column(String(20), nullable=False, index=True)
@@ -571,6 +575,16 @@ def init_db() -> None:
                 conn.commit()
             except Exception:
                 pass
+        
+        # Trade number for display order (chronological: oldest = 1)
+        try:
+            conn.execute(text("SELECT trade_number FROM trades LIMIT 1"))
+        except Exception:
+            try:
+                conn.execute(text("ALTER TABLE trades ADD COLUMN trade_number INTEGER"))
+                conn.commit()
+            except Exception:
+                pass
 
     # Seed default strategies
     session = get_session()
@@ -636,5 +650,43 @@ def get_all_strategies() -> list[Strategy]:
     session = get_session()
     try:
         return session.query(Strategy).filter(Strategy.is_active == True).all()
+    finally:
+        session.close()
+
+
+def recalculate_trade_numbers() -> int:
+    """
+    Recalculate trade_number for all trades based on chronological order.
+    
+    Trade number 1 = oldest trade (by exit_time, then by id for same exit_time).
+    
+    Returns:
+        Number of trades updated
+    """
+    session = get_session()
+    try:
+        # Get all trades sorted chronologically (oldest first)
+        trades = session.query(Trade).all()
+        
+        # Sort by exit_time (primary), then by id (secondary - add order)
+        def sort_key(t):
+            # Use exit_time if available, otherwise fall back to entry_time, then trade_date
+            if t.exit_time:
+                return (t.exit_time, t.id)
+            elif t.entry_time:
+                return (t.entry_time, t.id)
+            elif t.trade_date:
+                return (datetime.combine(t.trade_date, datetime.min.time()), t.id)
+            else:
+                return (datetime.max, t.id)
+        
+        sorted_trades = sorted(trades, key=sort_key)
+        
+        # Assign trade numbers (oldest = 1)
+        for i, trade in enumerate(sorted_trades, start=1):
+            trade.trade_number = i
+        
+        session.commit()
+        return len(sorted_trades)
     finally:
         session.close()

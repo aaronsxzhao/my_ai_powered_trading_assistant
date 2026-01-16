@@ -96,6 +96,26 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 async def startup():
     init_db()
     IMPORTS_DIR.mkdir(exist_ok=True)
+    
+    # Recalculate trade numbers on startup (ensures chronological order)
+    from app.journal.models import recalculate_trade_numbers
+    count = recalculate_trade_numbers()
+    if count > 0:
+        logger.info(f"📊 Recalculated trade numbers for {count} trades")
+
+
+# Favicon - prevents 404 errors in browser
+@app.get("/favicon.ico")
+async def favicon():
+    """Return a simple SVG favicon."""
+    from fastapi.responses import Response
+    # Simple chart icon as SVG favicon
+    svg = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+        <rect width="32" height="32" rx="4" fill="#3B82F6"/>
+        <path d="M6 22 L12 16 L18 20 L26 10" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+        <circle cx="26" cy="10" r="2" fill="#10B981"/>
+    </svg>'''
+    return Response(content=svg, media_type="image/svg+xml")
 
 
 # ==================== PAGES ====================
@@ -107,10 +127,10 @@ async def dashboard(request: Request):
     
     session = get_session()
     try:
-        # Get recent trades (limit 10)
+        # Get recent trades (limit 10) - newest by trade_number first
         recent_trades = (
             session.query(Trade)
-            .order_by(Trade.id.desc())
+            .order_by(Trade.trade_number.desc())
             .limit(10)
             .all()
         )
@@ -157,7 +177,7 @@ async def trades_page(request: Request):
     try:
         trades = (
             session.query(Trade)
-            .order_by(Trade.id.desc())  # Newest first
+            .order_by(Trade.trade_number.desc())  # Newest by exit time first
             .all()
         )
         
@@ -262,8 +282,8 @@ async def get_trade_review(trade_id: int, force: bool = False, check_only: bool 
 
         cache_settings = get_cache_settings()
 
-        # Return cached review if available
-        if cache_settings.get('enable_review_cache', True) and trade.cached_review and trade.review_generated_at:
+        # Return cached review if available (unless force=true)
+        if not force and cache_settings.get('enable_review_cache', True) and trade.cached_review and trade.review_generated_at:
             try:
                 cached = json.loads(trade.cached_review)
                 return JSONResponse({
@@ -507,6 +527,9 @@ async def create_trade(
     take_profit: float = Form(None),  # TP - optional
     size: float = Form(1.0),
     trade_date: str = Form(None),
+    entry_time: str = Form(None),
+    exit_time: str = Form(None),
+    timeframe: str = Form("5m"),
     strategy: str = Form(None),
     notes: str = Form(None),
     entry_reason: str = Form(None),
@@ -515,6 +538,34 @@ async def create_trade(
     ingester = TradeIngester()
 
     parsed_date = datetime.strptime(trade_date, "%Y-%m-%d").date() if trade_date else date.today()
+    
+    # Parse entry/exit times if provided
+    parsed_entry_time = None
+    parsed_exit_time = None
+    
+    if entry_time:
+        try:
+            parsed_entry_time = datetime.fromisoformat(entry_time.replace('Z', '+00:00').replace('T', ' ').split('+')[0])
+        except ValueError:
+            try:
+                parsed_entry_time = datetime.strptime(entry_time, "%Y-%m-%dT%H:%M:%S")
+            except ValueError:
+                try:
+                    parsed_entry_time = datetime.strptime(entry_time, "%Y-%m-%dT%H:%M")
+                except ValueError:
+                    pass
+    
+    if exit_time:
+        try:
+            parsed_exit_time = datetime.fromisoformat(exit_time.replace('Z', '+00:00').replace('T', ' ').split('+')[0])
+        except ValueError:
+            try:
+                parsed_exit_time = datetime.strptime(exit_time, "%Y-%m-%dT%H:%M:%S")
+            except ValueError:
+                try:
+                    parsed_exit_time = datetime.strptime(exit_time, "%Y-%m-%dT%H:%M")
+                except ValueError:
+                    pass
 
     trade = ingester.add_trade_manual(
         ticker=ticker,
@@ -525,6 +576,9 @@ async def create_trade(
         stop_loss=stop_loss,
         take_profit=take_profit,
         size=size,
+        timeframe=timeframe,
+        entry_time=parsed_entry_time,
+        exit_time=parsed_exit_time,
         strategy_name=strategy if strategy else None,
         notes=notes,
         entry_reason=entry_reason,
@@ -1623,13 +1677,13 @@ async def bulk_analysis(request: Request):
             trades = (
                 session.query(Trade)
                 .filter(Trade.trade_date >= cutoff_date)
-                .order_by(Trade.id.desc())  # Newest first
+                .order_by(Trade.trade_number.desc())  # Newest by exit time first
                 .all()
             )
         else:  # count
             trades = (
                 session.query(Trade)
-                .order_by(Trade.id.desc())  # Newest first
+                .order_by(Trade.trade_number.desc())  # Newest by exit time first
                 .limit(value)
                 .all()
             )

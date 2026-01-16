@@ -196,7 +196,13 @@ class TradeCoach:
                     strategy_alignment=getattr(trade, 'strategy_alignment', None),
                     entry_exit_emotions=getattr(trade, 'entry_exit_emotions', None),
                     entry_tp_distance=getattr(trade, 'entry_tp_distance', None),
+                    # Cancellation support
+                    cancellation_check=is_cancelled,
                 )
+
+                # If cancelled during analysis, return None
+                if llm_analysis.get("error") == "Cancelled":
+                    return None
 
                 if "error" not in llm_analysis and "raw_analysis" not in llm_analysis:
                     # Extract nested fields from Brooks Audit response
@@ -347,7 +353,21 @@ class TradeCoach:
 
             result = "\n\n".join([ctx for ctx in all_context if ctx])
             if not result:
+                logger.warning(f"⚠️ No OHLCV data collected for {trade.ticker}")
                 return "No market data available"
+            
+            # Check for any sections that indicate no data or errors
+            has_real_data = False
+            for ctx in all_context:
+                if ctx and "No data" not in ctx and "failed" not in ctx.lower() and len(ctx) > 100:
+                    has_real_data = True
+                    break
+            
+            if not has_real_data:
+                logger.warning(f"⚠️ OHLCV sections contain no real data for {trade.ticker}")
+            
+            # Log summary of what was fetched
+            logger.info(f"📊 OHLCV fetched for {trade.ticker}: {len(all_context)} sections, {len(result)} chars total, has_real_data={has_real_data}")
             return result
 
         except Exception as e:
