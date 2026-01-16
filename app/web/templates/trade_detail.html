@@ -239,19 +239,31 @@
                     </div>
                     <div id="step-2" class="flex items-center gap-2 text-dark-500">
                         <span class="w-5 h-5 rounded-full border border-dark-600 flex items-center justify-center text-xs">2</span>
-                        <span>Fetching OHLCV data (Daily, 2H, 5min)...</span>
+                        <span>Fetching OHLCV data (Daily, 2H, 5min bars)...</span>
                     </div>
                     <div id="step-3" class="flex items-center gap-2 text-dark-500">
                         <span class="w-5 h-5 rounded-full border border-dark-600 flex items-center justify-center text-xs">3</span>
-                        <span>Building Brooks Audit prompt...</span>
+                        <span>Extracting session context (PDH/PDL/PDC)...</span>
                     </div>
                     <div id="step-4" class="flex items-center gap-2 text-dark-500">
                         <span class="w-5 h-5 rounded-full border border-dark-600 flex items-center justify-center text-xs">4</span>
-                        <span>Calling LLM for analysis...</span>
+                        <span>Loading embedding model...</span>
                     </div>
                     <div id="step-5" class="flex items-center gap-2 text-dark-500">
                         <span class="w-5 h-5 rounded-full border border-dark-600 flex items-center justify-center text-xs">5</span>
-                        <span>Caching results...</span>
+                        <span>Retrieving relevant training materials (RAG)...</span>
+                    </div>
+                    <div id="step-6" class="flex items-center gap-2 text-dark-500">
+                        <span class="w-5 h-5 rounded-full border border-dark-600 flex items-center justify-center text-xs">6</span>
+                        <span>Building Brooks Audit prompt...</span>
+                    </div>
+                    <div id="step-7" class="flex items-center gap-2 text-dark-500">
+                        <span class="w-5 h-5 rounded-full border border-dark-600 flex items-center justify-center text-xs">7</span>
+                        <span>Calling LLM for analysis...</span>
+                    </div>
+                    <div id="step-8" class="flex items-center gap-2 text-dark-500">
+                        <span class="w-5 h-5 rounded-full border border-dark-600 flex items-center justify-center text-xs">8</span>
+                        <span>Parsing response & caching results...</span>
                     </div>
                 </div>
                 
@@ -523,7 +535,7 @@ async function checkExistingReview() {
             // There's a generation in progress, show loading and poll
             document.getElementById('review-initial').classList.add('hidden');
             document.getElementById('review-loading').classList.remove('hidden');
-            updateStep(3, 'active', 'AI analysis in progress...');
+            updateStep(7, 'active', 'AI analysis in progress...');
             pollingInterval = setInterval(() => pollForReview(), 3000);
         } else if (data.success && data.review) {
             // There's a cached review, display it
@@ -564,9 +576,19 @@ async function loadReview(force = false) {
     }
 
     try {
-        // Simulate progress for better UX
+        // Simulate progress for better UX (8 steps total)
         setTimeout(() => { if (!isCancelled) updateStep(1, 'done'); }, 300);
-        setTimeout(() => { if (!isCancelled) updateStep(2, 'active', 'Fetching OHLCV data...'); }, 500);
+        setTimeout(() => { if (!isCancelled) updateStep(2, 'active', 'Fetching OHLCV data (Daily, 2H, 5min bars)...'); }, 500);
+        setTimeout(() => { if (!isCancelled) updateStep(2, 'done'); }, 3000);
+        setTimeout(() => { if (!isCancelled) updateStep(3, 'active', 'Extracting session context (PDH/PDL/PDC)...'); }, 3200);
+        setTimeout(() => { if (!isCancelled) updateStep(3, 'done'); }, 4000);
+        setTimeout(() => { if (!isCancelled) updateStep(4, 'active', 'Loading embedding model...'); }, 4200);
+        setTimeout(() => { if (!isCancelled) updateStep(4, 'done'); }, 5500);
+        setTimeout(() => { if (!isCancelled) updateStep(5, 'active', 'Retrieving relevant training materials (RAG)...'); }, 5700);
+        setTimeout(() => { if (!isCancelled) updateStep(5, 'done'); }, 7000);
+        setTimeout(() => { if (!isCancelled) updateStep(6, 'active', 'Building Brooks Audit prompt...'); }, 7200);
+        setTimeout(() => { if (!isCancelled) updateStep(6, 'done'); }, 8000);
+        setTimeout(() => { if (!isCancelled) updateStep(7, 'active', 'Calling LLM for analysis...'); }, 8200);
 
         const url = force
             ? `/api/trades/${TRADE_ID}/review?force=true`
@@ -579,8 +601,9 @@ async function loadReview(force = false) {
 
         // Handle "in progress" status - start polling
         if (data.success && data.in_progress) {
-            updateStep(2, 'done');
-            updateStep(3, 'active', 'AI analysis in progress...');
+            // Mark early steps done, show LLM step as active
+            for (let i = 1; i <= 6; i++) updateStep(i, 'done');
+            updateStep(7, 'active', 'AI analysis in progress...');
             showToast('Review generation in progress...', 'info', 5000);
             
             // Start polling every 3 seconds
@@ -599,6 +622,9 @@ async function loadReview(force = false) {
         document.getElementById('review-loading').classList.add('hidden');
 
         if (data.success && data.review) {
+            // Mark all steps done
+            for (let i = 1; i <= 8; i++) updateStep(i, 'done');
+            
             displayReview(data.review);
 
             // Show cache status
@@ -677,7 +703,7 @@ async function pollForReview() {
 
         // Still in progress - keep polling
         if (data.success && data.in_progress) {
-            updateStep(3, 'active', 'Still generating... please wait');
+            updateStep(7, 'active', 'Still generating... please wait');
             return;
         }
 
@@ -690,6 +716,9 @@ async function pollForReview() {
         document.getElementById('review-loading').classList.add('hidden');
 
         if (data.success && data.review) {
+            // Mark all steps done
+            for (let i = 1; i <= 8; i++) updateStep(i, 'done');
+            
             displayReview(data.review);
             document.getElementById('cache-badge').classList.add('hidden');
             const grade = data.review.grade || '?';
@@ -712,10 +741,13 @@ async function pollForReview() {
 }
 
 function resetLoadingSteps() {
-    for (let i = 1; i <= 5; i++) {
+    for (let i = 1; i <= 8; i++) {
         const step = document.getElementById(`step-${i}`);
-        step.className = 'flex items-center gap-2 text-dark-500';
-        step.querySelector('span:first-child').className = 'w-5 h-5 rounded-full border border-dark-600 flex items-center justify-center text-xs';
+        if (step) {
+            step.className = 'flex items-center gap-2 text-dark-500';
+            step.querySelector('span:first-child').className = 'w-5 h-5 rounded-full border border-dark-600 flex items-center justify-center text-xs';
+            step.querySelector('span:first-child').innerHTML = i;
+        }
     }
 }
 

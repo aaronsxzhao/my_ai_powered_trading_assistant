@@ -179,46 +179,89 @@ class PremarketReport:
             )
 
             if "error" in llm_analysis:
+                logger.warning(f"LLM returned error for {ticker}: {llm_analysis.get('error')}")
                 return None
+            
+            # Debug: log what LLM returned
+            logger.debug(f"LLM analysis keys for {ticker}: {list(llm_analysis.keys())}")
 
             current_price = float(daily_df.iloc[-1]["close"])
             report_date = date.today()
 
-            # Extract key levels from LLM
-            key_levels = llm_analysis.get("key_levels", {})
-            resistance = key_levels.get("resistance", [])
-            support = key_levels.get("support", [])
+            # Extract nested structures from LLM response
+            daily_context = llm_analysis.get("daily_context", {})
+            
+            # Debug: Check if we got expected structure
+            if not daily_context:
+                logger.warning(f"No daily_context in LLM response for {ticker}. Keys: {list(llm_analysis.keys())}")
+            two_hour_context = llm_analysis.get("two_hour_context", {})
+            intraday_context = llm_analysis.get("intraday_context", {})
+            trading_plan = llm_analysis.get("trading_plan", {})
+            
+            # Extract key levels from daily_context
+            key_levels_data = daily_context.get("key_levels", {})
+            swing_highs = key_levels_data.get("swing_highs", [])
+            swing_lows = key_levels_data.get("swing_lows", [])
+            
+            # Build resistance/support lists
+            resistance = []
+            support = []
+            
+            if key_levels_data.get("prior_day_high"):
+                resistance.append({"price": key_levels_data["prior_day_high"], "description": "Prior Day High"})
+            if key_levels_data.get("range_high"):
+                resistance.append({"price": key_levels_data["range_high"], "description": "Range High"})
+            for sh in swing_highs if isinstance(swing_highs, list) else []:
+                if isinstance(sh, (int, float)):
+                    resistance.append({"price": sh, "description": "Swing High"})
+                    
+            if key_levels_data.get("prior_day_low"):
+                support.append({"price": key_levels_data["prior_day_low"], "description": "Prior Day Low"})
+            if key_levels_data.get("range_low"):
+                support.append({"price": key_levels_data["range_low"], "description": "Range Low"})
+            for sl in swing_lows if isinstance(swing_lows, list) else []:
+                if isinstance(sl, (int, float)):
+                    support.append({"price": sl, "description": "Swing Low"})
 
             # Build TimeframeAnalysis from LLM
             daily_analysis = TimeframeAnalysis(
                 timeframe="daily",
-                regime=llm_analysis.get("regime", "unknown"),
-                always_in=llm_analysis.get("always_in", "neutral"),
-                confidence=llm_analysis.get("regime_confidence", "medium"),
-                description=llm_analysis.get("summary", ""),
+                regime=daily_context.get("regime", "unknown"),
+                always_in=daily_context.get("always_in", "neutral"),
+                confidence="medium",  # LLM doesn't return confidence in this format
+                description=llm_analysis.get("narrative", ""),
                 key_levels=[{"price": r.get("price"), "type": "resistance", "description": r.get("description", "")} for r in resistance] +
                            [{"price": s.get("price"), "type": "support", "description": s.get("description", "")} for s in support],
                 patterns=[],
-                strength={"strength": llm_analysis.get("strength", "unknown"), "reasoning": llm_analysis.get("strength_reasoning", "")},
+                strength={"strength": daily_context.get("trend_strength", "unknown"), "reasoning": ""},
             )
 
-            # Extract plan A/B from LLM
-            plan_a_data = llm_analysis.get("plan_a", {})
-            plan_b_data = llm_analysis.get("plan_b", {})
+            # Extract plan A/B from trading_plan
+            plan_a_data = trading_plan
+            plan_b_data = {}
 
+            # Determine bias from always_in
+            always_in = daily_context.get("always_in", "neutral")
+            if always_in == "long":
+                bias = "LONG"
+            elif always_in == "short":
+                bias = "SHORT"
+            else:
+                bias = "NEUTRAL"
+            
             plan_a = {
-                "scenario": plan_a_data.get("scenario", ""),
-                "bias": plan_a_data.get("bias", "NEUTRAL"),
-                "setups": plan_a_data.get("setups", []),
-                "entry_zones": plan_a_data.get("entry_zones", ""),
-                "targets": plan_a_data.get("targets", ""),
+                "scenario": trading_plan.get("plan_a", ""),
+                "bias": bias,
+                "setups": trading_plan.get("best_setups", []),
+                "entry_zones": ", ".join(trading_plan.get("key_levels", [])) if trading_plan.get("key_levels") else "",
+                "targets": "",
             }
 
             plan_b = {
                 "scenario": "Alternative scenario",
-                "trigger": plan_b_data.get("trigger", ""),
-                "bias": plan_b_data.get("new_bias", "NEUTRAL"),
-                "action": plan_b_data.get("action", ""),
+                "trigger": trading_plan.get("plan_b", ""),
+                "bias": "NEUTRAL",
+                "action": trading_plan.get("plan_b", ""),
             }
 
             # Format magnets from LLM analysis
@@ -237,9 +280,9 @@ class PremarketReport:
                 measured_moves=[],
                 plan_a=plan_a,
                 plan_b=plan_b,
-                avoid_conditions=llm_analysis.get("avoid", []),
+                avoid_conditions=trading_plan.get("avoid_setups", []),
                 overall_bias=plan_a.get("bias", "NEUTRAL"),
-                bias_confidence=llm_analysis.get("regime_confidence", "medium"),
+                bias_confidence="medium",
             )
 
         except Exception as e:
