@@ -7,7 +7,7 @@ Falls back to rule-based analysis if LLM is unavailable.
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Optional, Literal
+from typing import Optional, Literal, Union
 import logging
 
 import pandas as pd
@@ -138,15 +138,15 @@ class TradeCoach:
             if is_cancelled():
                 return None
 
-            # Get market context data (separate sections)
-            ohlcv_context = self._get_ohlcv_context_string(trade, cancellation_check=is_cancelled)
+            # Get market context data (separate sections) and daily DataFrame for session context
+            ohlcv_context, daily_df = self._get_ohlcv_context_string(trade, cancellation_check=is_cancelled, return_daily_df=True)
             
             # Check for cancellation after OHLCV fetch
             if is_cancelled():
                 return None
             
-            # Get prior day levels and session context
-            pd_high, pd_low, pd_close, today_open = self._get_session_context(trade)
+            # Get prior day levels and session context (reusing daily data to avoid extra API calls)
+            pd_high, pd_low, pd_close, today_open = self._get_session_context(trade, daily_ohlcv=daily_df)
 
             # Use LLM for comprehensive Brooks Audit
             if self.llm_analyzer.is_available:
@@ -179,6 +179,7 @@ class TradeCoach:
                     account_type=trade.account_type or "paper",
                     mistakes=trade.mistakes,
                     lessons=trade.lessons,
+                    mistakes_and_lessons=trade.effective_mistakes_lessons,
                     # New extended fields
                     trade_date=str(trade.trade_date) if trade.trade_date else None,
                     market=getattr(trade, 'market', None) or "US stocks",
@@ -271,7 +272,7 @@ class TradeCoach:
         finally:
             session.close()
 
-    def _get_ohlcv_context_string(self, trade: Trade, cancellation_check: Optional[callable] = None) -> str:
+    def _get_ohlcv_context_string(self, trade: Trade, cancellation_check: Optional[callable] = None, return_daily_df: bool = False) -> Union[str, tuple]:
         """
         Get OHLCV data as a string for LLM context.
 
@@ -282,6 +283,14 @@ class TradeCoach:
         - 5m (scalp): 60 daily bars, 120 2-hour bars, 234 5-min bars
         - 2h (swing): 60 daily bars, 120 2-hour bars
         - 1d (position): 120 daily bars
+        
+        Args:
+            trade: Trade object
+            cancellation_check: Optional callable to check for cancellation
+            return_daily_df: If True, returns (context_string, daily_dataframe) tuple
+        
+        Returns:
+            String context, or tuple (context_string, daily_df) if return_daily_df=True
         
         Args:
             trade: Trade object
@@ -297,64 +306,71 @@ class TradeCoach:
             timeframe = trade.timeframe or "5m"
 
             all_context = []
+            daily_df = None  # Store daily DataFrame for session context reuse
 
             # Brooks-specified bar counts for comprehensive context:
             # - Daily: 60 bars (multi-week trend/range context) - up to prior day close
             # - 2-Hour: 120 bars (structure, legs, wedges, tests) - up to entry time
             # - 5-Min: 234 bars (3 trading days) - up to entry time
 
-            # For daily bars, use the day BEFORE entry to avoid partial day data
+            # For daily bars, use the day BEFORE entry to avoid partial day data for LLM
+            # But fetch up to trade date to get today's open for session context
             daily_cutoff = datetime.combine(trade.trade_date - timedelta(days=1), datetime.max.time())
+            daily_fetch_end = datetime.combine(trade.trade_date, datetime.max.time())  # Include trade date for session context
 
             if timeframe == "5m":
                 # 5-min scalp/day trades: Full Brooks package
                 # Check cancellation between each fetch (rate-limited operations)
                 if cancellation_check and cancellation_check():
-                    return "Cancelled"
-                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "1d", daily_cutoff, 60, "DAILY (up to prior day close)", cancellation_check))
+                    return ("Cancelled", None) if return_daily_df else "Cancelled"
+                daily_context, daily_df = self._fetch_ohlcv_section_with_cutoff_and_df(trade.ticker, "1d", daily_fetch_end, 65, "DAILY (up to prior day close)", daily_cutoff, cancellation_check)
+                all_context.append(daily_context)
 
                 if cancellation_check and cancellation_check():
-                    return "Cancelled"
+                    return ("Cancelled", None) if return_daily_df else "Cancelled"
                 all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "2h", entry_cutoff, 120, "2-HOUR (up to entry time)", cancellation_check))
 
                 if cancellation_check and cancellation_check():
-                    return "Cancelled"
+                    return ("Cancelled", None) if return_daily_df else "Cancelled"
                 all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "5m", entry_cutoff, 234, "5-MINUTE (up to entry time)", cancellation_check))
 
             elif timeframe == "2h":
                 # 2-hour swing trades: Daily + 2H context
                 if cancellation_check and cancellation_check():
-                    return "Cancelled"
-                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "1d", daily_cutoff, 60, "DAILY (up to prior day close)", cancellation_check))
+                    return ("Cancelled", None) if return_daily_df else "Cancelled"
+                daily_context, daily_df = self._fetch_ohlcv_section_with_cutoff_and_df(trade.ticker, "1d", daily_fetch_end, 65, "DAILY (up to prior day close)", daily_cutoff, cancellation_check)
+                all_context.append(daily_context)
 
                 if cancellation_check and cancellation_check():
-                    return "Cancelled"
+                    return ("Cancelled", None) if return_daily_df else "Cancelled"
                 all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "2h", entry_cutoff, 120, "2-HOUR (up to entry time)", cancellation_check))
 
             elif timeframe == "1d":
                 # Daily position trades: Extended daily context
                 if cancellation_check and cancellation_check():
-                    return "Cancelled"
-                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "1d", daily_cutoff, 120, "DAILY (up to prior day close)", cancellation_check))
+                    return ("Cancelled", None) if return_daily_df else "Cancelled"
+                daily_context, daily_df = self._fetch_ohlcv_section_with_cutoff_and_df(trade.ticker, "1d", daily_fetch_end, 125, "DAILY (up to prior day close)", daily_cutoff, cancellation_check)
+                all_context.append(daily_context)
 
             else:
                 # Default to 5m timeframe with full Brooks package
                 if cancellation_check and cancellation_check():
-                    return "Cancelled"
-                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "1d", daily_cutoff, 60, "DAILY (up to prior day close)", cancellation_check))
+                    return ("Cancelled", None) if return_daily_df else "Cancelled"
+                daily_context, daily_df = self._fetch_ohlcv_section_with_cutoff_and_df(trade.ticker, "1d", daily_fetch_end, 65, "DAILY (up to prior day close)", daily_cutoff, cancellation_check)
+                all_context.append(daily_context)
 
                 if cancellation_check and cancellation_check():
-                    return "Cancelled"
+                    return ("Cancelled", None) if return_daily_df else "Cancelled"
                 all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "2h", entry_cutoff, 120, "2-HOUR (up to entry time)", cancellation_check))
 
                 if cancellation_check and cancellation_check():
-                    return "Cancelled"
+                    return ("Cancelled", None) if return_daily_df else "Cancelled"
                 all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "5m", entry_cutoff, 234, "5-MINUTE (up to entry time)", cancellation_check))
 
             result = "\n\n".join([ctx for ctx in all_context if ctx])
             if not result:
                 logger.warning(f"⚠️ No OHLCV data collected for {trade.ticker}")
-                return "No market data available"
+                return ("No market data available", daily_df) if return_daily_df else "No market data available"
             
             # Check for any sections that indicate no data or errors
             has_real_data = False
@@ -368,11 +384,11 @@ class TradeCoach:
             
             # Log summary of what was fetched
             logger.info(f"📊 OHLCV fetched for {trade.ticker}: {len(all_context)} sections, {len(result)} chars total, has_real_data={has_real_data}")
-            return result
+            return (result, daily_df) if return_daily_df else result
 
         except Exception as e:
             logger.warning(f"Failed to get OHLCV context: {e}")
-            return "Market data unavailable"
+            return ("Market data unavailable", None) if return_daily_df else "Market data unavailable"
     
     def _fetch_ohlcv_section_with_cutoff(self, ticker: str, interval: str, cutoff_time: datetime, num_bars: int, label: str, cancellation_check: callable = None) -> str:
         """Fetch OHLCV data up to a specific cutoff time (no future data).
@@ -449,6 +465,82 @@ class TradeCoach:
             logger.warning(f"Failed to fetch {interval} data for {ticker}: {e}")
             return f"=== {label} ===\nData fetch failed: {e}"
 
+    def _fetch_ohlcv_section_with_cutoff_and_df(self, ticker: str, interval: str, fetch_end: datetime, num_bars: int, label: str, display_cutoff: datetime, cancellation_check: callable = None) -> tuple:
+        """Fetch OHLCV data and return both formatted string and raw DataFrame.
+        
+        This is used for daily data to reuse it for session context.
+        
+        Args:
+            ticker: Stock ticker
+            interval: Time interval (1d, 2h, 5m, etc.)
+            fetch_end: End time for data fetch (includes trade date for session context)
+            num_bars: Number of bars to fetch
+            label: Label for this section
+            display_cutoff: Cutoff time for display (prior day close for LLM context)
+            cancellation_check: Optional cancellation check callable
+        
+        Returns:
+            tuple: (formatted_string, raw_dataframe)
+        """
+        try:
+            # Calculate start date
+            start_date = fetch_end - timedelta(days=num_bars + 10)
+            
+            # Check for cancellation before fetch
+            if cancellation_check and cancellation_check():
+                return f"=== {label} ===\nCancelled", None
+            
+            # Fetch data up to fetch_end (includes trade date)
+            provider = self._get_provider_for_ticker(ticker)
+            ohlcv = provider.get_ohlcv(
+                ticker,
+                interval,
+                start_date,
+                fetch_end,
+                cancellation_check=cancellation_check
+            )
+            
+            if ohlcv is None or ohlcv.empty:
+                logger.warning(f"No {interval} data returned for {ticker}")
+                return f"=== {label} ===\nNo data available", None
+            
+            # Store full DataFrame for session context
+            full_df = ohlcv.copy()
+            
+            # Filter for display (only up to display_cutoff for LLM context)
+            if 'timestamp' in ohlcv.columns:
+                ohlcv = ohlcv[ohlcv['timestamp'] <= display_cutoff]
+            
+            # Limit to requested number of bars
+            ohlcv = ohlcv.tail(num_bars)
+            
+            if ohlcv.empty:
+                return f"=== {label} ===\nNo data available before cutoff", full_df
+            
+            # Format as readable string
+            lines = [f"=== {label} ==="]
+            lines.append(f"Cutoff: {display_cutoff.strftime('%Y-%m-%d %H:%M')}")
+            lines.append(f"Bars: {len(ohlcv)}")
+            lines.append("timestamp, open, high, low, close, volume")
+            
+            for _, row in ohlcv.iterrows():
+                ts = row.get('timestamp', row.name)
+                if hasattr(ts, 'strftime'):
+                    ts_str = ts.strftime('%Y-%m-%d %H:%M')
+                else:
+                    ts_str = str(ts)
+                
+                lines.append(
+                    f"{ts_str}, {row['open']:.4f}, {row['high']:.4f}, "
+                    f"{row['low']:.4f}, {row['close']:.4f}, {int(row.get('volume', 0))}"
+                )
+            
+            return "\n".join(lines), full_df
+            
+        except Exception as e:
+            logger.warning(f"Failed to fetch {interval} data for {ticker}: {e}")
+            return f"=== {label} ===\nData fetch failed: {e}", None
+
     def _ensure_list(self, value) -> list:
         """Ensure value is a list (convert string to single-item list if needed)."""
         if value is None:
@@ -459,17 +551,61 @@ class TradeCoach:
             return [value]
         return []
 
-    def _get_session_context(self, trade: Trade) -> tuple:
+    def _get_session_context(self, trade: Trade, daily_ohlcv: Optional[pd.DataFrame] = None) -> tuple:
         """Get prior day levels and today's open for session context.
 
         Uses data available BEFORE entry (no look-ahead bias).
+        Reuses already-fetched daily OHLCV data if provided to avoid extra API calls.
+        
+        Args:
+            trade: Trade object
+            daily_ohlcv: Optional pre-fetched daily OHLCV DataFrame
         
         Returns:
             tuple: (pd_high, pd_low, pd_close, today_open)
         """
         try:
-            # Use the day before trade date to get prior day data (available at market open)
-            prior_day_date = trade.trade_date - timedelta(days=1)
+            trade_date = trade.trade_date
+            
+            # If we have pre-fetched daily data, extract from it
+            if daily_ohlcv is not None and not daily_ohlcv.empty:
+                # Find prior day and trade day data from the existing DataFrame
+                if 'timestamp' in daily_ohlcv.columns:
+                    daily_ohlcv = daily_ohlcv.copy()
+                    daily_ohlcv['date'] = pd.to_datetime(daily_ohlcv['timestamp']).dt.date
+                elif 'datetime' in daily_ohlcv.columns:
+                    daily_ohlcv = daily_ohlcv.copy()
+                    daily_ohlcv['date'] = pd.to_datetime(daily_ohlcv['datetime']).dt.date
+                else:
+                    # Try index
+                    daily_ohlcv = daily_ohlcv.copy()
+                    daily_ohlcv['date'] = pd.to_datetime(daily_ohlcv.index).date
+                
+                # Prior day data
+                prior_day_mask = daily_ohlcv['date'] < trade_date
+                prior_days = daily_ohlcv[prior_day_mask]
+                
+                if not prior_days.empty:
+                    prior_day = prior_days.iloc[-1]
+                    pd_high = prior_day.get('high')
+                    pd_low = prior_day.get('low')
+                    pd_close = prior_day.get('close')
+                else:
+                    pd_high, pd_low, pd_close = None, None, None
+                
+                # Today's open
+                trade_day_mask = daily_ohlcv['date'] == trade_date
+                trade_day = daily_ohlcv[trade_day_mask]
+                
+                if not trade_day.empty:
+                    today_open = trade_day.iloc[0].get('open')
+                else:
+                    today_open = None
+                
+                return (pd_high, pd_low, pd_close, today_open)
+            
+            # Fallback: fetch from API (only if no pre-fetched data)
+            prior_day_date = trade_date - timedelta(days=1)
             start_date = prior_day_date - timedelta(days=5)
             end_date = datetime.combine(prior_day_date, datetime.max.time())
             
@@ -484,13 +620,11 @@ class TradeCoach:
             if ohlcv is None or ohlcv.empty:
                 return None, None, None, None
             
-            # Prior day is the last complete day before trade date
             prior_day = ohlcv.iloc[-1]
             
             # For today's open, we need to fetch the trade date's data
-            # but only the open (which is known at market open)
-            trade_day_start = datetime.combine(trade.trade_date, datetime.min.time())
-            trade_day_end = datetime.combine(trade.trade_date, datetime.max.time())
+            trade_day_start = datetime.combine(trade_date, datetime.min.time())
+            trade_day_end = datetime.combine(trade_date, datetime.max.time())
             
             today_ohlcv = provider.get_ohlcv(
                 trade.ticker,

@@ -173,9 +173,22 @@ class Trade(Base):
 
     # User notes and coaching
     notes = Column(Text)
-    mistakes = Column(Text)
-    lessons = Column(Text)
+    mistakes = Column(Text)  # Legacy - kept for backward compatibility
+    lessons = Column(Text)   # Legacy - kept for backward compatibility
+    mistakes_and_lessons = Column(Text)  # Combined field for mistakes & lessons
     coach_feedback = Column(Text)
+    
+    @property
+    def effective_mistakes_lessons(self) -> str:
+        """Get combined mistakes and lessons (prefers new combined field, falls back to legacy)."""
+        if self.mistakes_and_lessons:
+            return self.mistakes_and_lessons
+        parts = []
+        if self.mistakes:
+            parts.append(self.mistakes)
+        if self.lessons:
+            parts.append(self.lessons)
+        return "\n\n".join(parts) if parts else ""
     
     # Extended Brooks-style trade analysis fields
     trend_assessment = Column(Text)  # My assessment of the current trend (major and minor)
@@ -572,6 +585,16 @@ def init_db() -> None:
                 conn.execute(text("ALTER TABLE trades ADD COLUMN strategy_alignment TEXT"))
                 conn.execute(text("ALTER TABLE trades ADD COLUMN entry_exit_emotions TEXT"))
                 conn.execute(text("ALTER TABLE trades ADD COLUMN entry_tp_distance TEXT"))
+                conn.commit()
+            except Exception:
+                pass
+        
+        # Combined mistakes and lessons field
+        try:
+            conn.execute(text("SELECT mistakes_and_lessons FROM trades LIMIT 1"))
+        except Exception:
+            try:
+                conn.execute(text("ALTER TABLE trades ADD COLUMN mistakes_and_lessons TEXT"))
                 conn.commit()
             except Exception:
                 pass

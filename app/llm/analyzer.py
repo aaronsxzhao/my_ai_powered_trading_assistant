@@ -317,8 +317,9 @@ class LLMAnalyzer:
         emotional_state: Optional[str] = None,
         followed_plan: Optional[bool] = None,
         account_type: Optional[str] = None,
-        mistakes: Optional[str] = None,
-        lessons: Optional[str] = None,
+        mistakes: Optional[str] = None,  # Legacy
+        lessons: Optional[str] = None,   # Legacy
+        mistakes_and_lessons: Optional[str] = None,  # Combined field
         # New extended fields
         trade_date: Optional[str] = None,
         market: Optional[str] = None,
@@ -553,8 +554,12 @@ class LLMAnalyzer:
             emotional_state=emotional_state or "Not recorded",
             followed_plan="Yes" if followed_plan else ("No" if followed_plan is False else "Not recorded"),
             notes=notes or "None",
-            mistakes=mistakes or "None noted",
-            lessons=lessons or "None noted",
+            # Combined mistakes & lessons (prefer combined field, fall back to separate)
+            mistakes_and_lessons=mistakes_and_lessons or (
+                ((mistakes or "") + ("\n" if mistakes and lessons else "") + (lessons or "")) or "None noted"
+            ),
+            mistakes=mistakes or "None noted",  # Legacy compatibility
+            lessons=lessons or "None noted",    # Legacy compatibility
             ohlcv_context=ohlcv_context if ohlcv_context else "No market context data provided.",
             # Extended Brooks analysis fields
             trend_assessment=trend_assessment or "Not provided",

@@ -389,8 +389,7 @@ TRADER'S ANALYSIS (self-assessment before AI review):
 - Followed plan: {followed_plan}
 - Stop reason: {stop_reason}
 - Target reason: {target_reason}
-- Mistakes noted: {mistakes}
-- Lessons noted: {lessons}
+- Mistakes & Lessons: {mistakes_and_lessons}
 
 SESSION CONTEXT (must be filled):
 - Today open: {today_open}

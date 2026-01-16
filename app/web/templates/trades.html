@@ -57,6 +57,20 @@
     <!-- Trades Table -->
     <div class="card overflow-hidden">
         {% if trades %}
+        <!-- Legend -->
+        <div class="flex items-center justify-between px-4 py-2 border-b border-dark-700/50 text-sm">
+            <div class="flex items-center gap-4 text-dark-400">
+                <span class="flex items-center gap-1">
+                    <span class="text-accent-400">🤖</span> AI Reviewed
+                </span>
+                <span class="flex items-center gap-1">
+                    <span class="text-dark-600">○</span> Pending Review
+                </span>
+            </div>
+            <span class="text-dark-500">
+                {{ trades|selectattr('cached_review')|list|length }}/{{ trades|length }} reviewed
+            </span>
+        </div>
         <div class="overflow-x-auto">
             <table class="table-modern">
                 <thead>
@@ -78,8 +92,17 @@
                 </thead>
                 <tbody>
                     {% for trade in trades %}
-                    <tr class="group">
-                        <td class="text-dark-500 text-sm">#{{ trade.trade_number or trade.id }}</td>
+                    <tr class="group {% if not trade.cached_review %}bg-dark-800/30{% endif %}">
+                        <td class="text-dark-500 text-sm">
+                            <span class="flex items-center gap-1">
+                                #{{ trade.trade_number or trade.id }}
+                                {% if trade.cached_review and trade.review_generated_at %}
+                                <span class="text-accent-400 text-xs" title="AI Reviewed on {{ trade.review_generated_at.strftime('%Y-%m-%d %H:%M') }}">🤖</span>
+                                {% else %}
+                                <span class="text-dark-600 text-xs" title="Not yet reviewed">○</span>
+                                {% endif %}
+                            </span>
+                        </td>
                         <td class="text-sm font-mono text-dark-400">
                             {% if trade.exit_time %}
                                 {{ trade.exit_time.strftime('%m/%d %H:%M') }}
@@ -155,7 +178,7 @@
                         </td>
                         <td>
                             <div class="flex items-center space-x-1 opacity-50 group-hover:opacity-100 transition-opacity">
-                                <button onclick="openEditModal({{ trade.id }}, {{ trade.size or 0 }}, {{ trade.entry_price }}, {{ trade.exit_price or 0 }}, {{ trade.stop_loss or trade.stop_price or 0 }}, {{ trade.take_profit or trade.target_price or 0 }}, '{{ trade.currency or "USD" }}', {{ trade.currency_rate or 1.0 }}, '{{ trade.entry_time.strftime('%Y-%m-%dT%H:%M:%S') if trade.entry_time else '' }}', '{{ trade.exit_time.strftime('%Y-%m-%dT%H:%M:%S') if trade.exit_time else '' }}', '{{ trade.timeframe or "5m" }}')"
+                                <button onclick="openEditModal({{ trade.id }}, '{{ trade.ticker }}', {{ trade.size or 0 }}, {{ trade.entry_price }}, {{ trade.exit_price or 0 }}, {{ trade.stop_loss or trade.stop_price or 0 }}, {{ trade.take_profit or trade.target_price or 0 }}, '{{ trade.currency or "USD" }}', {{ trade.currency_rate or 1.0 }}, '{{ trade.entry_time.strftime('%Y-%m-%dT%H:%M:%S') if trade.entry_time else '' }}', '{{ trade.exit_time.strftime('%Y-%m-%dT%H:%M:%S') if trade.exit_time else '' }}', '{{ trade.timeframe or "5m" }}')"
                                         class="btn btn-ghost p-2 text-sm" title="Edit">
                                     ✏️
                                 </button>
@@ -202,6 +225,17 @@
             
             <div class="grid grid-cols-2 gap-4">
                 <div>
+                    <label class="label">Ticker</label>
+                    <input type="text" id="edit-ticker" class="input text-sm uppercase" placeholder="SPY">
+                </div>
+                <div>
+                    <label class="label">Shares</label>
+                    <input type="number" id="edit-shares" step="1" min="1" class="input">
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div>
                     <label class="label">Entry Time</label>
                     <input type="datetime-local" id="edit-entry-time" step="1" class="input text-sm">
                 </div>
@@ -209,11 +243,6 @@
                     <label class="label">Exit Time</label>
                     <input type="datetime-local" id="edit-exit-time" step="1" class="input text-sm">
                 </div>
-            </div>
-
-            <div>
-                <label class="label">Shares</label>
-                <input type="number" id="edit-shares" step="1" min="1" class="input">
             </div>
             
             <div class="grid grid-cols-3 gap-4">
@@ -281,12 +310,13 @@
 let currentTradeId = null;
 let currentTradeDate = null;
 
-function openEditModal(id, shares, entry, exit, sl, tp, currency, rate, entryTime, exitTime, timeframe) {
+function openEditModal(id, ticker, shares, entry, exit, sl, tp, currency, rate, entryTime, exitTime, timeframe) {
     currentTradeId = id;
     currentTradeDate = exitTime || entryTime;
     
     document.getElementById('edit-trade-id').textContent = id;
     document.getElementById('edit-id').value = id;
+    document.getElementById('edit-ticker').value = ticker || '';
     document.getElementById('edit-shares').value = shares;
     document.getElementById('edit-entry').value = entry;
     document.getElementById('edit-exit').value = exit;
@@ -344,6 +374,7 @@ document.getElementById('edit-form').addEventListener('submit', async (e) => {
     const tpValue = document.getElementById('edit-tp').value;
     
     const data = {
+        ticker: document.getElementById('edit-ticker').value.toUpperCase(),
         size: parseFloat(document.getElementById('edit-shares').value),
         entry_price: parseFloat(document.getElementById('edit-entry').value),
         exit_price: parseFloat(document.getElementById('edit-exit').value),

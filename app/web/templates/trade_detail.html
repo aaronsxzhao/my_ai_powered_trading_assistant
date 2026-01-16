@@ -471,12 +471,8 @@
             <!-- 6. Mistakes Made & Lessons Learned (Merged) -->
             <div class="md:col-span-2">
                 <label class="label">6️⃣ Mistakes Made & Lessons Learned (Why did trade succeed/fail?)</label>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <textarea id="mistakes-field" rows="3" class="input resize-none" 
-                        placeholder="Mistakes: Selection error? Execution error? Entered too early/late?">{{ trade.mistakes or '' }}</textarea>
-                    <textarea id="lessons-field" rows="3" class="input resize-none" 
-                        placeholder="Lessons: What rule for next 20 trades? What would you do differently?">{{ trade.lessons or '' }}</textarea>
-                </div>
+                <textarea id="mistakes-lessons-field" rows="4" class="input resize-none" 
+                    placeholder="What mistakes were made? Selection error? Execution error? Entered too early/late?&#10;What would you do differently next time? What rule for the next 20 trades?">{{ trade.mistakes_and_lessons or ((trade.mistakes or '') + ('\n\n' if trade.mistakes and trade.lessons else '') + (trade.lessons or '')) }}</textarea>
             </div>
         </div>
         
@@ -836,8 +832,7 @@ async function saveNotes() {
         // Basic notes
         notes: document.getElementById('notes-field').value,
         entry_reason: document.getElementById('entry-reason-field').value,
-        mistakes: document.getElementById('mistakes-field').value,
-        lessons: document.getElementById('lessons-field').value,
+        mistakes_and_lessons: document.getElementById('mistakes-lessons-field').value,
         // Quick selectors
         trade_type: document.getElementById('trade-type-field').value || null,
         confidence_level: document.getElementById('confidence-field').value ? parseInt(document.getElementById('confidence-field').value) : null,
@@ -969,46 +964,56 @@ async function fetchHistoricalRate() {
     }
 }
 
-// Auto-fetch rate when currency changes
-document.getElementById('edit-currency').addEventListener('change', fetchHistoricalRate);
-
-// Form submission handler
-document.getElementById('edit-trade-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
+// Form submission handler and event listeners - wait for DOM to be ready
+document.addEventListener('DOMContentLoaded', function() {
+    // Auto-fetch rate when currency changes
+    const currencySelect = document.getElementById('edit-currency');
+    if (currencySelect) {
+        currencySelect.addEventListener('change', fetchHistoricalRate);
+    }
     
-    const slValue = document.getElementById('edit-stop-loss').value;
-    const tpValue = document.getElementById('edit-take-profit').value;
-    
-    const payload = {
-        size: parseFloat(document.getElementById('edit-size').value),
-        entry_price: parseFloat(document.getElementById('edit-entry-price').value),
-        exit_price: parseFloat(document.getElementById('edit-exit-price').value),
-        stop_loss: slValue ? parseFloat(slValue) : null,
-        take_profit: tpValue ? parseFloat(tpValue) : null,
-        currency: document.getElementById('edit-currency').value,
-        currency_rate: parseFloat(document.getElementById('edit-rate').value),
-        entry_time: document.getElementById('edit-entry-time').value || null,
-        exit_time: document.getElementById('edit-exit-time').value || null,
-        timeframe: document.getElementById('edit-timeframe').value,
-    };
+    // Form submission
+    const editForm = document.getElementById('edit-trade-form');
+    if (editForm) {
+        editForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const slValue = document.getElementById('edit-stop-loss').value;
+            const tpValue = document.getElementById('edit-take-profit').value;
+            
+            const payload = {
+                ticker: document.getElementById('edit-ticker').value.toUpperCase(),
+                size: parseFloat(document.getElementById('edit-size').value),
+                entry_price: parseFloat(document.getElementById('edit-entry-price').value),
+                exit_price: parseFloat(document.getElementById('edit-exit-price').value),
+                stop_loss: slValue ? parseFloat(slValue) : null,
+                take_profit: tpValue ? parseFloat(tpValue) : null,
+                currency: document.getElementById('edit-currency').value,
+                currency_rate: parseFloat(document.getElementById('edit-rate').value),
+                entry_time: document.getElementById('edit-entry-time').value || null,
+                exit_time: document.getElementById('edit-exit-time').value || null,
+                timeframe: document.getElementById('edit-timeframe').value,
+            };
 
-    try {
-        const response = await fetch(`/api/trades/${TRADE_ID}`, {
-            method: 'PATCH',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(payload)
+            try {
+                const response = await fetch(`/api/trades/${TRADE_ID}`, {
+                    method: 'PATCH',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+
+                if (response.ok) {
+                    showToast('Trade updated!', 'success');
+                    closeEditTradeModal();
+                    setTimeout(() => window.location.reload(), 1000);
+                } else {
+                    const err = await response.json();
+                    showToast('Error: ' + (err.detail || 'Failed to update'), 'error');
+                }
+            } catch (err) {
+                showToast('Error: ' + err.message, 'error');
+            }
         });
-
-        if (response.ok) {
-            showToast('Trade updated!', 'success');
-            closeEditTradeModal();
-            setTimeout(() => window.location.reload(), 1000);
-        } else {
-            const err = await response.json();
-            showToast('Error: ' + (err.detail || 'Failed to update'), 'error');
-        }
-    } catch (err) {
-        showToast('Error: ' + err.message, 'error');
     }
 });
 </script>
@@ -1027,6 +1032,19 @@ document.getElementById('edit-trade-form').addEventListener('submit', async (e) 
         <form id="edit-trade-form" class="space-y-4">
             <div class="grid grid-cols-2 gap-4">
                 <div>
+                    <label class="label">Ticker</label>
+                    <input type="text" id="edit-ticker" class="input text-sm uppercase"
+                           value="{{ trade.ticker }}" placeholder="SPY">
+                </div>
+                <div>
+                    <label class="label">Shares</label>
+                    <input type="number" id="edit-size" step="1" min="1" class="input"
+                           value="{{ trade.size or 1 }}">
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div>
                     <label class="label">Entry Time</label>
                     <input type="datetime-local" id="edit-entry-time" step="1" class="input text-sm"
                            value="{{ trade.entry_time.strftime('%Y-%m-%dT%H:%M:%S') if trade.entry_time else '' }}">
@@ -1036,12 +1054,6 @@ document.getElementById('edit-trade-form').addEventListener('submit', async (e) 
                     <input type="datetime-local" id="edit-exit-time" step="1" class="input text-sm"
                            value="{{ trade.exit_time.strftime('%Y-%m-%dT%H:%M:%S') if trade.exit_time else '' }}">
                 </div>
-            </div>
-
-            <div>
-                <label class="label">Shares</label>
-                <input type="number" id="edit-size" step="1" min="1" class="input"
-                       value="{{ trade.size or 1 }}">
             </div>
 
             <div class="grid grid-cols-2 gap-4">

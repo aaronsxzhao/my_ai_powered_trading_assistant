@@ -29,25 +29,16 @@
     <div id="panel-single" class="trade-panel">
         <div class="max-w-2xl">
             <form action="/api/trades" method="POST" class="card space-y-6">
-                <div class="grid grid-cols-2 gap-4">
-                    <!-- Ticker -->
-                    <div>
-                        <label class="label">Ticker *</label>
-                        <input type="text" name="ticker" required 
-                            class="input" placeholder="SPY" list="ticker-list">
-                        <datalist id="ticker-list">
-                            {% for ticker in tickers %}
-                            <option value="{{ ticker }}">
-                            {% endfor %}
-                        </datalist>
-                    </div>
-
-                    <!-- Date -->
-                    <div>
-                        <label class="label">Trade Date</label>
-                        <input type="date" name="trade_date" 
-                            class="input" value="{{ today if today else '' }}">
-                    </div>
+                <!-- Ticker -->
+                <div>
+                    <label class="label">Ticker *</label>
+                    <input type="text" name="ticker" required 
+                        class="input uppercase" placeholder="SPY" list="ticker-list">
+                    <datalist id="ticker-list">
+                        {% for ticker in tickers %}
+                        <option value="{{ ticker }}">
+                        {% endfor %}
+                    </datalist>
                 </div>
 
                 <div class="grid grid-cols-2 gap-4">
@@ -489,7 +480,7 @@ exitInput.addEventListener('input', calculateR);
 stopInput.addEventListener('input', calculateR);
 directionSelect.addEventListener('change', calculateR);
 
-document.querySelector('input[name="trade_date"]').valueAsDate = new Date();
+// Trade date is derived from entry/exit time, no separate field needed
 
 // ===== BULK IMPORT =====
 const fileInput = document.getElementById('file-input');

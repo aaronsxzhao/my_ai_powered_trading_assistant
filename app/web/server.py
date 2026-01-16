@@ -232,7 +232,7 @@ async def update_trade_notes(trade_id: int, request: Request):
         # Allowed fields that can be updated via this endpoint
         allowed_fields = {
             # Notes
-            'notes', 'entry_reason', 'mistakes', 'lessons',
+            'notes', 'entry_reason', 'mistakes', 'lessons', 'mistakes_and_lessons',
             # Brooks intent
             'trade_type', 'confidence_level', 'emotional_state', 'followed_plan',
             'stop_reason', 'target_reason', 'invalidation_condition',
@@ -526,7 +526,6 @@ async def create_trade(
     stop_loss: float = Form(None),  # SL - optional
     take_profit: float = Form(None),  # TP - optional
     size: float = Form(1.0),
-    trade_date: str = Form(None),
     entry_time: str = Form(None),
     exit_time: str = Form(None),
     timeframe: str = Form("5m"),
@@ -537,8 +536,6 @@ async def create_trade(
     """Create a new trade."""
     ingester = TradeIngester()
 
-    parsed_date = datetime.strptime(trade_date, "%Y-%m-%d").date() if trade_date else date.today()
-    
     # Parse entry/exit times if provided
     parsed_entry_time = None
     parsed_exit_time = None
@@ -566,6 +563,14 @@ async def create_trade(
                     parsed_exit_time = datetime.strptime(exit_time, "%Y-%m-%dT%H:%M")
                 except ValueError:
                     pass
+
+    # Derive trade_date from exit_time, entry_time, or today
+    if parsed_exit_time:
+        parsed_date = parsed_exit_time.date()
+    elif parsed_entry_time:
+        parsed_date = parsed_entry_time.date()
+    else:
+        parsed_date = date.today()
 
     trade = ingester.add_trade_manual(
         ticker=ticker,
@@ -953,6 +958,8 @@ async def update_trade(trade_id: int, request: Request):
             raise HTTPException(status_code=404, detail="Trade not found")
         
         # Update fields if provided
+        if data.get("ticker") is not None:
+            trade.ticker = data["ticker"].upper()
         if data.get("size") is not None:
             trade.size = float(data["size"])
         if data.get("entry_price") is not None:
