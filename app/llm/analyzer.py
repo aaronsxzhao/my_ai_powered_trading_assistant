@@ -44,7 +44,7 @@ def _get_materials_for_trade(
                 max_chars=8000
             )
             if materials:
-                logger.info(f"📚 Retrieved relevant materials via RAG")
+                logger.debug(f"📚 Retrieved relevant materials via RAG")
                 return materials
         
         # If RAG not ready but materials exist, try to index them
@@ -80,6 +80,12 @@ def _get_materials_for_trade(
         logger.warning(f"Simple materials reader failed: {e}")
     
     return ""
+
+
+class SafeFormatDict(dict):
+    """Dict that returns placeholder name for missing keys (avoids KeyError in format())."""
+    def __missing__(self, key):
+        return f"{{{key}}}"  # Return {key} for missing placeholders
 
 
 class LLMAnalyzer:
@@ -146,7 +152,13 @@ class LLMAnalyzer:
             )
             return response.choices[0].message.content
         except Exception as e:
-            logger.error(f"LLM call failed: {e}")
+            error_str = str(e)
+            if "401" in error_str or "Unauthorized" in error_str or "token" in error_str.lower():
+                logger.error(f"LLM authentication failed - check your API key in .env file: {e}")
+            elif "429" in error_str or "rate" in error_str.lower():
+                logger.error(f"LLM rate limited - try again later: {e}")
+            else:
+                logger.error(f"LLM call failed: {e}")
             return None
 
     async def _call_llm_async(
@@ -225,42 +237,23 @@ class LLMAnalyzer:
         
         stop_loss_str = f"${stop_loss:.4f}" if stop_loss else "Not set"
 
-        # Build user prompt from template
+        # Build user prompt from template (using SafeFormatDict to avoid KeyError)
         user_template = get_user_prompt('trade_classification')
-        try:
-            user_prompt = user_template.format(
-                ticker=ticker,
-                direction=direction.upper(),
-                entry_price=f"{entry_price:.4f}",
-                exit_price=f"{exit_price:.4f}",
-                stop_price=stop_loss_str,  # Legacy placeholder name
-                stop_loss=stop_loss_str,   # New placeholder name
-                r_multiple=r_mult_str,
-                entry_reason=entry_reason or "Not provided",
-                notes=notes or "Not provided",
-                ohlcv_context=f"MARKET CONTEXT (OHLCV):\n{ohlcv_context}" if ohlcv_context else "No market context available.",
-                timeframe=timeframe or "5m",
-                trade_type=trade_type or "Not specified",
-            )
-        except KeyError as e:
-            # Fallback if template has different placeholders
-            logger.warning(f"Template key error: {e}, using fallback prompt")
-            user_prompt = f"""Classify this trade:
-- Ticker: {ticker}
-- Direction: {direction.upper()}
-- Entry: ${entry_price:.4f}
-- Exit: ${exit_price:.4f}
-- Stop Loss (SL): {stop_loss_str}
-- R: {r_mult_str}
-- Timeframe: {timeframe or '5m'}
-- Trade Type: {trade_type or 'Not specified'}
-
-Entry Reason: {entry_reason or 'Not provided'}
-Notes: {notes or 'Not provided'}
-
-{f"MARKET CONTEXT:{chr(10)}{ohlcv_context}" if ohlcv_context else "No market context."}
-
-Classify this trade. If you cannot classify with confidence, explain what specific information is missing."""
+        format_vars = SafeFormatDict(
+            ticker=ticker,
+            direction=direction.upper(),
+            entry_price=f"{entry_price:.4f}",
+            exit_price=f"{exit_price:.4f}",
+            stop_price=stop_loss_str,
+            stop_loss=stop_loss_str,
+            r_multiple=r_mult_str,
+            entry_reason=entry_reason or "Not provided",
+            notes=notes or "Not provided",
+            ohlcv_context=f"MARKET CONTEXT (OHLCV):\n{ohlcv_context}" if ohlcv_context else "No market context available.",
+            timeframe=timeframe or "5m",
+            trade_type=trade_type or "Not specified",
+        )
+        user_prompt = user_template.format_map(format_vars)
 
         response = self._call_llm(system_prompt, user_prompt)
         
@@ -341,6 +334,13 @@ Classify this trade. If you cannot classify with confidence, explain what specif
         fivemin_bars: Optional[str] = None,
         local_window: Optional[str] = None,
         chart_notes: Optional[str] = None,
+        # Extended Brooks analysis fields
+        trend_assessment: Optional[str] = None,
+        signal_reason: Optional[str] = None,
+        was_signal_present: Optional[str] = None,
+        strategy_alignment: Optional[str] = None,
+        entry_exit_emotions: Optional[str] = None,
+        entry_tp_distance: Optional[str] = None,
     ) -> dict:
         """
         Comprehensive Brooks Audit of a completed trade.
@@ -391,7 +391,7 @@ Classify this trade. If you cannot classify with confidence, explain what specif
         )
         if materials_context:
             system_prompt = f"{system_prompt}\n\n{materials_context}"
-            logger.info(f"📚 Added {len(materials_context)} chars of relevant training materials")
+            logger.debug(f"📚 Added {len(materials_context)} chars of relevant training materials")
 
         # Format hold time
         hold_time_str = "-"
@@ -435,14 +435,15 @@ Classify this trade. If you cannot classify with confidence, explain what specif
         mae_str = f"{mae:.2f}R" if mae else "not recorded"
         mfe_str = f"{mfe:.2f}R" if mfe else "not recorded"
         
-        user_prompt = user_template.format(
+        # Build format variables (using SafeFormatDict to avoid KeyError for missing placeholders)
+        format_vars = SafeFormatDict(
             # Trade identity
             ticker=ticker,
             market=market or "US stocks",
             timezone=timezone or "US/Eastern",
             trade_date=trade_date or str(entry_time)[:10] if entry_time else "unknown",
             timeframe=timeframe or "5m",
-            tf_traded=timeframe or "5m",  # Alias for user prompt compatibility
+            tf_traded=timeframe or "5m",
             direction=direction.lower(),
             # Execution details
             entry_time=entry_time_str,
@@ -451,10 +452,10 @@ Classify this trade. If you cannot classify with confidence, explain what specif
             exit_price=f"{exit_price:.4f}",
             size=f"{size:.0f}" if size else "1",
             order_type=order_type or "market",
-            stop_price=f"${stop_loss:.4f}" if stop_loss else "not set",  # Legacy placeholder
-            stop_loss=f"${stop_loss:.4f}" if stop_loss else "not set",  # New placeholder
-            target_price=f"${take_profit:.4f}" if take_profit else "not set",  # Legacy placeholder
-            take_profit=f"${take_profit:.4f}" if take_profit else "not set",  # New placeholder
+            stop_price=f"${stop_loss:.4f}" if stop_loss else "not set",
+            stop_loss=f"${stop_loss:.4f}" if stop_loss else "not set",
+            target_price=f"${take_profit:.4f}" if take_profit else "not set",
+            take_profit=f"${take_profit:.4f}" if take_profit else "not set",
             exit_breakdown=exit_breakdown or "none",
             fees=f"${fees:.2f}" if fees else "unknown",
             slippage=f"${slippage:.4f}" if slippage else "unknown",
@@ -482,7 +483,7 @@ Classify this trade. If you cannot classify with confidence, explain what specif
             fivemin_bars=fivemin_section or "No 5-min data available",
             local_window=local_window or "No local window data available",
             chart_notes=chart_notes or "none",
-            # Aliases for user prompt compatibility (different naming conventions)
+            # Aliases for compatibility
             daily_60=daily_section or "No daily data available",
             twohour_120=twohour_section or "No 2-hour data available",
             fivemin_234=fivemin_section or "No 5-min data available",
@@ -505,8 +506,16 @@ Classify this trade. If you cannot classify with confidence, explain what specif
             notes=notes or "None",
             mistakes=mistakes or "None noted",
             lessons=lessons or "None noted",
-            ohlcv_context=ohlcv_context if ohlcv_context else "No market context data provided."
+            ohlcv_context=ohlcv_context if ohlcv_context else "No market context data provided.",
+            # Extended Brooks analysis fields
+            trend_assessment=trend_assessment or "Not provided",
+            signal_reason=signal_reason or "Not provided",
+            was_signal_present=was_signal_present or "Not provided",
+            strategy_alignment=strategy_alignment or "Not provided",
+            entry_exit_emotions=entry_exit_emotions or "Not provided",
+            entry_tp_distance=entry_tp_distance or "Not provided",
         )
+        user_prompt = user_template.format_map(format_vars)
 
         response = self._call_llm(system_prompt, user_prompt, max_tokens=20000)
 
@@ -571,7 +580,7 @@ Classify this trade. If you cannot classify with confidence, explain what specif
                 try:
                     result = json.loads(fixed)
                     if isinstance(result, dict):
-                        logger.info("Fixed truncated JSON by closing braces")
+                        logger.debug("Fixed truncated JSON by closing braces")
                         return result
                 except json.JSONDecodeError:
                     pass

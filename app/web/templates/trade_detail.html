@@ -51,9 +51,14 @@
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Trade Details -->
         <div class="card">
-            <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                📊 Trade Details
-            </h2>
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                    📊 Trade Details
+                </h2>
+                <button onclick="openEditTradeModal()" class="btn btn-secondary text-sm py-1.5 px-3">
+                    ✏️ Edit
+                </button>
+            </div>
             <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
                 <div class="stat-card">
                     <div class="text-sm text-dark-400 mb-1">Entry</div>
@@ -315,17 +320,22 @@
         </div>
     </div>
 
-    <!-- Trade Intent Section (Brooks Audit) -->
+    <!-- Trade Plan, Notes & Review (Merged Section) -->
     <div class="card">
         <div class="flex justify-between items-center mb-4">
             <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                📋 Trade Plan & Intent
+                📋 Trade Plan & Review
             </h2>
-            <span class="text-xs text-dark-500">For comprehensive Brooks Audit</span>
+            <div class="flex items-center gap-3">
+                <span class="text-xs text-dark-500">Brooks Audit</span>
+                <button onclick="saveNotes()" class="btn btn-primary" id="save-notes-btn">
+                    💾 Save All
+                </button>
+            </div>
         </div>
         
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-            <!-- Trade Type -->
+        <!-- Row 1: Quick Selectors (Trade Type, Confidence, Emotional State, Followed Plan) -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <div>
                 <label class="label">Trade Type</label>
                 <select id="trade-type-field" class="select">
@@ -335,8 +345,6 @@
                     <option value="position" {% if trade.trade_type == 'position' %}selected{% endif %}>Position</option>
                 </select>
             </div>
-            
-            <!-- Confidence Level -->
             <div>
                 <label class="label">Confidence (1-5)</label>
                 <select id="confidence-field" class="select">
@@ -348,8 +356,6 @@
                     <option value="5" {% if trade.confidence_level == 5 %}selected{% endif %}>5 - Very High</option>
                 </select>
             </div>
-            
-            <!-- Emotional State -->
             <div>
                 <label class="label">Emotional State</label>
                 <select id="emotional-state-field" class="select">
@@ -363,8 +369,6 @@
                     <option value="anxious" {% if trade.emotional_state == 'anxious' %}selected{% endif %}>😟 Anxious</option>
                 </select>
             </div>
-            
-            <!-- Followed Plan -->
             <div>
                 <label class="label">Followed Plan?</label>
                 <select id="followed-plan-field" class="select">
@@ -375,69 +379,118 @@
             </div>
         </div>
         
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <!-- Stop Reason -->
-            <div>
-                <label class="label">🛑 Stop Placement Reason</label>
-                <textarea id="stop-reason-field" rows="2" class="input resize-none" 
-                    placeholder="Why is your stop placed there? (Where setup is WRONG, not money stop)">{{ trade.stop_reason or '' }}</textarea>
-            </div>
-            
-            <!-- Target Reason -->
-            <div>
-                <label class="label">🎯 Target Reason</label>
-                <textarea id="target-reason-field" rows="2" class="input resize-none" 
-                    placeholder="Why is your target placed there? (Swing high, range boundary, measured move?)">{{ trade.target_reason or '' }}</textarea>
-            </div>
-            
-            <!-- Invalidation -->
+        <hr class="border-dark-700 mb-6">
+        
+        <!-- Section: Market Context & Entry Analysis -->
+        <h3 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+            📊 Market Context & Entry Analysis
+        </h3>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <!-- 1. Trend Assessment -->
             <div class="md:col-span-2">
-                <label class="label">⚠️ Invalidation Condition</label>
-                <textarea id="invalidation-field" rows="2" class="input resize-none" 
-                    placeholder="What would prove this trade idea WRONG? When should you exit regardless of stop?">{{ trade.invalidation_condition or '' }}</textarea>
+                <label class="label">1️⃣ My Assessment of Current Trend (Major & Minor)</label>
+                <textarea id="trend-assessment-field" rows="2" class="input resize-none" 
+                    placeholder="Major trend: Uptrend/Downtrend/Range. Minor trend: Pullback/Rally/Breakout. Where are we in the trend?">{{ trade.trend_assessment or '' }}</textarea>
             </div>
-        </div>
-    </div>
-
-    <!-- Personal Notes Section -->
-    <div class="card">
-        <div class="flex justify-between items-center mb-4">
-            <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                ✍️ My Notes & Review
-            </h2>
-            <button onclick="saveNotes()" class="btn btn-primary" id="save-notes-btn">
-                💾 Save All
-            </button>
+            
+            <!-- 2. Entry Setup (Brooks Label) -->
+            <div>
+                <label class="label">2️⃣ Entry Setup (Brooks Label)</label>
+                <textarea id="entry-reason-field" rows="2" class="input resize-none" 
+                    placeholder="What Brooks setup? (H2 pullback, breakout pullback, failed BO fade, wedge reversal...)">{{ trade.entry_reason or '' }}</textarea>
+            </div>
+            
+            <!-- 3. Reason for Entry -->
+            <div>
+                <label class="label">3️⃣ Reason for Entry</label>
+                <textarea id="signal-reason-field" rows="2" class="input resize-none" 
+                    placeholder="Strong Signal Bar, BO & Follow-thru, High 2, Low 2, Gap setup, 2nd entry...">{{ trade.signal_reason or '' }}</textarea>
+            </div>
+            
+            <!-- 4. Was There a Signal? -->
+            <div>
+                <label class="label">4️⃣ Was There a Signal? If Not, Why?</label>
+                <textarea id="was-signal-field" rows="2" class="input resize-none" 
+                    placeholder="Did you wait for the signal bar? If you entered without a signal, why?">{{ trade.was_signal_present or '' }}</textarea>
+            </div>
+            
+            <!-- 5. Strategy Alignment & Invalidation -->
+            <div>
+                <label class="label">5️⃣ Does this entry align with all the criteria of the chosen strategt? Any invalidation?</label>
+                <textarea id="strategy-alignment-field" rows="2" class="input resize-none" 
+                    placeholder="Does entry align with all criteria? Any invalidation condition met? What would prove trade wrong?">{{ trade.strategy_alignment or trade.invalidation_condition or '' }}</textarea>
+            </div>
         </div>
         
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <!-- Entry Reason -->
+        <hr class="border-dark-700 mb-6">
+        
+        <!-- Section: Risk & Targets -->
+        <h3 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+            🎯 Risk Management & Targets
+        </h3>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <!-- 7. Target Reason -->
             <div>
-                <label class="label">📈 Entry Setup (Brooks Label)</label>
-                <textarea id="entry-reason-field" rows="3" class="input resize-none" 
-                    placeholder="What Brooks setup did you see? (e.g., H2 pullback, breakout pullback, failed breakout fade...)">{{ trade.entry_reason or '' }}</textarea>
+                <label class="label">7️⃣ Where is my TP, why?</label>
+                <textarea id="target-reason-field" rows="2" class="input resize-none" 
+                    placeholder="Why is TP placed there? (Swing high, range boundary, measured move, magnet?)">{{ trade.target_reason or '' }}</textarea>
             </div>
             
-            <!-- General Notes -->
+            <!-- 8. Stop Placement Reason -->
             <div>
-                <label class="label">📝 Trade Notes</label>
-                <textarea id="notes-field" rows="3" class="input resize-none" 
-                    placeholder="What happened during this trade? Context, market behavior...">{{ trade.notes or '' }}</textarea>
+                <label class="label">8️⃣ Where is my SL, why?</label>
+                <textarea id="stop-reason-field" rows="2" class="input resize-none" 
+                    placeholder="Why is SL placed there? (Where setup is WRONG, below signal bar, below swing low?)">{{ trade.stop_reason or '' }}</textarea>
             </div>
             
-            <!-- Mistakes -->
-            <div>
-                <label class="label">❌ Mistakes Made</label>
-                <textarea id="mistakes-field" rows="3" class="input resize-none" 
-                    placeholder="What mistakes did you make? Selection error or execution error?">{{ trade.mistakes or '' }}</textarea>
+            <!-- 9. Entry-TP Distance -->
+            <div class="md:col-span-2">
+                <label class="label">9️⃣ Are Entry and TP Too Far Apart?</label>
+                <textarea id="entry-tp-distance-field" rows="2" class="input resize-none" 
+                    placeholder="Is the R:R realistic? Is the target too ambitious? Would you scale out?">{{ trade.entry_tp_distance or '' }}</textarea>
+            </div>
+        </div>
+        
+        <hr class="border-dark-700 mb-6">
+        
+        <!-- Section: Execution & Psychology -->
+        <h3 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+            🧠 Execution & Psychology
+        </h3>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <!-- 10. Entry/Exit Emotions -->
+            <div class="md:col-span-2">
+                <label class="label">🔟 Emotions at Entry & Exit (Any Hesitation?)</label>
+                <textarea id="entry-exit-emotions-field" rows="2" class="input resize-none" 
+                    placeholder="How did you feel entering? Exiting? Any hesitation? Fear? Greed? Rushed?">{{ trade.entry_exit_emotions or '' }}</textarea>
             </div>
             
-            <!-- Lessons -->
-            <div>
-                <label class="label">💡 Lessons Learned</label>
-                <textarea id="lessons-field" rows="3" class="input resize-none" 
-                    placeholder="What rule will you follow for the next 20 trades?">{{ trade.lessons or '' }}</textarea>
+            <!-- 6. Mistakes Made & Lessons Learned (Merged) -->
+            <div class="md:col-span-2">
+                <label class="label">6️⃣ Mistakes Made & Lessons Learned (Why did trade succeed/fail?)</label>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <textarea id="mistakes-field" rows="3" class="input resize-none" 
+                        placeholder="Mistakes: Selection error? Execution error? Entered too early/late?">{{ trade.mistakes or '' }}</textarea>
+                    <textarea id="lessons-field" rows="3" class="input resize-none" 
+                        placeholder="Lessons: What rule for next 20 trades? What would you do differently?">{{ trade.lessons or '' }}</textarea>
+                </div>
             </div>
+        </div>
+        
+        <hr class="border-dark-700 mb-6">
+        
+        <!-- Section: General Notes -->
+        <h3 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+            📝 Trade Notes
+        </h3>
+        
+        <div class="mb-4">
+            <!-- 11. Trade Notes -->
+            <textarea id="notes-field" rows="4" class="input resize-none w-full" 
+                placeholder="General notes about the trade. What happened? Context, market behavior, anything else...">{{ trade.notes or '' }}</textarea>
         </div>
         
         <div id="notes-status" class="text-sm text-dark-500 mt-3 hidden"></div>
@@ -772,36 +825,43 @@ function displayReview(review) {
 async function saveNotes() {
     const btn = document.getElementById('save-notes-btn');
     const status = document.getElementById('notes-status');
-    
+
     btn.disabled = true;
     btn.textContent = '⏳ Saving...';
-    
+
     // Collect all fields including Brooks intent fields
     const followedPlanVal = document.getElementById('followed-plan-field').value;
-    
+
     const data = {
-        // Notes
+        // Basic notes
         notes: document.getElementById('notes-field').value,
         entry_reason: document.getElementById('entry-reason-field').value,
         mistakes: document.getElementById('mistakes-field').value,
         lessons: document.getElementById('lessons-field').value,
-        // Brooks intent fields
+        // Quick selectors
         trade_type: document.getElementById('trade-type-field').value || null,
         confidence_level: document.getElementById('confidence-field').value ? parseInt(document.getElementById('confidence-field').value) : null,
         emotional_state: document.getElementById('emotional-state-field').value || null,
         followed_plan: followedPlanVal === 'true' ? true : (followedPlanVal === 'false' ? false : null),
+        // Risk & Targets
         stop_reason: document.getElementById('stop-reason-field').value || null,
         target_reason: document.getElementById('target-reason-field').value || null,
-        invalidation_condition: document.getElementById('invalidation-field').value || null,
+        // Extended Brooks analysis fields
+        trend_assessment: document.getElementById('trend-assessment-field').value || null,
+        signal_reason: document.getElementById('signal-reason-field').value || null,
+        was_signal_present: document.getElementById('was-signal-field').value || null,
+        strategy_alignment: document.getElementById('strategy-alignment-field').value || null,
+        entry_exit_emotions: document.getElementById('entry-exit-emotions-field').value || null,
+        entry_tp_distance: document.getElementById('entry-tp-distance-field').value || null,
     };
-    
+
     try {
         const response = await fetch(`/api/trades/${TRADE_ID}/notes`, {
             method: 'PATCH',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(data)
         });
-        
+
         if (response.ok) {
             showToast('Trade details saved!');
             status.textContent = '✓ Saved just now';
@@ -813,7 +873,7 @@ async function saveNotes() {
     } catch (err) {
         showToast('Error: ' + err.message, 'error');
     }
-    
+
     btn.disabled = false;
     btn.textContent = '💾 Save All';
 }
@@ -858,7 +918,7 @@ async function saveTradeStrategy() {
         showToast('Enter a strategy name', 'error');
         return;
     }
-    
+
     try {
         const response = await fetch(`/api/trades/${TRADE_ID}/strategy`, {
             method: 'PATCH',
@@ -873,7 +933,180 @@ async function saveTradeStrategy() {
         showToast('Failed to update strategy', 'error');
     }
 }
+
+// Edit Trade Details
+const currentTradeDate = '{{ trade.exit_time.strftime("%Y-%m-%d") if trade.exit_time else trade.entry_time.strftime("%Y-%m-%d") if trade.entry_time else "" }}';
+
+function openEditTradeModal() {
+    document.getElementById('edit-trade-modal').classList.remove('hidden');
+}
+
+function closeEditTradeModal() {
+    document.getElementById('edit-trade-modal').classList.add('hidden');
+}
+
+async function fetchHistoricalRate() {
+    const currency = document.getElementById('edit-currency').value;
+    if (currency === 'USD') {
+        document.getElementById('edit-rate').value = 1.0;
+        return;
+    }
+    
+    const date = currentTradeDate || new Date().toISOString().split('T')[0];
+    
+    try {
+        const response = await fetch(`/api/exchange-rate?currency=${currency}&date=${date}`);
+        const data = await response.json();
+        
+        if (data.rate) {
+            document.getElementById('edit-rate').value = data.rate;
+            showToast(`Rate fetched: 1 USD = ${data.rate} ${currency}`, 'success');
+        } else {
+            showToast('Could not fetch rate', 'error');
+        }
+    } catch (err) {
+        showToast('Error fetching rate', 'error');
+    }
+}
+
+// Auto-fetch rate when currency changes
+document.getElementById('edit-currency').addEventListener('change', fetchHistoricalRate);
+
+// Form submission handler
+document.getElementById('edit-trade-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const slValue = document.getElementById('edit-stop-loss').value;
+    const tpValue = document.getElementById('edit-take-profit').value;
+    
+    const payload = {
+        size: parseFloat(document.getElementById('edit-size').value),
+        entry_price: parseFloat(document.getElementById('edit-entry-price').value),
+        exit_price: parseFloat(document.getElementById('edit-exit-price').value),
+        stop_loss: slValue ? parseFloat(slValue) : null,
+        take_profit: tpValue ? parseFloat(tpValue) : null,
+        currency: document.getElementById('edit-currency').value,
+        currency_rate: parseFloat(document.getElementById('edit-rate').value),
+        entry_time: document.getElementById('edit-entry-time').value || null,
+        exit_time: document.getElementById('edit-exit-time').value || null,
+        timeframe: document.getElementById('edit-timeframe').value,
+    };
+
+    try {
+        const response = await fetch(`/api/trades/${TRADE_ID}`, {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+
+        if (response.ok) {
+            showToast('Trade updated!', 'success');
+            closeEditTradeModal();
+            setTimeout(() => window.location.reload(), 1000);
+        } else {
+            const err = await response.json();
+            showToast('Error: ' + (err.detail || 'Failed to update'), 'error');
+        }
+    } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+    }
+});
 </script>
+
+<!-- Edit Trade Details Modal -->
+<div id="edit-trade-modal" class="fixed inset-0 bg-dark-950/80 backdrop-blur-sm hidden z-50 flex items-center justify-center p-4 overflow-y-auto">
+    <div class="card w-full max-w-lg animate-fadeIn my-8">
+        <div class="flex justify-between items-center mb-4">
+            <div>
+                <h3 class="text-xl font-bold text-white">Edit Trade #{{ trade.id }}</h3>
+                <p class="text-sm text-dark-400">{{ trade.exit_time.strftime('%Y-%m-%d') if trade.exit_time else trade.entry_time.strftime('%Y-%m-%d') if trade.entry_time else '' }}</p>
+            </div>
+            <button onclick="closeEditTradeModal()" class="btn btn-ghost text-2xl p-2">&times;</button>
+        </div>
+
+        <form id="edit-trade-form" class="space-y-4">
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="label">Entry Time</label>
+                    <input type="datetime-local" id="edit-entry-time" step="1" class="input text-sm"
+                           value="{{ trade.entry_time.strftime('%Y-%m-%dT%H:%M:%S') if trade.entry_time else '' }}">
+                </div>
+                <div>
+                    <label class="label">Exit Time</label>
+                    <input type="datetime-local" id="edit-exit-time" step="1" class="input text-sm"
+                           value="{{ trade.exit_time.strftime('%Y-%m-%dT%H:%M:%S') if trade.exit_time else '' }}">
+                </div>
+            </div>
+
+            <div>
+                <label class="label">Shares</label>
+                <input type="number" id="edit-size" step="1" min="1" class="input"
+                       value="{{ trade.size or 1 }}">
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="label">Entry Price</label>
+                    <input type="number" id="edit-entry-price" step="0.0001" min="0" class="input"
+                           value="{{ trade.entry_price }}">
+                </div>
+                <div>
+                    <label class="label">Exit Price</label>
+                    <input type="number" id="edit-exit-price" step="0.0001" min="0" class="input"
+                           value="{{ trade.exit_price or '' }}">
+                </div>
+                <div>
+                    <label class="label">Stop Loss (SL)</label>
+                    <input type="number" id="edit-stop-loss" step="0.0001" min="0" class="input" placeholder="Where trade is wrong"
+                           value="{{ trade.stop_loss or '' }}">
+                </div>
+                <div>
+                    <label class="label">Take Profit (TP)</label>
+                    <input type="number" id="edit-take-profit" step="0.0001" min="0" class="input" placeholder="Target exit"
+                           value="{{ trade.take_profit or '' }}">
+                </div>
+            </div>
+
+            <div class="grid grid-cols-3 gap-4">
+                <div>
+                    <label class="label">Timeframe</label>
+                    <select id="edit-timeframe" class="select">
+                        <option value="5m" {% if trade.timeframe == '5m' or not trade.timeframe %}selected{% endif %}>5 min (Scalp)</option>
+                        <option value="2h" {% if trade.timeframe == '2h' %}selected{% endif %}>2 hour (Swing)</option>
+                        <option value="1d" {% if trade.timeframe == '1d' %}selected{% endif %}>Daily (Position)</option>
+                    </select>
+                    <p class="text-xs text-dark-500 mt-1">Used for AI context data</p>
+                </div>
+                <div>
+                    <label class="label">Currency</label>
+                    <select id="edit-currency" class="select">
+                        <option value="USD" {% if trade.currency == 'USD' or not trade.currency %}selected{% endif %}>USD ($)</option>
+                        <option value="HKD" {% if trade.currency == 'HKD' %}selected{% endif %}>HKD (HK$)</option>
+                        <option value="EUR" {% if trade.currency == 'EUR' %}selected{% endif %}>EUR (€)</option>
+                        <option value="GBP" {% if trade.currency == 'GBP' %}selected{% endif %}>GBP (£)</option>
+                        <option value="JPY" {% if trade.currency == 'JPY' %}selected{% endif %}>JPY (¥)</option>
+                        <option value="CNY" {% if trade.currency == 'CNY' %}selected{% endif %}>CNY (¥)</option>
+                        <option value="CAD" {% if trade.currency == 'CAD' %}selected{% endif %}>CAD (C$)</option>
+                        <option value="AUD" {% if trade.currency == 'AUD' %}selected{% endif %}>AUD (A$)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="label">Rate to USD</label>
+                    <div class="flex space-x-2">
+                        <input type="number" id="edit-rate" step="0.0001" min="0" class="input flex-1"
+                               value="{{ trade.currency_rate or 1.0 }}">
+                        <button type="button" onclick="fetchHistoricalRate()" class="btn btn-secondary">🔄</button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex justify-end gap-3 pt-4 border-t border-dark-700">
+                <button type="button" onclick="closeEditTradeModal()" class="btn btn-secondary">Cancel</button>
+                <button type="submit" class="btn btn-primary">💾 Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
 
 <!-- Strategy Edit Modal -->
 <div id="strategy-modal" class="fixed inset-0 bg-dark-950/80 backdrop-blur-sm flex items-center justify-center z-50 hidden">

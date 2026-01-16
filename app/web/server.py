@@ -39,6 +39,45 @@ logger = logging.getLogger(__name__)
 # Track cancelled review generations (trade_id -> True if cancelled)
 _cancelled_reviews: dict[int, bool] = {}
 
+# Simple in-memory cache with TTL for frequently accessed data
+_cache: dict[str, tuple[any, float]] = {}
+CACHE_TTL = 60  # seconds
+
+
+def get_cached(key: str, ttl: int = CACHE_TTL):
+    """Get value from cache if not expired."""
+    if key in _cache:
+        value, timestamp = _cache[key]
+        import time
+        if time.time() - timestamp < ttl:
+            return value
+    return None
+
+
+def set_cached(key: str, value: any):
+    """Store value in cache."""
+    import time
+    _cache[key] = (value, time.time())
+
+
+def clear_cache(key: str = None):
+    """Clear cache (specific key or all)."""
+    if key:
+        _cache.pop(key, None)
+    else:
+        _cache.clear()
+
+
+def get_active_strategies_cached(session) -> list:
+    """Get active strategies with caching (reduces DB queries)."""
+    cached = get_cached("active_strategies")
+    if cached is not None:
+        return cached
+    strategies = session.query(Strategy).filter(Strategy.is_active == True).order_by(Strategy.category, Strategy.name).all()
+    set_cached("active_strategies", strategies)
+    return strategies
+
+
 # Initialize FastAPI app
 app = FastAPI(
     title="Brooks Trading Coach",
@@ -66,29 +105,23 @@ async def dashboard(request: Request):
     """Main dashboard page."""
     analytics = TradeAnalytics()
     
-    # Get recent trades
     session = get_session()
     try:
+        # Get recent trades (limit 10)
         recent_trades = (
             session.query(Trade)
-            .order_by(Trade.id.desc())  # Newest first
+            .order_by(Trade.id.desc())
             .limit(10)
             .all()
         )
         
-        # Calculate stats
-        all_trades = session.query(Trade).all()
-        total_trades = len(all_trades)
+        # Use efficient COUNT queries instead of loading all trades
+        from sqlalchemy import func
         
-        if all_trades:
-            winners = len([t for t in all_trades if t.outcome == TradeOutcome.WIN])
-            r_values = [t.r_multiple for t in all_trades if t.r_multiple]
-            total_r = sum(r_values) if r_values else 0
-            win_rate = winners / total_trades if total_trades > 0 else 0
-        else:
-            winners = 0
-            total_r = 0
-            win_rate = 0
+        total_trades = session.query(func.count(Trade.id)).scalar() or 0
+        winners = session.query(func.count(Trade.id)).filter(Trade.outcome == TradeOutcome.WIN).scalar() or 0
+        total_r = session.query(func.sum(Trade.r_multiple)).scalar() or 0
+        win_rate = winners / total_trades if total_trades > 0 else 0
         
         # Get strategy stats
         strategy_stats = analytics.get_all_strategy_stats()[:5]
@@ -128,8 +161,8 @@ async def trades_page(request: Request):
             .all()
         )
         
-        strategies = session.query(Strategy).filter(Strategy.is_active == True).all()
-        
+        strategies = get_active_strategies_cached(session)
+
         return templates.TemplateResponse("trades.html", {
             "request": request,
             "trades": trades,
@@ -176,32 +209,23 @@ async def update_trade_notes(trade_id: int, request: Request):
         if not trade:
             raise HTTPException(status_code=404, detail="Trade not found")
 
-        # Update note fields
-        if 'notes' in data:
-            trade.notes = data['notes']
-        if 'entry_reason' in data:
-            trade.entry_reason = data['entry_reason']
-        if 'mistakes' in data:
-            trade.mistakes = data['mistakes']
-        if 'lessons' in data:
-            trade.lessons = data['lessons']
+        # Allowed fields that can be updated via this endpoint
+        allowed_fields = {
+            # Notes
+            'notes', 'entry_reason', 'mistakes', 'lessons',
+            # Brooks intent
+            'trade_type', 'confidence_level', 'emotional_state', 'followed_plan',
+            'stop_reason', 'target_reason', 'invalidation_condition',
+            # Extended analysis
+            'trend_assessment', 'signal_reason', 'was_signal_present',
+            'strategy_alignment', 'entry_exit_emotions', 'entry_tp_distance',
+        }
         
-        # Update Brooks intent fields
-        if 'trade_type' in data:
-            trade.trade_type = data['trade_type']
-        if 'confidence_level' in data:
-            trade.confidence_level = data['confidence_level']
-        if 'emotional_state' in data:
-            trade.emotional_state = data['emotional_state']
-        if 'followed_plan' in data:
-            trade.followed_plan = data['followed_plan']
-        if 'stop_reason' in data:
-            trade.stop_reason = data['stop_reason']
-        if 'target_reason' in data:
-            trade.target_reason = data['target_reason']
-        if 'invalidation_condition' in data:
-            trade.invalidation_condition = data['invalidation_condition']
-        
+        # Update all provided fields
+        for field in allowed_fields:
+            if field in data:
+                setattr(trade, field, data[field])
+
         # Clear cached review when trade intent is updated (to force re-analysis)
         trade.cached_review = None
         trade.review_generated_at = None
@@ -380,8 +404,8 @@ async def add_trade_page(request: Request):
     """Add trade form page (includes single trade and bulk import)."""
     session = get_session()
     try:
-        strategies = session.query(Strategy).filter(Strategy.is_active == True).all()
-        
+        strategies = get_active_strategies_cached(session)
+
         # Import data for bulk import tab
         import_files = list(IMPORTS_DIR.glob("*.csv"))
         processed_dir = IMPORTS_DIR / "processed"
@@ -1151,6 +1175,8 @@ async def merge_strategies(request: Request):
                 session.delete(source)
         
         session.commit()
+        clear_cache("active_strategies")  # Invalidate cache
+        
         return JSONResponse({
             "message": f"Merged {merged_count} trades into '{target.name}'",
             "merged_count": merged_count
@@ -1185,6 +1211,7 @@ async def create_strategy(request: Request):
         )
         session.add(strategy)
         session.commit()
+        clear_cache("active_strategies")  # Invalidate cache
         
         return JSONResponse({"message": f"Strategy '{name}' created", "id": strategy.id})
     finally:
@@ -1209,6 +1236,7 @@ async def delete_strategy(strategy_id: int):
         
         session.delete(strategy)
         session.commit()
+        clear_cache("active_strategies")  # Invalidate cache
         
         return JSONResponse({"message": f"Strategy deleted"})
     finally:

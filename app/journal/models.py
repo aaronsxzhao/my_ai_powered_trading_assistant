@@ -173,6 +173,14 @@ class Trade(Base):
     lessons = Column(Text)
     coach_feedback = Column(Text)
     
+    # Extended Brooks-style trade analysis fields
+    trend_assessment = Column(Text)  # My assessment of the current trend (major and minor)
+    signal_reason = Column(Text)  # Reason for entry (Strong Signal Bar, BO & follow-thru, High 2, etc)
+    was_signal_present = Column(Text)  # Was there a signal? If not, why?
+    strategy_alignment = Column(Text)  # Does this entry align with all the criteria of the chosen strategy?
+    entry_exit_emotions = Column(Text)  # Emotions when exit & entry, any hesitation? Why?
+    entry_tp_distance = Column(Text)  # Are the entry and TP too far apart?
+    
     # Brooks-style trade intent fields
     trade_type = Column(String(20))  # scalp, swing, position
     entry_order_type = Column(String(20))  # market, limit, stop, stop_limit
@@ -545,6 +553,21 @@ def init_db() -> None:
         except Exception:
             try:
                 conn.execute(text("ALTER TABLE trades ADD COLUMN ai_setup_classification VARCHAR(100)"))
+                conn.commit()
+            except Exception:
+                pass
+        
+        # Extended Brooks-style trade analysis fields
+        try:
+            conn.execute(text("SELECT trend_assessment FROM trades LIMIT 1"))
+        except Exception:
+            try:
+                conn.execute(text("ALTER TABLE trades ADD COLUMN trend_assessment TEXT"))
+                conn.execute(text("ALTER TABLE trades ADD COLUMN signal_reason TEXT"))
+                conn.execute(text("ALTER TABLE trades ADD COLUMN was_signal_present TEXT"))
+                conn.execute(text("ALTER TABLE trades ADD COLUMN strategy_alignment TEXT"))
+                conn.execute(text("ALTER TABLE trades ADD COLUMN entry_exit_emotions TEXT"))
+                conn.execute(text("ALTER TABLE trades ADD COLUMN entry_tp_distance TEXT"))
                 conn.commit()
             except Exception:
                 pass

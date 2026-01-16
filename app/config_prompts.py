@@ -374,8 +374,23 @@ TRADER'S INTENT (what I thought it was):
 - Intended setup label: {intended_setup}
 - Intended trade type: {trade_type}
 - Entry thesis (1-3 sentences): {entry_reason}
+- Reason for entry (signal type): {signal_reason}
 - Invalidation condition: {invalidation}
 - Management plan at entry: {management_plan}
+
+TRADER'S ANALYSIS (self-assessment before AI review):
+- Trend assessment (major & minor): {trend_assessment}
+- Was there a signal bar? If not, why?: {was_signal_present}
+- Strategy alignment & any invalidation: {strategy_alignment}
+- Entry/TP distance concern: {entry_tp_distance}
+- Emotions at entry & exit: {entry_exit_emotions}
+- Confidence level: {confidence}
+- Emotional state: {emotional_state}
+- Followed plan: {followed_plan}
+- Stop reason: {stop_reason}
+- Target reason: {target_reason}
+- Mistakes noted: {mistakes}
+- Lessons noted: {lessons}
 
 SESSION CONTEXT (must be filled):
 - Today open: {today_open}

@@ -101,6 +101,15 @@ class TradeCoach:
             self._data_provider = get_provider()
         return self._data_provider
 
+    def _get_provider_for_ticker(self, ticker: str):
+        """Get the best provider for a specific ticker (e.g., AllTick for HK)."""
+        try:
+            from app.data.providers import get_provider_for_ticker
+            return get_provider_for_ticker(ticker)
+        except ImportError:
+            return self.data_provider
+        return self._data_provider
+
     def review_trade(self, trade_id: int, cancellation_check: Optional[callable] = None) -> Optional[TradeReview]:
         """
         Perform comprehensive review of a trade using LLM analysis.
@@ -180,6 +189,13 @@ class TradeCoach:
                     pd_low=pd_low,
                     pd_close=pd_close,
                     today_open=today_open,
+                    # Extended Brooks analysis fields
+                    trend_assessment=getattr(trade, 'trend_assessment', None),
+                    signal_reason=getattr(trade, 'signal_reason', None),
+                    was_signal_present=getattr(trade, 'was_signal_present', None),
+                    strategy_alignment=getattr(trade, 'strategy_alignment', None),
+                    entry_exit_emotions=getattr(trade, 'entry_exit_emotions', None),
+                    entry_tp_distance=getattr(trade, 'entry_tp_distance', None),
                 )
 
                 if "error" not in llm_analysis and "raw_analysis" not in llm_analysis:
@@ -289,45 +305,45 @@ class TradeCoach:
                 # Check cancellation between each fetch (rate-limited operations)
                 if cancellation_check and cancellation_check():
                     return "Cancelled"
-                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "1d", daily_cutoff, 60, "DAILY (up to prior day close)"))
-                
+                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "1d", daily_cutoff, 60, "DAILY (up to prior day close)", cancellation_check))
+
                 if cancellation_check and cancellation_check():
                     return "Cancelled"
-                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "2h", entry_cutoff, 120, "2-HOUR (up to entry time)"))
-                
+                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "2h", entry_cutoff, 120, "2-HOUR (up to entry time)", cancellation_check))
+
                 if cancellation_check and cancellation_check():
                     return "Cancelled"
-                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "5m", entry_cutoff, 234, "5-MINUTE (up to entry time)"))
+                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "5m", entry_cutoff, 234, "5-MINUTE (up to entry time)", cancellation_check))
 
             elif timeframe == "2h":
                 # 2-hour swing trades: Daily + 2H context
                 if cancellation_check and cancellation_check():
                     return "Cancelled"
-                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "1d", daily_cutoff, 60, "DAILY (up to prior day close)"))
-                
+                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "1d", daily_cutoff, 60, "DAILY (up to prior day close)", cancellation_check))
+
                 if cancellation_check and cancellation_check():
                     return "Cancelled"
-                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "2h", entry_cutoff, 120, "2-HOUR (up to entry time)"))
+                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "2h", entry_cutoff, 120, "2-HOUR (up to entry time)", cancellation_check))
 
             elif timeframe == "1d":
                 # Daily position trades: Extended daily context
                 if cancellation_check and cancellation_check():
                     return "Cancelled"
-                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "1d", daily_cutoff, 120, "DAILY (up to prior day close)"))
+                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "1d", daily_cutoff, 120, "DAILY (up to prior day close)", cancellation_check))
 
             else:
                 # Default to 5m timeframe with full Brooks package
                 if cancellation_check and cancellation_check():
                     return "Cancelled"
-                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "1d", daily_cutoff, 60, "DAILY (up to prior day close)"))
-                
+                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "1d", daily_cutoff, 60, "DAILY (up to prior day close)", cancellation_check))
+
                 if cancellation_check and cancellation_check():
                     return "Cancelled"
-                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "2h", entry_cutoff, 120, "2-HOUR (up to entry time)"))
-                
+                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "2h", entry_cutoff, 120, "2-HOUR (up to entry time)", cancellation_check))
+
                 if cancellation_check and cancellation_check():
                     return "Cancelled"
-                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "5m", entry_cutoff, 234, "5-MINUTE (up to entry time)"))
+                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "5m", entry_cutoff, 234, "5-MINUTE (up to entry time)", cancellation_check))
 
             result = "\n\n".join([ctx for ctx in all_context if ctx])
             if not result:
@@ -338,7 +354,7 @@ class TradeCoach:
             logger.warning(f"Failed to get OHLCV context: {e}")
             return "Market data unavailable"
     
-    def _fetch_ohlcv_section_with_cutoff(self, ticker: str, interval: str, cutoff_time: datetime, num_bars: int, label: str) -> str:
+    def _fetch_ohlcv_section_with_cutoff(self, ticker: str, interval: str, cutoff_time: datetime, num_bars: int, label: str, cancellation_check: callable = None) -> str:
         """Fetch OHLCV data up to a specific cutoff time (no future data).
         
         Args:
@@ -361,11 +377,18 @@ class TradeCoach:
             else:
                 start_date = cutoff_time - timedelta(days=num_bars + 10)
             
-            ohlcv = self.data_provider.get_ohlcv(
+            # Check for cancellation before fetch
+            if cancellation_check and cancellation_check():
+                return f"=== {label} ===\nCancelled"
+            
+            # Use ticker-specific provider (e.g., AllTick for HK stocks)
+            provider = self._get_provider_for_ticker(ticker)
+            ohlcv = provider.get_ohlcv(
                 ticker,
                 interval,
                 start_date,
-                cutoff_time  # Use cutoff_time as end date
+                cutoff_time,  # Use cutoff_time as end date
+                cancellation_check=cancellation_check
             )
             
             if ohlcv is None or ohlcv.empty:
@@ -430,7 +453,8 @@ class TradeCoach:
             start_date = prior_day_date - timedelta(days=5)
             end_date = datetime.combine(prior_day_date, datetime.max.time())
             
-            ohlcv = self.data_provider.get_ohlcv(
+            provider = self._get_provider_for_ticker(trade.ticker)
+            ohlcv = provider.get_ohlcv(
                 trade.ticker,
                 "1d",
                 start_date,
@@ -448,9 +472,9 @@ class TradeCoach:
             trade_day_start = datetime.combine(trade.trade_date, datetime.min.time())
             trade_day_end = datetime.combine(trade.trade_date, datetime.max.time())
             
-            today_ohlcv = self.data_provider.get_ohlcv(
+            today_ohlcv = provider.get_ohlcv(
                 trade.ticker,
-                "1d", 
+                "1d",
                 trade_day_start,
                 trade_day_end
             )
@@ -549,7 +573,7 @@ class TradeCoach:
             ticker=trade.ticker,
             regime="unknown",
             always_in="neutral",
-            context_description="LLM unavailable - basic analysis only. Set OPENAI_API_KEY for full analysis.",
+            context_description="LLM unavailable - basic analysis only. Check your API key in .env file (OPENAI_API_KEY).",
             setup_classification=trade.strategy.name if trade.strategy else "unclassified",
             setup_quality="marginal",
             risk_reward_assessment="Unable to assess without LLM",

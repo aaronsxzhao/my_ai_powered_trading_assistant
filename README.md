@@ -120,6 +120,22 @@ Supports multiple formats:
 - **Robinhood** - Direct API integration
 - **Generic CSV** - Flexible column mapping
 
+### Hong Kong Stocks (AllTick API)
+
+For better HK stock data, we support [AllTick API](https://alltick.co):
+- Real-time and historical K-line data
+- 10-level order book
+- Free tier available
+
+To use AllTick for HK stocks, add to your `.env`:
+```bash
+ALLTICK_TOKEN=your_alltick_token
+```
+
+Get a free token at [alltick.co](https://alltick.co)
+
+The system automatically uses AllTick for HK stocks when the token is configured, falling back to yfinance otherwise.
+
 ### International Stocks
 
 - Hong Kong (HKEX:0700 → 0700.HK)

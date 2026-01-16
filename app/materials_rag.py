@@ -181,7 +181,7 @@ class MaterialsRAG:
             if suffix not in [".pdf", ".txt", ".md", ".markdown"]:
                 continue
             
-            logger.info(f"📚 Indexing: {file_path.name}")
+            logger.debug(f"📚 Indexing: {file_path.name}")
             
             # Extract text
             if suffix == ".pdf":
@@ -210,13 +210,13 @@ class MaterialsRAG:
                 "chunks": len(chunks),
                 "size_kb": round(file_path.stat().st_size / 1024, 1)
             })
-            logger.info(f"📚 Created {len(chunks)} chunks from {file_path.name}")
+            logger.debug(f"📚 Created {len(chunks)} chunks from {file_path.name}")
         
         if not all_chunks:
             return {"error": "No content to index"}
         
         # Create embeddings and add to collection
-        logger.info(f"📚 Creating embeddings for {len(all_chunks)} chunks...")
+        logger.debug(f"📚 Creating embeddings for {len(all_chunks)} chunks...")
         embeddings = model.encode(all_chunks, show_progress_bar=False).tolist()
         
         # Add to ChromaDB in batches

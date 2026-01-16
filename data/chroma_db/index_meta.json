@@ -1,0 +1,32 @@
+{
+  "materials_hash": "b95fb0bc26e8f608110b8edc11c2e82d",
+  "indexed_at": "2026-01-16T11:47:14.437632",
+  "total_chunks": 5228,
+  "files": [
+    {
+      "name": "Al Brooks Price Action.pdf",
+      "chunks": 3653,
+      "size_kb": 471734.5
+    },
+    {
+      "name": "Ranges.pdf",
+      "chunks": 592,
+      "size_kb": 35772.4
+    },
+    {
+      "name": "Reversals.pdf",
+      "chunks": 527,
+      "size_kb": 11723.0
+    },
+    {
+      "name": "TEMPLATE_trading_rules.txt",
+      "chunks": 2,
+      "size_kb": 2.0
+    },
+    {
+      "name": "Trends.pdf",
+      "chunks": 454,
+      "size_kb": 54727.8
+    }
+  ]
+}
