@@ -26,6 +26,8 @@ python -m app.main web
 # 6. To stop the application:
 #    Press Ctrl+C in the terminal, or run:
 pkill -f "python -m app.main web"
+or
+lsof -ti:8000 | xargs kill -9 2>/dev/null && echo "✅ Application stopped" || echo "No application running on port 8000"   
 ```
 
 ### Environment Variables (.env)
