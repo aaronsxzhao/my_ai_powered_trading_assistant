@@ -433,21 +433,21 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             <!-- 7. Target Reason -->
             <div>
-                <label class="label">7️⃣ Where is my TP, why?</label>
+                <label class="label">6️⃣ Where is my TP, why?</label>
                 <textarea id="target-reason-field" rows="2" class="input resize-none" 
                     placeholder="Why is TP placed there? (Swing high, range boundary, measured move, magnet?)">{{ trade.target_reason or '' }}</textarea>
             </div>
             
             <!-- 8. Stop Placement Reason -->
             <div>
-                <label class="label">8️⃣ Where is my SL, why?</label>
+                <label class="label">7️⃣ Where is my SL, why?</label>
                 <textarea id="stop-reason-field" rows="2" class="input resize-none" 
                     placeholder="Why is SL placed there? (Where setup is WRONG, below signal bar, below swing low?)">{{ trade.stop_reason or '' }}</textarea>
             </div>
             
             <!-- 9. Entry-TP Distance -->
             <div class="md:col-span-2">
-                <label class="label">9️⃣ Are Entry and TP Too Far Apart?</label>
+                <label class="label">8️⃣ Are Entry and TP Too Far Apart?</label>
                 <textarea id="entry-tp-distance-field" rows="2" class="input resize-none" 
                     placeholder="Is the R:R realistic? Is the target too ambitious? Would you scale out?">{{ trade.entry_tp_distance or '' }}</textarea>
             </div>
@@ -463,14 +463,14 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             <!-- 10. Entry/Exit Emotions -->
             <div class="md:col-span-2">
-                <label class="label">🔟 Emotions at Entry & Exit (Any Hesitation?)</label>
+                <label class="label">9️⃣ Emotions at Entry & Exit (Any Hesitation?)</label>
                 <textarea id="entry-exit-emotions-field" rows="2" class="input resize-none" 
                     placeholder="How did you feel entering? Exiting? Any hesitation? Fear? Greed? Rushed?">{{ trade.entry_exit_emotions or '' }}</textarea>
             </div>
             
             <!-- 6. Mistakes Made & Lessons Learned (Merged) -->
             <div class="md:col-span-2">
-                <label class="label">6️⃣ Mistakes Made & Lessons Learned (Why did trade succeed/fail?)</label>
+                <label class="label">🔟 Mistakes Made & Lessons Learned (Why did trade succeed/fail?)</label>
                 <textarea id="mistakes-lessons-field" rows="4" class="input resize-none" 
                     placeholder="What mistakes were made? Selection error? Execution error? Entered too early/late?&#10;What would you do differently next time? What rule for the next 20 trades?">{{ trade.mistakes_and_lessons or ((trade.mistakes or '') + ('\n\n' if trade.mistakes and trade.lessons else '') + (trade.lessons or '')) }}</textarea>
             </div>
