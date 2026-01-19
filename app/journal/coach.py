@@ -393,25 +393,41 @@ class TradeCoach:
     def _fetch_ohlcv_section_with_cutoff(self, ticker: str, interval: str, cutoff_time: datetime, num_bars: int, label: str, cancellation_check: callable = None) -> str:
         """Fetch OHLCV data up to a specific cutoff time (no future data).
         
+        IMPORTANT: Only includes COMPLETED bars. A bar is complete when:
+        bar_start_time + interval <= cutoff_time
+        
+        For example, with entry at 11:36:
+        - 5-min bar at 11:30 (ends 11:35) is INCLUDED (complete before entry)
+        - 5-min bar at 11:35 (ends 11:40) is EXCLUDED (not complete at entry)
+        
         Args:
             ticker: Stock ticker
             interval: Time interval (1d, 2h, 5m, etc.)
-            cutoff_time: Maximum timestamp - no data after this point
+            cutoff_time: Entry time - only completed bars before this are included
             num_bars: Number of bars to fetch
             label: Label for this section
         """
         try:
-            # Calculate start date based on interval
+            # Calculate interval duration for filtering complete bars
             if interval == "1d":
+                interval_delta = timedelta(days=1)
                 start_date = cutoff_time - timedelta(days=num_bars + 10)
             elif interval == "2h":
+                interval_delta = timedelta(hours=2)
                 start_date = cutoff_time - timedelta(hours=num_bars * 2 + 20)
             elif interval == "1h":
+                interval_delta = timedelta(hours=1)
                 start_date = cutoff_time - timedelta(hours=num_bars + 10)
             elif interval == "5m":
+                interval_delta = timedelta(minutes=5)
                 start_date = cutoff_time - timedelta(minutes=num_bars * 5 + 100)
             else:
+                interval_delta = timedelta(days=1)
                 start_date = cutoff_time - timedelta(days=num_bars + 10)
+            
+            # Calculate the maximum bar start time for a COMPLETE bar
+            # A bar starting at this time would end exactly at cutoff_time
+            max_complete_bar_start = cutoff_time - interval_delta
             
             # Check for cancellation before fetch
             if cancellation_check and cancellation_check():
@@ -423,7 +439,7 @@ class TradeCoach:
                 ticker,
                 interval,
                 start_date,
-                cutoff_time,  # Use cutoff_time as end date
+                cutoff_time,  # Fetch up to cutoff_time, filter below
                 cancellation_check=cancellation_check
             )
             
@@ -431,9 +447,12 @@ class TradeCoach:
                 logger.warning(f"No {interval} data returned for {ticker}")
                 return f"=== {label} ===\nNo data available"
             
-            # Filter to ensure no data after cutoff (extra safety)
+            # Filter to only include COMPLETED bars (bar must have ended before entry)
+            # Bar timestamp is the START time, so bar ends at timestamp + interval
+            # Include bar if: timestamp + interval <= cutoff_time
+            # Which means: timestamp <= cutoff_time - interval = max_complete_bar_start
             if 'timestamp' in ohlcv.columns:
-                ohlcv = ohlcv[ohlcv['timestamp'] <= cutoff_time]
+                ohlcv = ohlcv[ohlcv['timestamp'] <= max_complete_bar_start]
             
             # Limit to requested number of bars (most recent ones before cutoff)
             ohlcv = ohlcv.tail(num_bars)
@@ -443,7 +462,8 @@ class TradeCoach:
             
             # Format as readable string
             lines = [f"=== {label} ==="]
-            lines.append(f"Cutoff: {cutoff_time.strftime('%Y-%m-%d %H:%M')}")
+            lines.append(f"Entry time: {cutoff_time.strftime('%Y-%m-%d %H:%M')}")
+            lines.append(f"Last complete bar: {max_complete_bar_start.strftime('%Y-%m-%d %H:%M')}")
             lines.append(f"Bars: {len(ohlcv)}")
             lines.append("timestamp, open, high, low, close, volume")
             
