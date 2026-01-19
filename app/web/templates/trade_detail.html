@@ -48,6 +48,51 @@
         </div>
     </div>
 
+    <!-- TradingView Chart -->
+    <div class="card">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                📈 Price Chart
+            </h2>
+            <div class="flex items-center gap-2">
+                <select id="chart-timeframe" class="select text-sm py-1.5 px-3" onchange="loadChartData()">
+                    <option value="5m" {% if trade.timeframe == '5m' or not trade.timeframe %}selected{% endif %}>5 min</option>
+                    <option value="15m">15 min</option>
+                    <option value="1h">1 hour</option>
+                    <option value="2h" {% if trade.timeframe == '2h' %}selected{% endif %}>2 hour</option>
+                    <option value="1d" {% if trade.timeframe == '1d' %}selected{% endif %}>Daily</option>
+                </select>
+                <button onclick="loadChartData()" class="btn btn-secondary text-sm py-1.5 px-3">
+                    🔄 Refresh
+                </button>
+            </div>
+        </div>
+        <div id="chart-container" class="w-full h-96 bg-dark-900 rounded-lg relative">
+            <div id="chart-loading" class="absolute inset-0 flex items-center justify-center">
+                <div class="loading-spinner w-8 h-8 border-4 border-accent-500 border-t-transparent"></div>
+            </div>
+            <div id="tradingview-chart" class="w-full h-full"></div>
+        </div>
+        <div class="mt-3 flex items-center gap-4 text-sm text-dark-400">
+            <div class="flex items-center gap-2">
+                <span class="w-3 h-3 rounded-full bg-green-500"></span>
+                <span>Entry: ${{ "%.4f"|format(trade.entry_price) }}</span>
+            </div>
+            {% if trade.exit_price %}
+            <div class="flex items-center gap-2">
+                <span class="w-3 h-3 rounded-full bg-red-500"></span>
+                <span>Exit: ${{ "%.4f"|format(trade.exit_price) }}</span>
+            </div>
+            {% endif %}
+            {% if trade.effective_stop_loss %}
+            <div class="flex items-center gap-2">
+                <span class="w-3 h-3 rounded-full bg-orange-500"></span>
+                <span>Stop: ${{ "%.4f"|format(trade.effective_stop_loss) }}</span>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Trade Details -->
         <div class="card">
@@ -517,6 +562,118 @@
 {% block scripts %}
 <script>
 const TRADE_ID = {{ trade.id }};
+
+// ========== TradingView Chart ==========
+let chart = null;
+let candlestickSeries = null;
+
+async function loadChartData() {
+    const timeframe = document.getElementById('chart-timeframe').value;
+    const chartLoading = document.getElementById('chart-loading');
+    const chartContainer = document.getElementById('tradingview-chart');
+    
+    // Show loading
+    chartLoading.classList.remove('hidden');
+    
+    try {
+        const response = await fetch(`/api/trades/${TRADE_ID}/chart-data?timeframe=${timeframe}`);
+        const data = await response.json();
+        
+        if (!data.success) {
+            chartLoading.innerHTML = `<div class="text-dark-400 text-center"><span class="text-3xl block mb-2">📊</span>${data.error || 'No chart data available'}</div>`;
+            return;
+        }
+        
+        // Hide loading
+        chartLoading.classList.add('hidden');
+        
+        // Clear previous chart
+        chartContainer.innerHTML = '';
+        
+        // Detect dark mode
+        const isDarkMode = document.documentElement.classList.contains('dark');
+        
+        // Create chart with TradingView Lightweight Charts
+        chart = LightweightCharts.createChart(chartContainer, {
+            width: chartContainer.clientWidth,
+            height: chartContainer.clientHeight,
+            layout: {
+                background: { type: 'solid', color: isDarkMode ? '#0f172a' : '#ffffff' },
+                textColor: isDarkMode ? '#94a3b8' : '#64748b',
+            },
+            grid: {
+                vertLines: { color: isDarkMode ? '#1e293b' : '#e2e8f0' },
+                horzLines: { color: isDarkMode ? '#1e293b' : '#e2e8f0' },
+            },
+            crosshair: {
+                mode: LightweightCharts.CrosshairMode.Normal,
+            },
+            rightPriceScale: {
+                borderColor: isDarkMode ? '#334155' : '#cbd5e1',
+            },
+            timeScale: {
+                borderColor: isDarkMode ? '#334155' : '#cbd5e1',
+                timeVisible: true,
+                secondsVisible: false,
+            },
+        });
+        
+        // Add candlestick series
+        candlestickSeries = chart.addCandlestickSeries({
+            upColor: '#22c55e',
+            downColor: '#ef4444',
+            borderUpColor: '#22c55e',
+            borderDownColor: '#ef4444',
+            wickUpColor: '#22c55e',
+            wickDownColor: '#ef4444',
+        });
+        
+        // Set data
+        candlestickSeries.setData(data.candles);
+        
+        // Add price lines
+        if (data.price_lines) {
+            data.price_lines.forEach(line => {
+                candlestickSeries.createPriceLine({
+                    price: line.price,
+                    color: line.color,
+                    lineWidth: line.lineWidth,
+                    lineStyle: line.lineStyle,
+                    axisLabelVisible: true,
+                    title: line.title,
+                });
+            });
+        }
+        
+        // Add markers
+        if (data.markers && data.markers.length > 0) {
+            candlestickSeries.setMarkers(data.markers);
+        }
+        
+        // Fit content
+        chart.timeScale().fitContent();
+        
+        // Handle resize
+        const resizeObserver = new ResizeObserver(entries => {
+            if (chart) {
+                const { width, height } = entries[0].contentRect;
+                chart.resize(width, height);
+            }
+        });
+        resizeObserver.observe(chartContainer);
+        
+    } catch (err) {
+        console.error('Chart error:', err);
+        chartLoading.innerHTML = `<div class="text-dark-400 text-center"><span class="text-3xl block mb-2">⚠️</span>Failed to load chart: ${err.message}</div>`;
+    }
+}
+
+// Load chart on page load
+document.addEventListener('DOMContentLoaded', () => {
+    loadChartData();
+});
+
+// ========== AI Review Functions ==========
 
 // Check if there's already a cached review or in-progress generation on page load
 document.addEventListener('DOMContentLoaded', () => checkExistingReview());

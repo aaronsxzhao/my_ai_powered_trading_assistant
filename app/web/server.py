@@ -418,6 +418,188 @@ async def cancel_trade_review(trade_id: int):
         session.close()
 
 
+@app.get("/api/trades/{trade_id}/chart-data")
+async def get_trade_chart_data(trade_id: int, timeframe: str = "5m"):
+    """
+    Get OHLCV data for charting a trade.
+    
+    Returns candlestick data centered around the trade's entry/exit times.
+    """
+    from datetime import timedelta
+    from app.data.cache import get_cached_ohlcv
+    
+    session = get_session()
+    try:
+        trade = session.query(Trade).filter(Trade.id == trade_id).first()
+        if not trade:
+            return JSONResponse({"success": False, "error": "Trade not found"})
+        
+        # Determine the time range to fetch
+        # We want to show context before and after the trade
+        entry_time = trade.entry_time or trade.exit_time
+        exit_time = trade.exit_time or trade.entry_time
+        
+        if not entry_time and not exit_time:
+            # Fallback to trade_date
+            from datetime import datetime as dt
+            entry_time = dt.combine(trade.trade_date, dt.min.time().replace(hour=9, minute=30))
+            exit_time = dt.combine(trade.trade_date, dt.min.time().replace(hour=16))
+        
+        # Calculate lookback based on timeframe
+        timeframe_bars = {
+            "1m": 200,
+            "5m": 150,
+            "15m": 100,
+            "1h": 80,
+            "2h": 60,
+            "1d": 60,
+        }
+        bars_to_fetch = timeframe_bars.get(timeframe, 150)
+        
+        # Calculate time delta per bar
+        timeframe_deltas = {
+            "1m": timedelta(minutes=1),
+            "5m": timedelta(minutes=5),
+            "15m": timedelta(minutes=15),
+            "1h": timedelta(hours=1),
+            "2h": timedelta(hours=2),
+            "1d": timedelta(days=1),
+        }
+        bar_delta = timeframe_deltas.get(timeframe, timedelta(minutes=5))
+        
+        # Fetch data with context before and after
+        lookback = bar_delta * (bars_to_fetch // 2)
+        start_time = entry_time - lookback
+        end_time = exit_time + lookback
+        
+        # For intraday, add extra days for weekend handling
+        if timeframe in ["1m", "5m", "15m", "1h", "2h"]:
+            start_time = start_time - timedelta(days=5)
+            end_time = end_time + timedelta(days=2)
+        else:
+            start_time = start_time - timedelta(days=30)
+            end_time = end_time + timedelta(days=10)
+        
+        # Fetch OHLCV data
+        df = get_cached_ohlcv(trade.ticker, timeframe, start_time, end_time)
+        
+        if df.empty:
+            return JSONResponse({
+                "success": False, 
+                "error": f"No data available for {trade.ticker} ({timeframe})"
+            })
+        
+        # Convert to TradingView Lightweight Charts format
+        # Format: { time: unix_timestamp, open, high, low, close }
+        candles = []
+        for _, row in df.iterrows():
+            # Convert datetime to Unix timestamp (seconds)
+            timestamp = int(row['datetime'].timestamp())
+            candles.append({
+                "time": timestamp,
+                "open": round(float(row['open']), 4),
+                "high": round(float(row['high']), 4),
+                "low": round(float(row['low']), 4),
+                "close": round(float(row['close']), 4),
+            })
+        
+        # Sort by time
+        candles = sorted(candles, key=lambda x: x['time'])
+        
+        # Trade markers
+        markers = []
+        
+        # Entry marker
+        if trade.entry_time:
+            entry_ts = int(trade.entry_time.timestamp())
+            markers.append({
+                "time": entry_ts,
+                "position": "belowBar" if trade.direction.value == "long" else "aboveBar",
+                "color": "#22c55e",
+                "shape": "arrowUp" if trade.direction.value == "long" else "arrowDown",
+                "text": f"Entry ${trade.entry_price:.2f}",
+            })
+        
+        # Exit marker
+        if trade.exit_time and trade.exit_price:
+            exit_ts = int(trade.exit_time.timestamp())
+            # Determine exit color based on P&L
+            exit_color = "#22c55e" if (trade.r_multiple and trade.r_multiple > 0) else "#ef4444"
+            markers.append({
+                "time": exit_ts,
+                "position": "aboveBar" if trade.direction.value == "long" else "belowBar",
+                "color": exit_color,
+                "shape": "arrowDown" if trade.direction.value == "long" else "arrowUp",
+                "text": f"Exit ${trade.exit_price:.2f}",
+            })
+        
+        # Price lines for entry, exit, stop loss
+        price_lines = []
+        
+        # Entry price line
+        price_lines.append({
+            "price": trade.entry_price,
+            "color": "#22c55e",
+            "lineWidth": 2,
+            "lineStyle": 0,  # Solid
+            "title": "Entry",
+        })
+        
+        # Exit price line
+        if trade.exit_price:
+            exit_color = "#22c55e" if (trade.r_multiple and trade.r_multiple > 0) else "#ef4444"
+            price_lines.append({
+                "price": trade.exit_price,
+                "color": exit_color,
+                "lineWidth": 2,
+                "lineStyle": 0,
+                "title": "Exit",
+            })
+        
+        # Stop loss line
+        if trade.effective_stop_loss:
+            price_lines.append({
+                "price": trade.effective_stop_loss,
+                "color": "#f97316",  # Orange
+                "lineWidth": 1,
+                "lineStyle": 2,  # Dashed
+                "title": "Stop",
+            })
+        
+        # Take profit line
+        if trade.effective_take_profit:
+            price_lines.append({
+                "price": trade.effective_take_profit,
+                "color": "#3b82f6",  # Blue
+                "lineWidth": 1,
+                "lineStyle": 2,  # Dashed
+                "title": "Target",
+            })
+        
+        return JSONResponse({
+            "success": True,
+            "ticker": trade.ticker,
+            "timeframe": timeframe,
+            "candles": candles,
+            "markers": markers,
+            "price_lines": price_lines,
+            "trade_info": {
+                "entry_price": trade.entry_price,
+                "exit_price": trade.exit_price,
+                "stop_loss": trade.effective_stop_loss,
+                "take_profit": trade.effective_take_profit,
+                "direction": trade.direction.value,
+                "r_multiple": trade.r_multiple,
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fetching chart data: {e}")
+        return JSONResponse({"success": False, "error": str(e)})
+    finally:
+        session.close()
+
+
 @app.get("/add-trade", response_class=HTMLResponse)
 async def add_trade_page(request: Request):
     """Add trade form page (includes single trade and bulk import)."""
