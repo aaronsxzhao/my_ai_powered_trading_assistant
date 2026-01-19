@@ -426,7 +426,9 @@ async def get_trade_chart_data(trade_id: int, timeframe: str = "5m"):
     Returns candlestick data centered around the trade's entry/exit times.
     """
     from datetime import timedelta
+    from zoneinfo import ZoneInfo
     from app.data.cache import get_cached_ohlcv
+    from app.data.providers import get_provider_for_ticker
     
     session = get_session()
     try:
@@ -434,8 +436,12 @@ async def get_trade_chart_data(trade_id: int, timeframe: str = "5m"):
         if not trade:
             return JSONResponse({"success": False, "error": "Trade not found"})
         
+        # Get the market timezone for this trade (default to NY)
+        market_tz_str = trade.market_timezone or "America/New_York"
+        market_tz = ZoneInfo(market_tz_str)
+        
         # Determine the time range to fetch
-        # We want to show context before and after the trade
+        # Trade times are stored as naive datetimes in market_timezone
         entry_time = trade.entry_time or trade.exit_time
         exit_time = trade.exit_time or trade.entry_time
         
@@ -444,6 +450,17 @@ async def get_trade_chart_data(trade_id: int, timeframe: str = "5m"):
             from datetime import datetime as dt
             entry_time = dt.combine(trade.trade_date, dt.min.time().replace(hour=9, minute=30))
             exit_time = dt.combine(trade.trade_date, dt.min.time().replace(hour=16))
+        
+        # Make times timezone-aware in market timezone
+        if entry_time.tzinfo is None:
+            entry_time_aware = entry_time.replace(tzinfo=market_tz)
+        else:
+            entry_time_aware = entry_time
+            
+        if exit_time.tzinfo is None:
+            exit_time_aware = exit_time.replace(tzinfo=market_tz)
+        else:
+            exit_time_aware = exit_time
         
         # Calculate lookback based on timeframe
         timeframe_bars = {
@@ -469,8 +486,8 @@ async def get_trade_chart_data(trade_id: int, timeframe: str = "5m"):
         
         # Fetch data with context before and after
         lookback = bar_delta * (bars_to_fetch // 2)
-        start_time = entry_time - lookback
-        end_time = exit_time + lookback
+        start_time = entry_time_aware - lookback
+        end_time = exit_time_aware + lookback
         
         # For intraday, add extra days for weekend handling
         if timeframe in ["1m", "5m", "15m", "1h", "2h"]:
@@ -480,8 +497,13 @@ async def get_trade_chart_data(trade_id: int, timeframe: str = "5m"):
             start_time = start_time - timedelta(days=30)
             end_time = end_time + timedelta(days=10)
         
-        # Fetch OHLCV data
+        # Fetch OHLCV data - try cache first to avoid unnecessary API calls
         df = get_cached_ohlcv(trade.ticker, timeframe, start_time, end_time)
+        
+        if df.empty:
+            # Cache miss - fetch from provider (will also populate cache)
+            provider = get_provider_for_ticker(trade.ticker)
+            df = provider.get_ohlcv(trade.ticker, timeframe, start_time, end_time)
         
         if df.empty:
             return JSONResponse({
@@ -494,6 +516,7 @@ async def get_trade_chart_data(trade_id: int, timeframe: str = "5m"):
         candles = []
         for _, row in df.iterrows():
             # Convert datetime to Unix timestamp (seconds)
+            # OHLCV data is timezone-aware in America/New_York
             timestamp = int(row['datetime'].timestamp())
             candles.append({
                 "time": timestamp,
@@ -506,51 +529,89 @@ async def get_trade_chart_data(trade_id: int, timeframe: str = "5m"):
         # Sort by time
         candles = sorted(candles, key=lambda x: x['time'])
         
-        # Trade markers
+        # Trade markers - need to snap to nearest candle time
         markers = []
         
+        # Find the closest candle timestamp for entry/exit markers
+        def find_closest_candle_time(target_ts, candle_list):
+            """Find the candle time closest to the target timestamp."""
+            if not candle_list:
+                return target_ts
+            closest = min(candle_list, key=lambda c: abs(c['time'] - target_ts))
+            return closest['time']
+        
         # Entry marker
+        # For LONG: Entry = BUY (green), for SHORT: Entry = SELL (red)
         if trade.entry_time:
-            entry_ts = int(trade.entry_time.timestamp())
+            # Convert trade entry time to Unix timestamp (make timezone-aware first)
+            if trade.entry_time.tzinfo is None:
+                entry_aware = trade.entry_time.replace(tzinfo=market_tz)
+            else:
+                entry_aware = trade.entry_time
+            entry_ts = int(entry_aware.timestamp())
+            
+            # Snap to nearest candle
+            snapped_entry_ts = find_closest_candle_time(entry_ts, candles)
+            
+            # Entry color: LONG=BUY=Green, SHORT=SELL=Red
+            is_long = trade.direction.value == "long"
+            entry_color = "#26a69a" if is_long else "#ef5350"  # Green for buy, Red for sell
+            entry_label = "BUY" if is_long else "SELL"
+            
             markers.append({
-                "time": entry_ts,
-                "position": "belowBar" if trade.direction.value == "long" else "aboveBar",
-                "color": "#22c55e",
-                "shape": "arrowUp" if trade.direction.value == "long" else "arrowDown",
-                "text": f"Entry ${trade.entry_price:.2f}",
+                "time": snapped_entry_ts,
+                "position": "belowBar" if is_long else "aboveBar",
+                "color": entry_color,
+                "shape": "arrowUp" if is_long else "arrowDown",
+                "text": f"{entry_label} ${trade.entry_price:.2f}",
             })
         
         # Exit marker
+        # For LONG: Exit = SELL (red), for SHORT: Exit = BUY (green)
         if trade.exit_time and trade.exit_price:
-            exit_ts = int(trade.exit_time.timestamp())
-            # Determine exit color based on P&L
-            exit_color = "#22c55e" if (trade.r_multiple and trade.r_multiple > 0) else "#ef4444"
+            # Convert trade exit time to Unix timestamp
+            if trade.exit_time.tzinfo is None:
+                exit_aware = trade.exit_time.replace(tzinfo=market_tz)
+            else:
+                exit_aware = trade.exit_time
+            exit_ts = int(exit_aware.timestamp())
+            
+            # Snap to nearest candle
+            snapped_exit_ts = find_closest_candle_time(exit_ts, candles)
+            
+            # Exit color: LONG exit=SELL=Red, SHORT exit=BUY=Green
+            is_long = trade.direction.value == "long"
+            exit_color = "#ef5350" if is_long else "#26a69a"  # Red for sell, Green for buy
+            exit_label = "SELL" if is_long else "BUY"
+            
             markers.append({
-                "time": exit_ts,
-                "position": "aboveBar" if trade.direction.value == "long" else "belowBar",
+                "time": snapped_exit_ts,
+                "position": "aboveBar" if is_long else "belowBar",
                 "color": exit_color,
-                "shape": "arrowDown" if trade.direction.value == "long" else "arrowUp",
-                "text": f"Exit ${trade.exit_price:.2f}",
+                "shape": "arrowDown" if is_long else "arrowUp",
+                "text": f"{exit_label} ${trade.exit_price:.2f}",
             })
         
         # Price lines for entry, exit, stop loss
         price_lines = []
+        is_long = trade.direction.value == "long"
         
-        # Entry price line
+        # Entry price line (LONG=BUY=Green, SHORT=SELL=Red)
+        entry_line_color = "#26a69a" if is_long else "#ef5350"
         price_lines.append({
             "price": trade.entry_price,
-            "color": "#22c55e",
+            "color": entry_line_color,
             "lineWidth": 2,
             "lineStyle": 0,  # Solid
             "title": "Entry",
         })
         
-        # Exit price line
+        # Exit price line (LONG exit=SELL=Red, SHORT exit=BUY=Green)
         if trade.exit_price:
-            exit_color = "#22c55e" if (trade.r_multiple and trade.r_multiple > 0) else "#ef4444"
+            exit_line_color = "#ef5350" if is_long else "#26a69a"
             price_lines.append({
                 "price": trade.exit_price,
-                "color": exit_color,
+                "color": exit_line_color,
                 "lineWidth": 2,
                 "lineStyle": 0,
                 "title": "Exit",
@@ -576,6 +637,16 @@ async def get_trade_chart_data(trade_id: int, timeframe: str = "5m"):
                 "title": "Target",
             })
         
+        # Debug info for timestamps
+        debug_info = {
+            "market_timezone": market_tz_str,
+            "entry_time_raw": str(trade.entry_time) if trade.entry_time else None,
+            "exit_time_raw": str(trade.exit_time) if trade.exit_time else None,
+            "candle_count": len(candles),
+            "first_candle_time": candles[0]['time'] if candles else None,
+            "last_candle_time": candles[-1]['time'] if candles else None,
+        }
+        
         return JSONResponse({
             "success": True,
             "ticker": trade.ticker,
@@ -590,12 +661,14 @@ async def get_trade_chart_data(trade_id: int, timeframe: str = "5m"):
                 "take_profit": trade.effective_take_profit,
                 "direction": trade.direction.value,
                 "r_multiple": trade.r_multiple,
-            }
+            },
+            "debug": debug_info,
         })
         
     except Exception as e:
         logger.error(f"Error fetching chart data: {e}")
-        return JSONResponse({"success": False, "error": str(e)})
+        import traceback
+        return JSONResponse({"success": False, "error": str(e), "traceback": traceback.format_exc()})
     finally:
         session.close()
 

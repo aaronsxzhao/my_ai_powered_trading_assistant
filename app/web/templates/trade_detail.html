@@ -75,13 +75,23 @@
         </div>
         <div class="mt-3 flex items-center gap-4 text-sm text-dark-400">
             <div class="flex items-center gap-2">
-                <span class="w-3 h-3 rounded-full bg-green-500"></span>
-                <span>Entry: ${{ "%.4f"|format(trade.entry_price) }}</span>
+                {% if trade.direction.value == 'long' %}
+                <span class="w-3 h-3 rounded-full" style="background-color: #26a69a;"></span>
+                <span>BUY: ${{ "%.4f"|format(trade.entry_price) }}</span>
+                {% else %}
+                <span class="w-3 h-3 rounded-full" style="background-color: #ef5350;"></span>
+                <span>SELL: ${{ "%.4f"|format(trade.entry_price) }}</span>
+                {% endif %}
             </div>
             {% if trade.exit_price %}
             <div class="flex items-center gap-2">
-                <span class="w-3 h-3 rounded-full bg-red-500"></span>
-                <span>Exit: ${{ "%.4f"|format(trade.exit_price) }}</span>
+                {% if trade.direction.value == 'long' %}
+                <span class="w-3 h-3 rounded-full" style="background-color: #ef5350;"></span>
+                <span>SELL: ${{ "%.4f"|format(trade.exit_price) }}</span>
+                {% else %}
+                <span class="w-3 h-3 rounded-full" style="background-color: #26a69a;"></span>
+                <span>BUY: ${{ "%.4f"|format(trade.exit_price) }}</span>
+                {% endif %}
             </div>
             {% endif %}
             {% if trade.effective_stop_loss %}
@@ -90,6 +100,9 @@
                 <span>Stop: ${{ "%.4f"|format(trade.effective_stop_loss) }}</span>
             </div>
             {% endif %}
+            <div class="flex items-center gap-2 ml-auto text-xs text-dark-500">
+                <span>Times shown in EST</span>
+            </div>
         </div>
     </div>
 
@@ -579,7 +592,14 @@ async function loadChartData() {
         const response = await fetch(`/api/trades/${TRADE_ID}/chart-data?timeframe=${timeframe}`);
         const data = await response.json();
         
+        // Log debug info
+        console.log('Chart data response:', data);
+        if (data.debug) {
+            console.log('Debug info:', data.debug);
+        }
+        
         if (!data.success) {
+            console.error('Chart error:', data.error, data.traceback);
             chartLoading.innerHTML = `<div class="text-dark-400 text-center"><span class="text-3xl block mb-2">📊</span>${data.error || 'No chart data available'}</div>`;
             return;
         }
@@ -615,17 +635,69 @@ async function loadChartData() {
                 borderColor: isDarkMode ? '#334155' : '#cbd5e1',
                 timeVisible: true,
                 secondsVisible: false,
+                tickMarkFormatter: (time, tickMarkType, locale) => {
+                    // Format tick marks on the time scale in EST
+                    const date = new Date(time * 1000);
+                    
+                    const formatter = new Intl.DateTimeFormat('en-US', {
+                        timeZone: 'America/New_York',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: false,
+                    });
+                    
+                    const parts = formatter.formatToParts(date);
+                    const get = (type) => parts.find(p => p.type === type)?.value || '';
+                    
+                    const timeStr = `${get('hour')}:${get('minute')}`;
+                    const dateStr = `${get('month')}/${get('day')}`;
+                    
+                    // For intraday, show time; for daily, show date
+                    if (tickMarkType === LightweightCharts.TickMarkType.Time) {
+                        return timeStr;
+                    } else if (tickMarkType === LightweightCharts.TickMarkType.DayOfMonth) {
+                        return dateStr;
+                    } else {
+                        return `${dateStr} ${timeStr}`;
+                    }
+                },
+            },
+            localization: {
+                // Display times in America/New_York timezone (for crosshair and tooltips)
+                timeFormatter: (timestamp) => {
+                    const date = new Date(timestamp * 1000);
+                    
+                    // Create formatter for EST timezone
+                    const formatter = new Intl.DateTimeFormat('en-US', {
+                        timeZone: 'America/New_York',
+                        weekday: 'short',
+                        month: '2-digit',
+                        day: '2-digit',
+                        year: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: false,
+                    });
+                    
+                    const parts = formatter.formatToParts(date);
+                    const get = (type) => parts.find(p => p.type === type)?.value || '';
+                    
+                    // Format: 'Fri 06/27/25 11:00 EST'
+                    return `${get('weekday')} ${get('month')}/${get('day')}/${get('year')} ${get('hour')}:${get('minute')} EST`;
+                },
             },
         });
         
-        // Add candlestick series
+        // Add candlestick series with custom colors (teal for up, red for down)
         candlestickSeries = chart.addCandlestickSeries({
-            upColor: '#22c55e',
-            downColor: '#ef4444',
-            borderUpColor: '#22c55e',
-            borderDownColor: '#ef4444',
-            wickUpColor: '#22c55e',
-            wickDownColor: '#ef4444',
+            upColor: '#26a69a',       // Teal green for up candles
+            downColor: '#ef5350',     // Red for down candles
+            borderUpColor: '#26a69a',
+            borderDownColor: '#ef5350',
+            wickUpColor: '#26a69a',
+            wickDownColor: '#ef5350',
         });
         
         // Set data

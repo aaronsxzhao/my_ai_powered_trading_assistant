@@ -376,6 +376,12 @@ class TradeCoach:
                     return ("Cancelled", None) if return_daily_df else "Cancelled"
                 all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "5m", entry_cutoff, 234, "FIVEMIN_234 (entry time cutoff)", cancellation_check))
 
+            # Add pattern detection for intraday trades
+            if timeframe == "5m" and trade.entry_time:
+                pattern_context = self._detect_patterns_before_entry(trade, entry_cutoff)
+                if pattern_context:
+                    all_context.append(pattern_context)
+            
             result = "\n\n".join([ctx for ctx in all_context if ctx])
             if not result:
                 logger.warning(f"⚠️ No OHLCV data collected for {trade.ticker}")
@@ -460,8 +466,24 @@ class TradeCoach:
             # Bar timestamp is the START time, so bar ends at timestamp + interval
             # Include bar if: timestamp + interval <= cutoff_time
             # Which means: timestamp <= cutoff_time - interval = max_complete_bar_start
+            
+            # Find the datetime column (providers may return 'datetime' or 'timestamp')
+            time_col = None
             if 'timestamp' in ohlcv.columns:
-                ohlcv = ohlcv[ohlcv['timestamp'] <= max_complete_bar_start]
+                time_col = 'timestamp'
+            elif 'datetime' in ohlcv.columns:
+                time_col = 'datetime'
+            
+            if time_col:
+                # Make cutoff timezone-aware if OHLCV data is timezone-aware
+                filter_cutoff = max_complete_bar_start
+                if ohlcv[time_col].dt.tz is not None and filter_cutoff.tzinfo is None:
+                    # OHLCV is timezone-aware, cutoff is naive - assume cutoff is in market timezone
+                    from zoneinfo import ZoneInfo
+                    filter_cutoff = max_complete_bar_start.replace(tzinfo=ZoneInfo("America/New_York"))
+                
+                ohlcv = ohlcv[ohlcv[time_col] <= filter_cutoff]
+                logger.debug(f"Filtered to {len(ohlcv)} bars before {filter_cutoff}")
             
             # Limit to requested number of bars (most recent ones before cutoff)
             ohlcv = ohlcv.tail(num_bars)
@@ -472,21 +494,66 @@ class TradeCoach:
             # Format as readable string
             lines = [f"=== {label} ==="]
             lines.append(f"Entry time: {cutoff_time.strftime('%Y-%m-%d %H:%M')}")
-            lines.append(f"Last complete bar: {max_complete_bar_start.strftime('%Y-%m-%d %H:%M')}")
+            lines.append(f"Last complete bar (SIGNAL BAR): {max_complete_bar_start.strftime('%Y-%m-%d %H:%M')}")
             lines.append(f"Bars: {len(ohlcv)}")
             lines.append("timestamp, open, high, low, close, volume")
             
-            for _, row in ohlcv.iterrows():
-                ts = row.get('timestamp', row.name)
+            # Track the last bar to explicitly label it as signal bar
+            ohlcv_list = list(ohlcv.iterrows())
+            for i, (_, row) in enumerate(ohlcv_list):
+                # Get timestamp from available column
+                ts = row.get('timestamp') or row.get('datetime') or row.name
                 if hasattr(ts, 'strftime'):
                     ts_str = ts.strftime('%Y-%m-%d %H:%M')
                 else:
                     ts_str = str(ts)
                 
+                # Label the last bar as SIGNAL BAR for clarity
+                is_signal_bar = (i == len(ohlcv_list) - 1) and interval in ['5m', '5min']
+                signal_marker = " <<< SIGNAL BAR (bar before entry)" if is_signal_bar else ""
+                
                 lines.append(
                     f"{ts_str}, {row['open']:.4f}, {row['high']:.4f}, "
-                    f"{row['low']:.4f}, {row['close']:.4f}, {int(row.get('volume', 0))}"
+                    f"{row['low']:.4f}, {row['close']:.4f}, {int(row.get('volume', 0))}{signal_marker}"
                 )
+            
+            # Add explicit signal bar analysis for 5-min data
+            if interval in ['5m', '5min'] and len(ohlcv_list) > 0:
+                _, signal_row = ohlcv_list[-1]
+                signal_ts = signal_row.get('timestamp') or signal_row.get('datetime') or ohlcv.index[-1]
+                signal_o = signal_row['open']
+                signal_h = signal_row['high']
+                signal_l = signal_row['low']
+                signal_c = signal_row['close']
+                
+                # Classify the signal bar
+                bar_range = signal_h - signal_l
+                body = abs(signal_c - signal_o)
+                body_pct = (body / bar_range * 100) if bar_range > 0 else 0
+                is_bull = signal_c > signal_o
+                is_bear = signal_c < signal_o
+                is_doji = body_pct < 30
+                
+                close_position = ((signal_c - signal_l) / bar_range * 100) if bar_range > 0 else 50
+                
+                bar_type = "DOJI" if is_doji else ("BULL BAR" if is_bull else "BEAR BAR")
+                close_location = "near HIGH" if close_position > 70 else ("near LOW" if close_position < 30 else "middle")
+                
+                if hasattr(signal_ts, 'strftime'):
+                    signal_ts_str = signal_ts.strftime('%Y-%m-%d %H:%M')
+                else:
+                    signal_ts_str = str(signal_ts)
+                
+                lines.append("")
+                lines.append("=== SIGNAL BAR ANALYSIS ===")
+                lines.append(f"Signal Bar: {signal_ts_str}")
+                lines.append(f"OHLC: O={signal_o:.4f}, H={signal_h:.4f}, L={signal_l:.4f}, C={signal_c:.4f}")
+                lines.append(f"Bar Type: {bar_type} (body={body_pct:.0f}% of range)")
+                lines.append(f"Close Location: {close_location} ({close_position:.0f}% from low)")
+                
+                # For short entries, analyze if this was a good signal bar
+                lines.append(f"For SHORT entry: {'GOOD' if is_bear and close_position < 40 else 'WEAK'} signal bar")
+                lines.append(f"For LONG entry: {'GOOD' if is_bull and close_position > 60 else 'WEAK'} signal bar")
             
             return "\n".join(lines)
             
@@ -537,8 +604,20 @@ class TradeCoach:
             full_df = ohlcv.copy()
             
             # Filter for display (only up to display_cutoff for LLM context)
+            # Find the datetime column (providers may return 'datetime' or 'timestamp')
+            time_col = None
             if 'timestamp' in ohlcv.columns:
-                ohlcv = ohlcv[ohlcv['timestamp'] <= display_cutoff]
+                time_col = 'timestamp'
+            elif 'datetime' in ohlcv.columns:
+                time_col = 'datetime'
+            
+            if time_col:
+                # Make cutoff timezone-aware if OHLCV data is timezone-aware
+                filter_cutoff = display_cutoff
+                if ohlcv[time_col].dt.tz is not None and filter_cutoff.tzinfo is None:
+                    from zoneinfo import ZoneInfo
+                    filter_cutoff = display_cutoff.replace(tzinfo=ZoneInfo("America/New_York"))
+                ohlcv = ohlcv[ohlcv[time_col] <= filter_cutoff]
             
             # Limit to requested number of bars
             ohlcv = ohlcv.tail(num_bars)
@@ -553,7 +632,8 @@ class TradeCoach:
             lines.append("timestamp, open, high, low, close, volume")
             
             for _, row in ohlcv.iterrows():
-                ts = row.get('timestamp', row.name)
+                # Get timestamp from available column
+                ts = row.get('timestamp') or row.get('datetime') or row.name
                 if hasattr(ts, 'strftime'):
                     ts_str = ts.strftime('%Y-%m-%d %H:%M')
                 else:
@@ -579,6 +659,138 @@ class TradeCoach:
         if isinstance(value, str) and value:
             return [value]
         return []
+    
+    def _detect_patterns_before_entry(self, trade: Trade, entry_cutoff: datetime) -> str:
+        """
+        Detect potential patterns in the 5-min data leading up to entry.
+        
+        This helps the LLM by pre-identifying potential wedges, channels, and other patterns
+        rather than requiring it to parse raw OHLCV data.
+        """
+        try:
+            # Fetch 5-min data for the trading session up to entry
+            interval_delta = timedelta(minutes=5)
+            start_date = entry_cutoff - timedelta(hours=2)  # Look at last 2 hours before entry
+            
+            provider = self._get_provider_for_ticker(trade.ticker)
+            ohlcv = provider.get_ohlcv(
+                trade.ticker,
+                "5m",
+                start_date,
+                entry_cutoff
+            )
+            
+            if ohlcv is None or ohlcv.empty or len(ohlcv) < 10:
+                return ""
+            
+            # Find the datetime column
+            time_col = 'timestamp' if 'timestamp' in ohlcv.columns else 'datetime'
+            if time_col not in ohlcv.columns:
+                return ""
+            
+            # Filter to only include complete bars before entry
+            max_complete_bar_start = entry_cutoff - interval_delta
+            if ohlcv[time_col].dt.tz is not None and max_complete_bar_start.tzinfo is None:
+                from zoneinfo import ZoneInfo
+                max_complete_bar_start = max_complete_bar_start.replace(tzinfo=ZoneInfo("America/New_York"))
+            ohlcv = ohlcv[ohlcv[time_col] <= max_complete_bar_start]
+            
+            if len(ohlcv) < 10:
+                return ""
+            
+            lines = ["=== PATTERN DETECTION (last 2 hours before entry) ==="]
+            lines.append(f"Analyzing bars from {ohlcv[time_col].iloc[0]} to {ohlcv[time_col].iloc[-1]}")
+            lines.append("")
+            
+            # Calculate swing highs and lows
+            highs = ohlcv['high'].values
+            lows = ohlcv['low'].values
+            closes = ohlcv['close'].values
+            opens = ohlcv['open'].values
+            timestamps = ohlcv[time_col].values
+            
+            # Find local swing highs (higher than 2 bars on each side)
+            swing_highs = []
+            swing_lows = []
+            
+            for i in range(2, len(highs) - 2):
+                if highs[i] > highs[i-1] and highs[i] > highs[i-2] and highs[i] >= highs[i+1] and highs[i] >= highs[i+2]:
+                    swing_highs.append((i, highs[i], timestamps[i]))
+                if lows[i] < lows[i-1] and lows[i] < lows[i-2] and lows[i] <= lows[i+1] and lows[i] <= lows[i+2]:
+                    swing_lows.append((i, lows[i], timestamps[i]))
+            
+            # Detect wedge patterns (3 consecutive higher lows / lower highs)
+            wedge_detected = False
+            wedge_type = None
+            wedge_bars = []
+            
+            # Check for wedge top (3 higher lows with lower/equal highs - bearish)
+            if len(swing_lows) >= 3:
+                last_3_lows = swing_lows[-3:]
+                if last_3_lows[0][1] < last_3_lows[1][1] < last_3_lows[2][1]:
+                    # 3 consecutive higher lows
+                    # Check if highs are relatively flat or declining
+                    wedge_detected = True
+                    wedge_type = "WEDGE TOP (3 higher lows - potential bearish reversal)"
+                    wedge_bars = last_3_lows
+            
+            # Check for wedge bottom (3 lower highs with higher/equal lows - bullish)
+            if not wedge_detected and len(swing_highs) >= 3:
+                last_3_highs = swing_highs[-3:]
+                if last_3_highs[0][1] > last_3_highs[1][1] > last_3_highs[2][1]:
+                    # 3 consecutive lower highs
+                    wedge_detected = True
+                    wedge_type = "WEDGE BOTTOM (3 lower highs - potential bullish reversal)"
+                    wedge_bars = last_3_highs
+            
+            # Report swing points
+            lines.append("SWING HIGHS (last 2 hours):")
+            for idx, price, ts in swing_highs[-5:]:
+                ts_str = pd.Timestamp(ts).strftime('%H:%M') if hasattr(pd.Timestamp(ts), 'strftime') else str(ts)
+                lines.append(f"  - {ts_str}: ${price:.4f}")
+            
+            lines.append("")
+            lines.append("SWING LOWS (last 2 hours):")
+            for idx, price, ts in swing_lows[-5:]:
+                ts_str = pd.Timestamp(ts).strftime('%H:%M') if hasattr(pd.Timestamp(ts), 'strftime') else str(ts)
+                lines.append(f"  - {ts_str}: ${price:.4f}")
+            
+            # Report wedge pattern if detected
+            lines.append("")
+            if wedge_detected:
+                lines.append(f"*** PATTERN DETECTED: {wedge_type} ***")
+                lines.append("Wedge pushes:")
+                for idx, price, ts in wedge_bars:
+                    ts_str = pd.Timestamp(ts).strftime('%H:%M') if hasattr(pd.Timestamp(ts), 'strftime') else str(ts)
+                    lines.append(f"  Push at {ts_str}: ${price:.4f}")
+                lines.append("")
+                lines.append("NOTE: If trader shorted after this wedge top, this is a WITH-TREND reversal setup.")
+            else:
+                lines.append("No clear wedge pattern detected (3 pushes required)")
+            
+            # Detect trend direction in this 2-hour window
+            first_close = closes[0]
+            last_close = closes[-1]
+            highest = max(highs)
+            lowest = min(lows)
+            
+            trend_pct = ((last_close - first_close) / first_close * 100) if first_close > 0 else 0
+            
+            lines.append("")
+            if trend_pct > 0.5:
+                lines.append(f"2-HOUR TREND: BULLISH (+{trend_pct:.2f}%)")
+            elif trend_pct < -0.5:
+                lines.append(f"2-HOUR TREND: BEARISH ({trend_pct:.2f}%)")
+            else:
+                lines.append(f"2-HOUR TREND: SIDEWAYS ({trend_pct:+.2f}%)")
+            
+            lines.append(f"Range: ${lowest:.4f} - ${highest:.4f}")
+            
+            return "\n".join(lines)
+            
+        except Exception as e:
+            logger.warning(f"Pattern detection failed: {e}")
+            return ""
 
     def _get_session_context(self, trade: Trade, daily_ohlcv: Optional[pd.DataFrame] = None) -> tuple:
         """Get prior day levels and today's open for session context.
