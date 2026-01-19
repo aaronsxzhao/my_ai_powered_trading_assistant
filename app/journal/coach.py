@@ -482,8 +482,14 @@ class TradeCoach:
                     from zoneinfo import ZoneInfo
                     filter_cutoff = max_complete_bar_start.replace(tzinfo=ZoneInfo("America/New_York"))
                 
+                before_filter_count = len(ohlcv)
                 ohlcv = ohlcv[ohlcv[time_col] <= filter_cutoff]
-                logger.debug(f"Filtered to {len(ohlcv)} bars before {filter_cutoff}")
+                logger.info(f"📊 {label}: Filtered {before_filter_count} → {len(ohlcv)} bars (cutoff: {filter_cutoff})")
+                
+                if len(ohlcv) > 0:
+                    last_ts = ohlcv[time_col].iloc[-1]
+                    first_ts = ohlcv[time_col].iloc[0]
+                    logger.info(f"📊 {label}: Data range {first_ts} to {last_ts}")
             
             # Limit to requested number of bars (most recent ones before cutoff)
             ohlcv = ohlcv.tail(num_bars)

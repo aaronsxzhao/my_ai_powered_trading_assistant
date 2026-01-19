@@ -299,10 +299,15 @@ Your job is to evaluate a COMPLETED trade using Brooks-style principles:
 **F. ERRORS:** Identify Brooks-style errors with explicit naming and "why it's an error."
 
 **G. WHAT WAS GOOD:** Identify strongest parts (selection, entry, stop, management, discipline).
+   FORMAT: Start with a descriptive phrase, then explanation. Example: "Disciplined exit: Took small profit when..."
 
 **H. WHAT WAS FLAWED:** Identify 1-3 specific improvements that would most increase expectancy.
+   FORMAT: Start with a descriptive phrase (NOT all caps), then explanation. Example: "Barbwire violation: Entered short in classic barbwire..."
+   DO NOT use ALL CAPS labels. Keep formatting consistent with "What Was Good" section.
 
 **I. RULE FOR NEXT TIME:** Give 1-3 rules precise enough to follow mechanically. Explicitly address what to do at that moment.
+   FORMAT: Start with a descriptive phrase (NOT all caps), then the rule. Example: "Barbwire filter: Before entering, check last 3-6 bars..."
+   DO NOT use ALL CAPS labels. Keep formatting consistent with other sections.
 
 **J. OVERALL GRADE:** Must match the content.
 
