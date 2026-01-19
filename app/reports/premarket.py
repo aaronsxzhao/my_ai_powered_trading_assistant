@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Optional
 import logging
 
+import pandas as pd
 import pytz
 
 from app.config import settings, OUTPUTS_DIR
@@ -300,9 +301,8 @@ class PremarketReport:
             lines.append(f"{dt} | {row['open']:.2f} | {row['high']:.2f} | {row['low']:.2f} | {row['close']:.2f} | {int(row['volume'])}")
         return "\n".join(lines)
 
-    def _fetch_daily_data(self, ticker: str, report_date: date) -> 'pd.DataFrame':
+    def _fetch_daily_data(self, ticker: str, report_date: date) -> pd.DataFrame:
         """Fetch daily OHLCV data."""
-        import pandas as pd
         end = datetime.combine(report_date, datetime.min.time())
         start = end - timedelta(days=365)
 
@@ -313,9 +313,8 @@ class PremarketReport:
             logger.error(f"Failed to fetch daily data for {ticker}: {e}")
             return pd.DataFrame()
 
-    def _fetch_2h_data(self, ticker: str, report_date: date) -> 'pd.DataFrame':
+    def _fetch_2h_data(self, ticker: str, report_date: date) -> pd.DataFrame:
         """Fetch 2-hour OHLCV data."""
-        import pandas as pd
         end = datetime.combine(report_date, datetime.min.time())
         start = end - timedelta(days=60)
 
@@ -326,9 +325,8 @@ class PremarketReport:
             logger.warning(f"Failed to fetch 2h data for {ticker}: {e}")
             return pd.DataFrame()
 
-    def _fetch_5m_data(self, ticker: str, report_date: date) -> 'pd.DataFrame':
+    def _fetch_5m_data(self, ticker: str, report_date: date) -> pd.DataFrame:
         """Fetch 5-minute OHLCV data."""
-        import pandas as pd
         end = datetime.combine(report_date, datetime.min.time())
         start = end - timedelta(days=5)
 
@@ -339,10 +337,8 @@ class PremarketReport:
             logger.warning(f"Failed to fetch 5m data for {ticker}: {e}")
             return pd.DataFrame()
 
-    def _analyze_timeframe(self, df: 'pd.DataFrame', timeframe: str) -> TimeframeAnalysis:
+    def _analyze_timeframe(self, df: pd.DataFrame, timeframe: str) -> TimeframeAnalysis:
         """Analyze a single timeframe."""
-        import pandas as pd
-
         if df.empty:
             return TimeframeAnalysis(
                 timeframe=timeframe,
@@ -399,7 +395,7 @@ class PremarketReport:
 
     def _get_magnets(
         self,
-        daily_df: 'pd.DataFrame',
+        daily_df: pd.DataFrame,
         current_price: Optional[float],
     ) -> tuple[list[dict], list[dict], list[dict]]:
         """Get magnet levels."""

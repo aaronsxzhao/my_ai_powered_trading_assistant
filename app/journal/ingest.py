@@ -323,8 +323,8 @@ class TradeIngester:
                     df[col] = pd.to_datetime(df[col], errors='coerce')
                     df = df.sort_values(col, ascending=True)
                     break
-                except:
-                    pass
+                except (ValueError, TypeError, KeyError):
+                    pass  # Try next date column
 
         imported = 0
         errors = 0
@@ -418,7 +418,7 @@ class TradeIngester:
                 time_str = row.get('Time', '')
                 try:
                     exit_time = pd.to_datetime(time_str)
-                except:
+                except (ValueError, TypeError):
                     exit_time = datetime.now()
                 
                 # Get P&L from the row

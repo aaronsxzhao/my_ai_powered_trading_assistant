@@ -6,7 +6,7 @@ Uses robin_stocks library to fetch order history.
 
 import logging
 import os
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from typing import Optional, Tuple
 from pathlib import Path
 from dataclasses import dataclass
@@ -222,9 +222,7 @@ class RobinhoodClient:
             if not all_orders:
                 return []
             
-            # Filter by date and status
-            # Use timezone-aware datetime for comparison
-            from datetime import timezone
+            # Filter by date and status (timezone-aware comparison)
             cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_back)
             filtered_orders = []
             
@@ -278,8 +276,7 @@ class RobinhoodClient:
             if not all_orders:
                 return []
 
-            # Use timezone-aware datetime for comparison
-            from datetime import timezone
+            # Filter by date and status (timezone-aware comparison)
             cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_back)
             filtered_orders = []
             

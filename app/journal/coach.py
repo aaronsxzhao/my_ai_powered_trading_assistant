@@ -108,7 +108,6 @@ class TradeCoach:
             return get_provider_for_ticker(ticker)
         except ImportError:
             return self.data_provider
-        return self._data_provider
 
     def review_trade(self, trade_id: int, cancellation_check: Optional[callable] = None) -> Optional[TradeReview]:
         """
@@ -150,6 +149,11 @@ class TradeCoach:
 
             # Use LLM for comprehensive Brooks Audit
             if self.llm_analyzer.is_available:
+                # Calculate total slippage from entry and exit
+                total_slippage = None
+                if trade.slippage_entry or trade.slippage_exit:
+                    total_slippage = (trade.slippage_entry or 0) + (trade.slippage_exit or 0)
+                
                 llm_analysis = self.llm_analyzer.analyze_trade(
                     ticker=trade.ticker,
                     direction=trade.direction.value,
@@ -160,6 +164,7 @@ class TradeCoach:
                     entry_reason=trade.entry_reason,
                     notes=trade.notes,
                     ohlcv_context=ohlcv_context,
+                    r_multiple=trade.r_multiple,
                     mae=trade.mae,
                     mfe=trade.mfe,
                     # Brooks intent fields
@@ -190,6 +195,10 @@ class TradeCoach:
                     pd_low=pd_low,
                     pd_close=pd_close,
                     today_open=today_open,
+                    # Order execution details
+                    order_type=trade.entry_order_type,
+                    slippage=total_slippage,
+                    fees=getattr(trade, 'fees', None),
                     # Extended Brooks analysis fields
                     trend_assessment=getattr(trade, 'trend_assessment', None),
                     signal_reason=getattr(trade, 'signal_reason', None),
@@ -323,49 +332,49 @@ class TradeCoach:
                 # Check cancellation between each fetch (rate-limited operations)
                 if cancellation_check and cancellation_check():
                     return ("Cancelled", None) if return_daily_df else "Cancelled"
-                daily_context, daily_df = self._fetch_ohlcv_section_with_cutoff_and_df(trade.ticker, "1d", daily_fetch_end, 65, "DAILY (up to prior day close)", daily_cutoff, cancellation_check)
+                daily_context, daily_df = self._fetch_ohlcv_section_with_cutoff_and_df(trade.ticker, "1d", daily_fetch_end, 60, "DAILY_60 (prior day close cutoff)", daily_cutoff, cancellation_check)
                 all_context.append(daily_context)
 
                 if cancellation_check and cancellation_check():
                     return ("Cancelled", None) if return_daily_df else "Cancelled"
-                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "2h", entry_cutoff, 120, "2-HOUR (up to entry time)", cancellation_check))
+                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "2h", entry_cutoff, 120, "TWOHOUR_120 (entry time cutoff)", cancellation_check))
 
                 if cancellation_check and cancellation_check():
                     return ("Cancelled", None) if return_daily_df else "Cancelled"
-                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "5m", entry_cutoff, 234, "5-MINUTE (up to entry time)", cancellation_check))
+                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "5m", entry_cutoff, 234, "FIVEMIN_234 (entry time cutoff)", cancellation_check))
 
             elif timeframe == "2h":
                 # 2-hour swing trades: Daily + 2H context
                 if cancellation_check and cancellation_check():
                     return ("Cancelled", None) if return_daily_df else "Cancelled"
-                daily_context, daily_df = self._fetch_ohlcv_section_with_cutoff_and_df(trade.ticker, "1d", daily_fetch_end, 65, "DAILY (up to prior day close)", daily_cutoff, cancellation_check)
+                daily_context, daily_df = self._fetch_ohlcv_section_with_cutoff_and_df(trade.ticker, "1d", daily_fetch_end, 60, "DAILY_60 (prior day close cutoff)", daily_cutoff, cancellation_check)
                 all_context.append(daily_context)
 
                 if cancellation_check and cancellation_check():
                     return ("Cancelled", None) if return_daily_df else "Cancelled"
-                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "2h", entry_cutoff, 120, "2-HOUR (up to entry time)", cancellation_check))
+                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "2h", entry_cutoff, 120, "TWOHOUR_120 (entry time cutoff)", cancellation_check))
 
             elif timeframe == "1d":
                 # Daily position trades: Extended daily context
                 if cancellation_check and cancellation_check():
                     return ("Cancelled", None) if return_daily_df else "Cancelled"
-                daily_context, daily_df = self._fetch_ohlcv_section_with_cutoff_and_df(trade.ticker, "1d", daily_fetch_end, 125, "DAILY (up to prior day close)", daily_cutoff, cancellation_check)
+                daily_context, daily_df = self._fetch_ohlcv_section_with_cutoff_and_df(trade.ticker, "1d", daily_fetch_end, 120, "DAILY_120 (prior day close cutoff)", daily_cutoff, cancellation_check)
                 all_context.append(daily_context)
 
             else:
                 # Default to 5m timeframe with full Brooks package
                 if cancellation_check and cancellation_check():
                     return ("Cancelled", None) if return_daily_df else "Cancelled"
-                daily_context, daily_df = self._fetch_ohlcv_section_with_cutoff_and_df(trade.ticker, "1d", daily_fetch_end, 65, "DAILY (up to prior day close)", daily_cutoff, cancellation_check)
+                daily_context, daily_df = self._fetch_ohlcv_section_with_cutoff_and_df(trade.ticker, "1d", daily_fetch_end, 60, "DAILY_60 (prior day close cutoff)", daily_cutoff, cancellation_check)
                 all_context.append(daily_context)
 
                 if cancellation_check and cancellation_check():
                     return ("Cancelled", None) if return_daily_df else "Cancelled"
-                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "2h", entry_cutoff, 120, "2-HOUR (up to entry time)", cancellation_check))
+                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "2h", entry_cutoff, 120, "TWOHOUR_120 (entry time cutoff)", cancellation_check))
 
                 if cancellation_check and cancellation_check():
                     return ("Cancelled", None) if return_daily_df else "Cancelled"
-                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "5m", entry_cutoff, 234, "5-MINUTE (up to entry time)", cancellation_check))
+                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "5m", entry_cutoff, 234, "FIVEMIN_234 (entry time cutoff)", cancellation_check))
 
             result = "\n\n".join([ctx for ctx in all_context if ctx])
             if not result:

@@ -300,6 +300,7 @@ class LLMAnalyzer:
         entry_reason: Optional[str] = None,
         notes: Optional[str] = None,
         ohlcv_context: Optional[str] = None,
+        r_multiple: Optional[float] = None,
         mae: Optional[float] = None,
         mfe: Optional[float] = None,
         # Brooks intent fields
@@ -325,7 +326,6 @@ class LLMAnalyzer:
         market: Optional[str] = None,
         timezone: Optional[str] = None,
         order_type: Optional[str] = None,
-        exit_breakdown: Optional[str] = None,
         fees: Optional[float] = None,
         slippage: Optional[float] = None,
         intended_setup: Optional[str] = None,
@@ -334,13 +334,9 @@ class LLMAnalyzer:
         pd_high: Optional[float] = None,
         pd_low: Optional[float] = None,
         pd_close: Optional[float] = None,
-        news_flag: Optional[str] = None,
-        env_note: Optional[str] = None,
         daily_bars: Optional[str] = None,
         twohour_bars: Optional[str] = None,
         fivemin_bars: Optional[str] = None,
-        local_window: Optional[str] = None,
-        chart_notes: Optional[str] = None,
         # Extended Brooks analysis fields
         trend_assessment: Optional[str] = None,
         signal_reason: Optional[str] = None,
@@ -377,27 +373,28 @@ class LLMAnalyzer:
         stop_loss = stop_price
         take_profit = target_price
         
-        # Calculate R-multiple (only if SL is provided)
-        r_multiple = 0.0
-        if stop_loss is not None:
-            if direction == "long":
-                risk = entry_price - stop_loss
-                reward = exit_price - entry_price
+        # Use passed r_multiple if available, otherwise calculate
+        if r_multiple is None:
+            r_multiple = 0.0
+            if stop_loss is not None:
+                if direction == "long":
+                    risk = entry_price - stop_loss
+                    reward = exit_price - entry_price
+                else:
+                    risk = stop_loss - entry_price
+                    reward = entry_price - exit_price
+                
+                # Handle edge case where stop == entry (zero risk)
+                if abs(risk) < 0.0001:
+                    r_multiple = reward / (entry_price * 0.02) if entry_price > 0 else 0  # Assume 2% risk
+                else:
+                    r_multiple = reward / risk
             else:
-                risk = stop_loss - entry_price
-                reward = entry_price - exit_price
-            
-            # Handle edge case where stop == entry (zero risk)
-            if abs(risk) < 0.0001:
-                r_multiple = reward / (entry_price * 0.02) if entry_price > 0 else 0  # Assume 2% risk
-            else:
-                r_multiple = reward / risk
-        else:
-            # No SL set - calculate raw P&L change
-            if direction == "long":
-                reward = exit_price - entry_price
-            else:
-                reward = entry_price - exit_price
+                # No SL set - calculate raw P&L change
+                if direction == "long":
+                    reward = exit_price - entry_price
+                else:
+                    reward = entry_price - exit_price
 
         # Check for cancellation before loading prompts and materials
         if cancellation_check and cancellation_check():
@@ -470,11 +467,11 @@ class LLMAnalyzer:
                 elif current_header:
                     # Combine header with content
                     full_section = f"{current_header}\n{part}"
-                    if "DAILY" in current_header.upper():
+                    if "DAILY" in current_header.upper() or "DAILY_" in current_header.upper():
                         daily_section = full_section
-                    elif "2-HOUR" in current_header.upper():
+                    elif "2-HOUR" in current_header.upper() or "TWOHOUR" in current_header.upper():
                         twohour_section = full_section
-                    elif "5-MINUTE" in current_header.upper() or "5-MIN" in current_header.upper():
+                    elif "5-MINUTE" in current_header.upper() or "5-MIN" in current_header.upper() or "FIVEMIN" in current_header.upper():
                         fivemin_section = full_section
                     current_header = None
             
@@ -506,9 +503,8 @@ class LLMAnalyzer:
             stop_loss=f"${stop_loss:.4f}" if stop_loss else "not set",
             target_price=f"${take_profit:.4f}" if take_profit else "not set",
             take_profit=f"${take_profit:.4f}" if take_profit else "not set",
-            exit_breakdown=exit_breakdown or "none",
-            fees=f"${fees:.2f}" if fees else "unknown",
-            slippage=f"${slippage:.4f}" if slippage else "unknown",
+            fees=f"${fees:.2f}" if fees else "N/A",
+            slippage=f"${slippage:.4f}" if slippage else "N/A",
             # Performance
             r_multiple=f"{r_multiple:+.2f}R",
             outcome=outcome_str,
@@ -525,19 +521,17 @@ class LLMAnalyzer:
             pd_high=f"${pd_high:.2f}" if pd_high else "unknown",
             pd_low=f"${pd_low:.2f}" if pd_low else "unknown",
             pd_close=f"${pd_close:.2f}" if pd_close else "unknown",
-            news_flag=news_flag or "unknown",
-            env_note=env_note or "unknown",
             # OHLCV data sections
             daily_bars=daily_section or "No daily data available",
             twohour_bars=twohour_section or "No 2-hour data available",
             fivemin_bars=fivemin_section or "No 5-min data available",
-            local_window=local_window or "No local window data available",
-            chart_notes=chart_notes or "none",
-            # Aliases for compatibility
+            # Aliases for compatibility with different naming conventions
             daily_60=daily_section or "No daily data available",
             twohour_120=twohour_section or "No 2-hour data available",
             fivemin_234=fivemin_section or "No 5-min data available",
-            local_window_101=local_window or "No local window data available",
+            DAILY_60=daily_section or "No daily data available",
+            TWOHOUR_120=twohour_section or "No 2-hour data available",
+            FIVEMIN_234=fivemin_section or "No 5-min data available",
             position_size=f"{size:.0f}" if size else "1",
             intended_trade_type=trade_type or "not specified",
             # Legacy compatibility
@@ -804,8 +798,8 @@ Respond in JSON:
                 elif "```" in response:
                     json_str = response.split("```")[1].split("```")[0]
                 return json.loads(json_str.strip())
-            except:
-                pass
+            except (json.JSONDecodeError, IndexError, ValueError):
+                pass  # Fall through to default response
         
         return {
             "strategy_name": "unclassified",

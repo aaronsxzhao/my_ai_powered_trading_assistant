@@ -110,7 +110,7 @@ class MaterialsRAG:
         if INDEX_META_FILE.exists():
             try:
                 return json.loads(INDEX_META_FILE.read_text())
-            except:
+            except (json.JSONDecodeError, IOError, OSError):
                 pass
         return {}
     
@@ -159,8 +159,8 @@ class MaterialsRAG:
                 name="trading_materials",
                 metadata={"hnsw:space": "cosine"}
             )
-        except:
-            pass
+        except Exception:
+            pass  # Collection may not exist, which is fine
         
         # Get embedding model
         model = self._get_embedding_model()
@@ -274,7 +274,7 @@ class MaterialsRAG:
         except UnicodeDecodeError:
             try:
                 return file_path.read_text(encoding="latin-1")
-            except:
+            except (UnicodeDecodeError, IOError, OSError):
                 return None
         except Exception as e:
             logger.warning(f"Failed to read {file_path.name}: {e}")

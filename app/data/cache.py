@@ -63,6 +63,7 @@ class OHLCVCache:
         start: datetime,
         end: datetime,
         provider: DataProvider | None = None,
+        cancellation_check: callable = None,
     ) -> pd.DataFrame:
         """
         Get OHLCV data, using cache if available.
@@ -73,13 +74,18 @@ class OHLCVCache:
             start: Start datetime
             end: End datetime
             provider: Data provider (uses default if None)
+            cancellation_check: Optional callable to check for cancellation
 
         Returns:
             DataFrame with OHLCV data
         """
+        # Check for cancellation early
+        if cancellation_check and cancellation_check():
+            return pd.DataFrame()
+        
         if not settings.cache_enabled:
             provider = provider or get_provider()
-            return provider.get_ohlcv(ticker, timeframe, start, end)
+            return provider.get_ohlcv(ticker, timeframe, start, end, cancellation_check)
 
         cache_key = self._get_cache_key(ticker, timeframe, start, end)
         cache_path = self._get_cache_path(cache_key)
@@ -93,11 +99,15 @@ class OHLCVCache:
             except Exception as e:
                 logger.warning(f"Failed to read cache: {e}")
 
+        # Check for cancellation before expensive fetch
+        if cancellation_check and cancellation_check():
+            return pd.DataFrame()
+
         # Fetch from provider
         provider = provider or get_provider()
-        df = provider.get_ohlcv(ticker, timeframe, start, end)
+        df = provider.get_ohlcv(ticker, timeframe, start, end, cancellation_check)
 
-        # Save to cache
+        # Save to cache (only if not cancelled and not empty)
         if not df.empty:
             try:
                 df.to_parquet(cache_path, index=False)

@@ -188,6 +188,13 @@ class LLMClient:
         )
 
 
+# Singleton instance cache
+_llm_client: LLMClient | None = None
+
+
 def get_llm_client() -> LLMClient:
-    """Get LLM client instance."""
-    return LLMClient()
+    """Get LLM client instance (singleton)."""
+    global _llm_client
+    if _llm_client is None:
+        _llm_client = LLMClient()
+    return _llm_client

@@ -298,8 +298,7 @@ class YFinanceProvider(DataProvider):
                     logger.error(f"Error fetching {ticker} from yfinance: {e}")
                     return pd.DataFrame(columns=OHLCV_COLUMNS)
 
-        # All retries exhausted
-        _, exchange = normalize_ticker(ticker)
+        # All retries exhausted (reuse exchange from earlier normalization)
         if exchange == 'HK':
             logger.error(
                 f"Failed to fetch HK stock {ticker} after {self.max_retries} retries: {last_error}. "

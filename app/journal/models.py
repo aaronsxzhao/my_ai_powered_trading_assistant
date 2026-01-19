@@ -157,6 +157,7 @@ class Trade(Base):
     low_during_trade = Column(Float)
     slippage_entry = Column(Float)
     slippage_exit = Column(Float)
+    fees = Column(Float)  # Total commissions/fees for the trade
 
     # Strategy and setup
     strategy_id = Column(Integer, ForeignKey("strategies.id"))
@@ -605,6 +606,16 @@ def init_db() -> None:
         except Exception:
             try:
                 conn.execute(text("ALTER TABLE trades ADD COLUMN trade_number INTEGER"))
+                conn.commit()
+            except Exception:
+                pass
+        
+        # Add fees column
+        try:
+            conn.execute(text("SELECT fees FROM trades LIMIT 1"))
+        except Exception:
+            try:
+                conn.execute(text("ALTER TABLE trades ADD COLUMN fees FLOAT"))
                 conn.commit()
             except Exception:
                 pass

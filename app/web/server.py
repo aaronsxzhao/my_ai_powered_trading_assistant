@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import shutil
+import time
 from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
@@ -48,7 +49,6 @@ def get_cached(key: str, ttl: int = CACHE_TTL):
     """Get value from cache if not expired."""
     if key in _cache:
         value, timestamp = _cache[key]
-        import time
         if time.time() - timestamp < ttl:
             return value
     return None
@@ -56,7 +56,6 @@ def get_cached(key: str, ttl: int = CACHE_TTL):
 
 def set_cached(key: str, value: any):
     """Store value in cache."""
-    import time
     _cache[key] = (value, time.time())
 
 
@@ -390,8 +389,8 @@ async def get_trade_review(trade_id: int, force: bool = False, check_only: bool 
             if trade:
                 trade.review_in_progress = False
                 session.commit()
-        except:
-            pass
+        except Exception:
+            pass  # Best effort to clear flag
         return JSONResponse({"success": False, "error": str(e)})
     finally:
         session.close()
