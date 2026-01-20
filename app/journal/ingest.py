@@ -76,7 +76,7 @@ EXCHANGE_TIMEZONES = {
 
 def get_market_timezone(ticker: str) -> str:
     """
-    Determine the market timezone based on ticker's exchange prefix.
+    Determine the market timezone based on ticker's exchange prefix or pattern.
     
     Args:
         ticker: Ticker symbol, possibly with exchange prefix (e.g., "AMEX:SOXL", "HKEX:0700")
@@ -84,9 +84,28 @@ def get_market_timezone(ticker: str) -> str:
     Returns:
         Timezone string (e.g., "America/New_York", "Asia/Hong_Kong")
     """
+    ticker = ticker.upper().strip()
+    
+    # Check exchange prefix (e.g., "HKEX:0981")
     if ":" in ticker:
-        exchange = ticker.split(":")[0].upper()
+        exchange = ticker.split(":")[0]
         return EXCHANGE_TIMEZONES.get(exchange, EXCHANGE_TIMEZONES["DEFAULT"])
+    
+    # Check suffix (e.g., "0981.HK")
+    if ".HK" in ticker:
+        return "Asia/Hong_Kong"
+    if ".SS" in ticker or ".SZ" in ticker:
+        return "Asia/Shanghai"
+    if ".T" in ticker:
+        return "Asia/Tokyo"
+    if ".L" in ticker:
+        return "Europe/London"
+    
+    # Detect HK stocks by numeric pattern (1-5 digits)
+    clean_ticker = ticker.replace(".", "").replace("-", "")
+    if clean_ticker.isdigit() and 1 <= len(clean_ticker) <= 5:
+        return "Asia/Hong_Kong"
+    
     return EXCHANGE_TIMEZONES["DEFAULT"]
 
 
@@ -158,6 +177,65 @@ class TradeIngester:
             self._llm_analyzer = get_analyzer()
         return self._llm_analyzer
 
+    def _check_duplicate_trade(
+        self,
+        session,
+        ticker: str,
+        direction: str,
+        entry_price: float,
+        trade_date: date,
+        entry_time: Optional[datetime] = None,
+    ) -> Optional[Trade]:
+        """
+        Check if a duplicate trade already exists.
+        
+        Duplicate detection logic:
+        1. If entry_time is provided: match on ticker + entry_time + direction
+        2. Fallback: match on ticker + trade_date + entry_price + direction
+        
+        Args:
+            session: Database session
+            ticker: Stock symbol
+            direction: 'long' or 'short'
+            entry_price: Entry price
+            trade_date: Date of trade
+            entry_time: Entry datetime (optional)
+            
+        Returns:
+            Existing Trade if duplicate found, None otherwise
+        """
+        ticker_upper = ticker.upper()
+        trade_direction = TradeDirection.LONG if direction == "long" else TradeDirection.SHORT
+        
+        # Primary check: ticker + entry_time + direction (most reliable for intraday)
+        if entry_time:
+            existing = session.query(Trade).filter(
+                Trade.ticker == ticker_upper,
+                Trade.entry_time == entry_time,
+                Trade.direction == trade_direction,
+            ).first()
+            
+            if existing:
+                logger.info(f"Duplicate trade found (by entry_time): {ticker_upper} {direction} at {entry_time}")
+                return existing
+        
+        # Fallback check: ticker + trade_date + entry_price + direction
+        # Use a small tolerance for price matching (0.01% to handle floating point)
+        price_tolerance = entry_price * 0.0001  # 0.01% tolerance
+        
+        existing = session.query(Trade).filter(
+            Trade.ticker == ticker_upper,
+            Trade.trade_date == trade_date,
+            Trade.direction == trade_direction,
+            Trade.entry_price.between(entry_price - price_tolerance, entry_price + price_tolerance),
+        ).first()
+        
+        if existing:
+            logger.info(f"Duplicate trade found (by date+price): {ticker_upper} {direction} @ {entry_price} on {trade_date}")
+            return existing
+        
+        return None
+
     def add_trade_manual(
         self,
         ticker: str,
@@ -183,7 +261,8 @@ class TradeIngester:
         currency_rate: float = 1.0,
         market_timezone: str = "America/New_York",
         input_timezone: Optional[str] = None,
-    ) -> Trade:
+        skip_duplicates: bool = True,
+    ) -> Optional[Trade]:
         """
         Add a trade manually.
 
@@ -209,13 +288,28 @@ class TradeIngester:
             low_during_trade: Lowest price during trade
             currency: Currency code (USD, HKD, etc.)
             currency_rate: Exchange rate (1 USD = X currency)
+            skip_duplicates: If True, skip duplicate trades instead of creating them
 
         Returns:
-            Created Trade object
+            Created Trade object, or None if duplicate detected and skipped
         """
         session = get_session()
 
         try:
+            # Check for duplicate trade
+            if skip_duplicates:
+                existing = self._check_duplicate_trade(
+                    session=session,
+                    ticker=ticker,
+                    direction=direction,
+                    entry_price=entry_price,
+                    trade_date=trade_date,
+                    entry_time=entry_time,
+                )
+                if existing:
+                    logger.info(f"Skipping duplicate trade: {ticker} {direction} @ {entry_price}")
+                    return None
+            
             # Get strategy if provided
             strategy = None
             if strategy_name:
@@ -251,8 +345,18 @@ class TradeIngester:
             # If no entry_time provided, create one from trade_date (start of trading day)
             if not trade.entry_time and trade.trade_date:
                 from datetime import time as dt_time
-                # Default to market open time (9:30 AM for US stocks)
-                trade.entry_time = datetime.combine(trade.trade_date, dt_time(9, 30, 0))
+                # Default to market open time based on exchange
+                # US/HK both open at 9:30 AM local time
+                # Japan opens at 9:00 AM, UK at 8:00 AM
+                market_open_times = {
+                    "Asia/Hong_Kong": dt_time(9, 30, 0),
+                    "Asia/Shanghai": dt_time(9, 30, 0),
+                    "Asia/Tokyo": dt_time(9, 0, 0),
+                    "Europe/London": dt_time(8, 0, 0),
+                    "America/New_York": dt_time(9, 30, 0),
+                }
+                open_time = market_open_times.get(market_timezone, dt_time(9, 30, 0))
+                trade.entry_time = datetime.combine(trade.trade_date, open_time)
             
             # If no exit_time, set it same as entry_time or later
             if not trade.exit_time and trade.entry_time:
@@ -411,8 +515,8 @@ class TradeIngester:
                 size = float(match.group(4))
                 entry_price = float(match.group(5))
                 
-                # Extract ticker from symbol (remove exchange prefix)
-                ticker = symbol.split(':')[1] if ':' in symbol else symbol
+                # Keep full symbol with exchange prefix for proper provider routing
+                ticker = symbol  # e.g., 'AMEX:SOXL', 'HKEX:0981'
                 
                 # Parse time
                 time_str = row.get('Time', '')
@@ -435,7 +539,10 @@ class TradeIngester:
                     exit_time=exit_time,
                     notes=f"Imported from TradingView Balance History. P&L: {pnl:.2f}. Set SL/TP manually.",
                 )
-                imported += 1
+                if trade:
+                    imported += 1
+                else:
+                    skipped += 1  # Count duplicates as skipped
                 
             except Exception as e:
                 errors += 1
@@ -444,7 +551,7 @@ class TradeIngester:
                 if not skip_errors:
                     raise
         
-        summary = f"Imported {imported} trades from {len(df)} entries. Skipped {skipped} non-trade entries."
+        summary = f"Imported {imported} trades from {len(df)} entries. Skipped {skipped} (non-trade or duplicate)."
         logger.info(summary)
         error_messages.insert(0, summary)
         
@@ -565,8 +672,10 @@ class TradeIngester:
         }
         
         # Parse the data
-        df['parsed_exchange'] = df['Symbol'].apply(lambda x: x.split(':')[0] if ':' in str(x) else 'USD')
-        df['parsed_ticker'] = df['Symbol'].apply(lambda x: x.split(':')[1] if ':' in str(x) else x)
+        df['parsed_exchange'] = df['Symbol'].apply(lambda x: x.split(':')[0] if ':' in str(x) else 'US')
+        # Keep the full symbol with exchange prefix for proper provider routing
+        # e.g., "HKEX:0981" stays as "HKEX:0981", "AMEX:SOXL" stays as "AMEX:SOXL"
+        df['parsed_ticker'] = df['Symbol'].apply(lambda x: str(x).strip())
         df['parsed_datetime'] = pd.to_datetime(df['Closing Time'])
         df['parsed_price'] = df['Fill Price'].astype(float)
         df['parsed_qty'] = df['Qty'].astype(float)
@@ -735,6 +844,7 @@ class TradeIngester:
         
         # Import the matched trades
         imported = 0
+        duplicates_skipped = 0
         errors = 0
         error_messages = []
         
@@ -775,7 +885,10 @@ class TradeIngester:
                     market_timezone=market_tz,
                     input_timezone=input_timezone if input_timezone != market_tz else None,
                 )
-                imported += 1
+                if trade:
+                    imported += 1
+                else:
+                    duplicates_skipped += 1
                 
             except Exception as e:
                 errors += 1
@@ -784,10 +897,12 @@ class TradeIngester:
                 if not skip_errors:
                     raise
         
-        logger.info(f"TradingView import: {imported} trades created from {filled_count} orders, {errors} errors, {unmatched_count} unmatched positions discarded")
+        logger.info(f"TradingView import: {imported} trades created, {duplicates_skipped} duplicates skipped, {errors} errors, {unmatched_count} unmatched positions discarded")
         
         # Add summary message
         summary = f"Processed {filled_count} filled orders → {imported} trades."
+        if duplicates_skipped:
+            summary += f" {duplicates_skipped} duplicate(s) skipped."
         if rejected_count or cancelled_count:
             summary += f" Discarded: {rejected_count} rejected, {cancelled_count} cancelled."
         if unmatched_count:
@@ -900,7 +1015,10 @@ class TradeIngester:
                                     exit_time=order['exit_time'],
                                     notes=f"Imported from Robinhood. Set SL/TP manually.",
                                 )
-                                imported += 1
+                                if trade:
+                                    imported += 1
+                                else:
+                                    messages.append(f"{ticker}: Duplicate trade skipped")
                             except Exception as e:
                                 errors += 1
                                 messages.append(f"{ticker}: {str(e)}")

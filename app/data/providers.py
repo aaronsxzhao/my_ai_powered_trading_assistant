@@ -1,7 +1,12 @@
 """
 Market data providers for OHLCV data.
 
-Supports yfinance (default), with placeholders for Polygon and Alpaca.
+Provider Strategy:
+- US stocks: Polygon (primary), YFinance (fallback)
+- HK stocks: YFinance (primary), AllTick (if configured)
+- Other international: YFinance
+
+Supports: Polygon, YFinance, AllTick, Alpaca (placeholder)
 """
 
 from abc import ABC, abstractmethod
@@ -49,9 +54,9 @@ class RateLimiter:
             self.last_call = time.time()
 
 
-# Global rate limiter for yfinance (0.2 calls per second = 1 call per 5 seconds for HK stocks)
-# Yahoo Finance is very strict with rate limiting, especially for international stocks
-_yfinance_rate_limiter = RateLimiter(calls_per_second=0.2)
+# Global rate limiter for yfinance (0.5 calls per second = 1 call per 2 seconds)
+# Matches Polygon's effective rate for consistency across US and HK stocks
+_yfinance_rate_limiter = RateLimiter(calls_per_second=0.5)
 
 # Standard column names for OHLCV data
 OHLCV_COLUMNS = ["datetime", "open", "high", "low", "close", "volume"]
@@ -111,9 +116,10 @@ def normalize_ticker(ticker: str) -> tuple[str, str]:
     if '.T' in ticker:
         return ticker, 'JP'
     
-    # Detect HK stocks (numeric only, 4-5 digits)
-    if ticker.isdigit() and len(ticker) in [4, 5]:
-        ticker = ticker.zfill(4)  # Ensure 4 digits with leading zeros
+    # Detect HK stocks (numeric only, 1-5 digits)
+    # HK stock codes range from 1 to 99999 (e.g., 5, 16, 700, 981, 9988)
+    if ticker.isdigit() and 1 <= len(ticker) <= 5:
+        ticker = ticker.zfill(4)  # Pad to 4 digits with leading zeros (e.g., 981 -> 0981)
         return f"{ticker}.HK", 'HK'
     
     # Default to US
@@ -202,7 +208,12 @@ class DataProvider(ABC):
 
 
 class YFinanceProvider(DataProvider):
-    """Yahoo Finance data provider using yfinance library."""
+    """Yahoo Finance data provider.
+    
+    Strategy:
+    1. First try direct Yahoo Finance API (faster, less rate-limited)
+    2. Fall back to yfinance library if direct API fails
+    """
 
     def __init__(self):
         """Initialize with rate limiter."""
@@ -214,6 +225,195 @@ class YFinanceProvider(DataProvider):
     def name(self) -> str:
         return "yfinance"
 
+    def _fetch_via_direct_api(
+        self,
+        normalized_ticker: str,
+        interval: str,
+        start: datetime,
+        end: datetime,
+    ) -> pd.DataFrame:
+        """
+        Fetch data using direct Yahoo Finance API.
+        
+        This is faster and less prone to rate limiting than the yfinance library.
+        """
+        import requests
+        
+        # Map our interval format to Yahoo Finance API format
+        # Yahoo accepts: 1m, 2m, 5m, 15m, 30m, 60m, 90m, 1h, 1d, 5d, 1wk, 1mo, 3mo
+        interval_map = {
+            '1m': '1m',
+            '5m': '5m',
+            '15m': '15m',
+            '30m': '30m',
+            '1h': '60m',
+            '2h': '60m',  # Yahoo doesn't have 2h, use 1h as closest
+            '1d': '1d',
+        }
+        yahoo_interval = interval_map.get(interval, interval)
+        
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{normalized_ticker}"
+        
+        # Calculate days for range parameter
+        days_diff = (end - start).days + 1
+        
+        # Yahoo Finance range options: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max
+        if yahoo_interval in ['1m', '2m', '5m', '15m', '30m']:
+            # Intraday data limited to recent days
+            range_param = '5d' if days_diff <= 5 else '1mo'
+        elif yahoo_interval in ['60m', '90m', '1h']:
+            range_param = '1mo' if days_diff <= 30 else '3mo'
+        else:
+            # Daily data
+            if days_diff <= 30:
+                range_param = '1mo'
+            elif days_diff <= 90:
+                range_param = '3mo'
+            elif days_diff <= 180:
+                range_param = '6mo'
+            elif days_diff <= 365:
+                range_param = '1y'
+            else:
+                range_param = '2y'
+        
+        params = {
+            'interval': yahoo_interval,
+            'range': range_param,
+        }
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+        }
+        
+        try:
+            response = requests.get(url, params=params, headers=headers, timeout=15)
+            
+            if response.status_code == 429:
+                logger.warning(f"Direct API rate limited for {normalized_ticker}")
+                return pd.DataFrame()
+            
+            if response.status_code != 200:
+                logger.warning(f"Direct API error {response.status_code} for {normalized_ticker}")
+                return pd.DataFrame()
+            
+            data = response.json()
+            result = data.get('chart', {}).get('result', [])
+            
+            if not result:
+                return pd.DataFrame()
+            
+            timestamps = result[0].get('timestamp', [])
+            quote = result[0].get('indicators', {}).get('quote', [{}])[0]
+            
+            if not timestamps:
+                return pd.DataFrame()
+            
+            # Build DataFrame
+            df = pd.DataFrame({
+                'datetime': pd.to_datetime(timestamps, unit='s'),
+                'open': quote.get('open', []),
+                'high': quote.get('high', []),
+                'low': quote.get('low', []),
+                'close': quote.get('close', []),
+                'volume': quote.get('volume', []),
+            })
+            
+            # Remove rows with None values
+            df = df.dropna(subset=['open', 'high', 'low', 'close'])
+            
+            if df.empty:
+                return df
+            
+            # Log the data range we got from the API (timestamps are in UTC)
+            api_start = df['datetime'].min()
+            api_end = df['datetime'].max()
+            
+            # Filter to requested date range
+            # IMPORTANT: Yahoo API returns timestamps in UTC, so we must convert
+            # start/end to UTC before comparing
+            pre_filter_count = len(df)
+            start_ts = pd.Timestamp(start)
+            end_ts = pd.Timestamp(end)
+            
+            # Convert timezone-aware timestamps to UTC, then make naive for comparison
+            if start_ts.tzinfo is not None:
+                start_ts = start_ts.tz_convert('UTC').tz_localize(None)
+            if end_ts.tzinfo is not None:
+                end_ts = end_ts.tz_convert('UTC').tz_localize(None)
+            
+            df = df[(df['datetime'] >= start_ts) & (df['datetime'] <= end_ts)]
+            
+            if df.empty and pre_filter_count > 0:
+                # The API returned data but it's outside the requested range
+                # This usually means the trade is older than the available data
+                logger.warning(
+                    f"Direct API: got {pre_filter_count} bars for {normalized_ticker} "
+                    f"(API range: {api_start} to {api_end} UTC) but requested range "
+                    f"({start_ts} to {end_ts} UTC) has no overlap"
+                )
+            
+            return df
+            
+        except Exception as e:
+            logger.warning(f"Direct API exception for {normalized_ticker}: {e}")
+            return pd.DataFrame()
+
+    def _fetch_via_yfinance_library(
+        self,
+        normalized_ticker: str,
+        interval: str,
+        start: datetime,
+        end: datetime,
+        cancellation_check: callable = None,
+    ) -> pd.DataFrame:
+        """
+        Fetch data using yfinance library (fallback).
+        """
+        import yfinance as yf
+        
+        # Map our interval format to yfinance format
+        interval_map = {
+            '1m': '1m',
+            '5m': '5m',
+            '15m': '15m',
+            '30m': '30m',
+            '1h': '1h',
+            '2h': '1h',  # yfinance doesn't have 2h, use 1h as closest
+            '1d': '1d',
+        }
+        yf_interval = interval_map.get(interval, interval)
+        
+        try:
+            ticker_obj = yf.Ticker(normalized_ticker)
+            df = ticker_obj.history(
+                start=start.strftime("%Y-%m-%d"),
+                end=end.strftime("%Y-%m-%d"),
+                interval=yf_interval,
+                actions=False,
+            )
+
+            if df.empty:
+                # Try shorter date range for intraday
+                if yf_interval in ['1m', '5m', '15m', '30m', '1h']:
+                    df = ticker_obj.history(period="5d", interval=yf_interval, actions=False)
+
+            if df.empty:
+                return pd.DataFrame()
+
+            # Reset index to get datetime as column
+            df = df.reset_index()
+            df = df.rename(columns={"Date": "datetime", "Datetime": "datetime"})
+            
+            logger.debug(f"yfinance library: got {len(df)} bars for {normalized_ticker}")
+            return df
+
+        except Exception as e:
+            error_str = str(e).lower()
+            if "rate" in error_str or "too many" in error_str or "429" in error_str:
+                logger.warning(f"yfinance library rate limited for {normalized_ticker}")
+            else:
+                logger.warning(f"yfinance library error for {normalized_ticker}: {e}")
+            return pd.DataFrame()
+
     def get_ohlcv(
         self,
         ticker: str,
@@ -222,90 +422,82 @@ class YFinanceProvider(DataProvider):
         end: datetime,
         cancellation_check: callable = None,
     ) -> pd.DataFrame:
-        """Fetch OHLCV data from Yahoo Finance with rate limiting and retry."""
-        import yfinance as yf
-
+        """Fetch OHLCV data from Yahoo Finance.
+        
+        Strategy:
+        1. First try direct Yahoo Finance API (faster, less rate-limited)
+        2. Fall back to yfinance library if direct API fails
+        """
         # Normalize ticker (e.g., "9988" -> "9988.HK" for Hong Kong stocks)
         normalized_ticker, exchange = normalize_ticker(ticker)
 
-        # Map timeframe to yfinance interval
+        # Map timeframe to interval
         interval_map = {
             "1d": "1d", "2h": "2h", "1h": "1h",
             "30m": "30m", "15m": "15m", "5m": "5m", "1m": "1m",
         }
         interval = interval_map.get(timeframe, "1d")
 
-        last_error = None
+        # Check for cancellation
+        if cancellation_check and cancellation_check():
+            logger.info(f"⏹️ Cancelled fetching {ticker}")
+            return pd.DataFrame(columns=OHLCV_COLUMNS)
+
+        # Rate limit before making request
+        self.rate_limiter.wait()
+        
+        # Check again after rate limit wait
+        if cancellation_check and cancellation_check():
+            logger.info(f"⏹️ Cancelled fetching {ticker}")
+            return pd.DataFrame(columns=OHLCV_COLUMNS)
+
+        # Strategy 1: Try direct Yahoo Finance API first (faster, less rate-limited)
+        logger.info(f"📡 Fetching {normalized_ticker} via direct Yahoo API...")
+        df = self._fetch_via_direct_api(normalized_ticker, interval, start, end)
+        
+        if not df.empty:
+            logger.info(f"✅ Direct API: got {len(df)} bars for {normalized_ticker}")
+            return self._normalize_dataframe(df)
+        
+        # Strategy 2: Fall back to yfinance library
+        logger.info(f"⚠️ Direct API returned no data for {normalized_ticker}, trying yfinance library...")
+        
         for attempt in range(self.max_retries):
-            # Check for cancellation before each attempt
             if cancellation_check and cancellation_check():
                 logger.info(f"⏹️ Cancelled fetching {ticker}")
                 return pd.DataFrame(columns=OHLCV_COLUMNS)
             
-            try:
-                self.rate_limiter.wait()
-                
-                # Check again after rate limit wait
-                if cancellation_check and cancellation_check():
-                    logger.info(f"⏹️ Cancelled fetching {ticker}")
-                    return pd.DataFrame(columns=OHLCV_COLUMNS)
-                
-                ticker_obj = yf.Ticker(normalized_ticker)
-                df = ticker_obj.history(
-                    start=start.strftime("%Y-%m-%d"),
-                    end=end.strftime("%Y-%m-%d"),
-                    interval=interval,
-                    actions=False,
-                )
-
-                if df.empty:
-                    # Try shorter date range for intraday
-                    if interval in ['1m', '5m', '15m', '30m', '1h', '2h']:
-                        df = ticker_obj.history(period="5d", interval=interval, actions=False)
-
-                    if df.empty:
-                        return pd.DataFrame(columns=OHLCV_COLUMNS)
-
-                # Reset index to get datetime as column
-                df = df.reset_index()
-                df = df.rename(columns={"Date": "datetime", "Datetime": "datetime"})
-
+            df = self._fetch_via_yfinance_library(
+                normalized_ticker, interval, start, end, cancellation_check
+            )
+            
+            if not df.empty:
                 return self._normalize_dataframe(df)
+            
+            # Wait before retry with exponential backoff
+            if attempt < self.max_retries - 1:
+                delay = self.base_delay * (2 ** attempt)
+                logger.debug(f"Retry {attempt + 1}/{self.max_retries} for {ticker}, waiting {delay:.1f}s...")
+                
+                # Check cancellation during wait
+                for _ in range(int(delay)):
+                    if cancellation_check and cancellation_check():
+                        logger.info(f"⏹️ Cancelled during retry wait for {ticker}")
+                        return pd.DataFrame(columns=OHLCV_COLUMNS)
+                    time.sleep(1)
+                
+                # Rate limit before next attempt
+                self.rate_limiter.wait()
 
-            except Exception as e:
-                last_error = e
-                error_str = str(e).lower()
-
-                # Check if rate limited
-                if "rate" in error_str or "too many" in error_str or "429" in error_str:
-                    delay = self.base_delay * (2 ** attempt)  # Exponential backoff
-                    logger.warning(
-                        f"Rate limited for {ticker}, attempt {attempt + 1}/{self.max_retries}. "
-                        f"Waiting {delay:.1f}s..."
-                    )
-                    # Check cancellation during wait (in 1-second intervals)
-                    for _ in range(int(delay)):
-                        if cancellation_check and cancellation_check():
-                            logger.info(f"⏹️ Cancelled during retry wait for {ticker}")
-                            return pd.DataFrame(columns=OHLCV_COLUMNS)
-                        time.sleep(1)
-                    # Sleep remaining fraction
-                    remaining = delay - int(delay)
-                    if remaining > 0:
-                        time.sleep(remaining)
-                else:
-                    # Non-rate-limit error, don't retry
-                    logger.error(f"Error fetching {ticker} from yfinance: {e}")
-                    return pd.DataFrame(columns=OHLCV_COLUMNS)
-
-        # All retries exhausted (reuse exchange from earlier normalization)
+        # All retries exhausted
         if exchange == 'HK':
-            logger.error(
-                f"Failed to fetch HK stock {ticker} after {self.max_retries} retries: {last_error}. "
+            logger.warning(
+                f"Failed to fetch HK stock {ticker} from Yahoo Finance. "
                 f"TIP: Configure ALLTICK_TOKEN in .env for better HK stock data."
             )
         else:
-            logger.error(f"Failed to fetch {ticker} after {self.max_retries} retries: {last_error}")
+            logger.warning(f"Failed to fetch {ticker} from Yahoo Finance after {self.max_retries} retries")
+        
         return pd.DataFrame(columns=OHLCV_COLUMNS)
 
 
@@ -442,16 +634,16 @@ class PolygonProvider(DataProvider):
                     time.sleep(delay)
                     continue
                 else:
-                    logger.error(f"Error fetching {ticker} from Polygon: {e}")
-                    return pd.DataFrame(columns=OHLCV_COLUMNS)
+                    logger.warning(f"Polygon error for {ticker}: {e}, falling back to YFinance")
+                    return YFinanceProvider().get_ohlcv(ticker, timeframe, start, end, cancellation_check)
             except Exception as e:
                 last_error = e
-                logger.error(f"Error fetching {ticker} from Polygon: {e}")
-                return pd.DataFrame(columns=OHLCV_COLUMNS)
+                logger.warning(f"Polygon error for {ticker}: {e}, falling back to YFinance")
+                return YFinanceProvider().get_ohlcv(ticker, timeframe, start, end, cancellation_check)
         
-        # All retries exhausted
-        logger.error(f"Failed to fetch {ticker} from Polygon after {self.max_retries} retries: {last_error}")
-        return pd.DataFrame(columns=OHLCV_COLUMNS)
+        # All retries exhausted - fall back to YFinance
+        logger.warning(f"Polygon failed for {ticker} after {self.max_retries} retries, falling back to YFinance")
+        return YFinanceProvider().get_ohlcv(ticker, timeframe, start, end, cancellation_check)
 
 
 class AlpacaProvider(DataProvider):
@@ -780,7 +972,10 @@ def get_provider_for_ticker(ticker: str) -> DataProvider:
     """
     Get the best data provider for a specific ticker (cached).
     
-    Uses AllTick for HK stocks (if token configured), yfinance for others.
+    Provider routing:
+    - US stocks: Polygon (primary), with YFinance fallback on error
+    - HK stocks: YFinance (primary), AllTick if ALLTICK_TOKEN configured
+    - Other international (CN, JP, UK): YFinance
     
     Args:
         ticker: Stock symbol
@@ -790,17 +985,18 @@ def get_provider_for_ticker(ticker: str) -> DataProvider:
     """
     _, exchange = normalize_ticker(ticker)
     
-    # For HK stocks, prefer AllTick if available
+    # For HK stocks, prefer AllTick if available, otherwise YFinance
     if exchange == 'HK':
         alltick_token = get_alltick_token()
         if alltick_token:
             return get_provider("alltick")
-    
-    # For other international stocks, use yfinance
-    if exchange in ['HK', 'CN', 'JP', 'UK']:
         return get_provider("yfinance")
     
-    # For US stocks, use configured provider
+    # For other international stocks, use YFinance
+    if exchange in ['CN', 'JP', 'UK']:
+        return get_provider("yfinance")
+    
+    # For US stocks, use configured provider (Polygon default, with YFinance fallback)
     return get_provider()
 
 

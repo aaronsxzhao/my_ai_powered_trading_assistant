@@ -77,7 +77,7 @@
                         </div>
                         <div>
                             <div class="font-semibold text-white group-hover:text-accent-400 transition-colors">
-                                {{ trade.ticker }}
+                                {{ trade.ticker | ticker_display }}
                             </div>
                             <div class="text-xs text-dark-400">{{ trade.trade_date }}</div>
                         </div>

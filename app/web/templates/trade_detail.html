@@ -13,7 +13,10 @@
     <div class="flex flex-col md:flex-row justify-between items-start gap-4">
         <div>
             <div class="flex items-center gap-3">
-                <h1 class="text-4xl font-bold text-white">{{ trade.ticker }}</h1>
+                <h1 class="text-4xl font-bold text-white">{{ trade.ticker | ticker_display }}</h1>
+                {% if trade.ticker | ticker_exchange %}
+                <span class="text-sm text-dark-400">({{ trade.ticker | ticker_exchange }})</span>
+                {% endif %}
                 {% if trade.direction.value == 'long' %}
                     <span class="badge badge-success">▲ LONG</span>
                 {% else %}
@@ -72,6 +75,16 @@
                 <div class="loading-spinner w-8 h-8 border-4 border-accent-500 border-t-transparent"></div>
             </div>
             <div id="tradingview-chart" class="w-full h-full"></div>
+            <!-- OHLC Legend (shows on hover) - dark background for both modes -->
+            <div id="ohlc-legend" class="absolute top-2 left-2 backdrop-blur-sm rounded px-3 py-1.5 text-xs font-mono z-10 hidden" style="background-color: rgba(17, 24, 39, 0.95); border: 1px solid #374151;">
+                <span id="ohlc-time" style="color: #ffffff; margin-right: 12px;"></span>
+                <span style="color: #ffffff;">O:</span><span id="ohlc-open" style="color: #ffffff; margin-left: 4px; margin-right: 8px;"></span>
+                <span style="color: #ffffff;">H:</span><span id="ohlc-high" style="color: #ffffff; margin-left: 4px; margin-right: 8px;"></span>
+                <span style="color: #ffffff;">L:</span><span id="ohlc-low" style="color: #ffffff; margin-left: 4px; margin-right: 8px;"></span>
+                <span style="color: #ffffff;">C:</span><span id="ohlc-close" style="color: #ffffff; margin-left: 4px; margin-right: 8px;"></span>
+                <span style="color: #ffffff;">Vol:</span><span id="ohlc-volume" style="color: #ffffff; margin-left: 4px; margin-right: 12px;"></span>
+                <span style="color: #ffffff;">Bar:</span><span id="ohlc-barnum" style="color: #facc15; margin-left: 4px;"></span>
+            </div>
         </div>
         <div class="mt-3 flex items-center gap-4 text-sm text-dark-400">
             <div class="flex items-center gap-2">
@@ -100,8 +113,12 @@
                 <span>Stop: ${{ "%.4f"|format(trade.effective_stop_loss) }}</span>
             </div>
             {% endif %}
+            <div class="flex items-center gap-2">
+                <span class="w-4 h-0.5" style="background-color: #f59e0b;"></span>
+                <span>EMA 20</span>
+            </div>
             <div class="flex items-center gap-2 ml-auto text-xs text-dark-500">
-                <span>Times shown in EST</span>
+                <span>Times in {% if trade.market_timezone == 'Asia/Hong_Kong' %}HKT{% elif trade.market_timezone == 'Asia/Shanghai' %}CST{% elif trade.market_timezone == 'Asia/Tokyo' %}JST{% elif trade.market_timezone == 'Europe/London' %}GMT{% else %}EST{% endif %}</span>
             </div>
         </div>
     </div>
@@ -576,9 +593,81 @@
 <script>
 const TRADE_ID = {{ trade.id }};
 
+// Market timezone for chart display (HK stocks use Asia/Hong_Kong, US stocks use America/New_York)
+const MARKET_TIMEZONE = '{{ trade.market_timezone or "America/New_York" }}';
+const TIMEZONE_ABBREV = {
+    'America/New_York': 'EST',
+    'Asia/Hong_Kong': 'HKT',
+    'Asia/Shanghai': 'CST',
+    'Asia/Tokyo': 'JST',
+    'Europe/London': 'GMT',
+}[MARKET_TIMEZONE] || MARKET_TIMEZONE.split('/').pop().replace('_', ' ');
+
 // ========== TradingView Chart ==========
 let chart = null;
 let candlestickSeries = null;
+let emaSeries = null;
+let candleDataMap = {};  // Store candle data by timestamp for OHLC legend lookup
+let barNumberMap = {};   // Store bar numbers by timestamp
+
+// Calculate EMA
+function calculateEMA(data, period) {
+    const ema = [];
+    const multiplier = 2 / (period + 1);
+    
+    // Need at least 'period' data points
+    if (data.length < period) return [];
+    
+    // Start with SMA for first EMA value
+    let sum = 0;
+    for (let i = 0; i < period; i++) {
+        sum += data[i].close;
+    }
+    let prevEma = sum / period;
+    
+    // First EMA point
+    ema.push({ time: data[period - 1].time, value: prevEma });
+    
+    // Calculate remaining EMA values
+    for (let i = period; i < data.length; i++) {
+        const currentEma = (data[i].close - prevEma) * multiplier + prevEma;
+        ema.push({ time: data[i].time, value: Math.round(currentEma * 100) / 100 });
+        prevEma = currentEma;
+    }
+    
+    return ema;
+}
+
+// Calculate bar numbers (reset each trading day in market timezone)
+function calculateBarNumbers(candles, timeframe) {
+    const barNumbers = {};
+    let currentDay = null;
+    let barCount = 0;
+    
+    candles.forEach(candle => {
+        const date = new Date(candle.time * 1000);
+        
+        // Get day in market timezone (not browser local time)
+        const formatter = new Intl.DateTimeFormat('en-US', {
+            timeZone: MARKET_TIMEZONE,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+        });
+        const dayKey = formatter.format(date);
+        
+        if (dayKey !== currentDay) {
+            currentDay = dayKey;
+            barCount = 1;  // Reset to 1 for new day
+        } else {
+            barCount++;
+        }
+        
+        barNumbers[candle.time] = barCount;
+    });
+    
+    return barNumbers;
+}
 
 async function loadChartData() {
     const timeframe = document.getElementById('chart-timeframe').value;
@@ -636,11 +725,11 @@ async function loadChartData() {
                 timeVisible: true,
                 secondsVisible: false,
                 tickMarkFormatter: (time, tickMarkType, locale) => {
-                    // Format tick marks on the time scale in EST
+                    // Format tick marks on the time scale in market timezone
                     const date = new Date(time * 1000);
                     
                     const formatter = new Intl.DateTimeFormat('en-US', {
-                        timeZone: 'America/New_York',
+                        timeZone: MARKET_TIMEZONE,
                         month: '2-digit',
                         day: '2-digit',
                         hour: '2-digit',
@@ -665,13 +754,13 @@ async function loadChartData() {
                 },
             },
             localization: {
-                // Display times in America/New_York timezone (for crosshair and tooltips)
+                // Display times in market timezone (for crosshair and tooltips)
                 timeFormatter: (timestamp) => {
                     const date = new Date(timestamp * 1000);
                     
-                    // Create formatter for EST timezone
+                    // Create formatter for market timezone
                     const formatter = new Intl.DateTimeFormat('en-US', {
-                        timeZone: 'America/New_York',
+                        timeZone: MARKET_TIMEZONE,
                         weekday: 'short',
                         month: '2-digit',
                         day: '2-digit',
@@ -684,8 +773,8 @@ async function loadChartData() {
                     const parts = formatter.formatToParts(date);
                     const get = (type) => parts.find(p => p.type === type)?.value || '';
                     
-                    // Format: 'Fri 06/27/25 11:00 EST'
-                    return `${get('weekday')} ${get('month')}/${get('day')}/${get('year')} ${get('hour')}:${get('minute')} EST`;
+                    // Format: 'Fri 06/27/25 11:00 HKT' or 'Fri 06/27/25 11:00 EST'
+                    return `${get('weekday')} ${get('month')}/${get('day')}/${get('year')} ${get('hour')}:${get('minute')} ${TIMEZONE_ABBREV}`;
                 },
             },
         });
@@ -700,8 +789,29 @@ async function loadChartData() {
             wickDownColor: '#ef5350',
         });
         
-        // Set data
+        // Set data and build lookup map for OHLC legend
         candlestickSeries.setData(data.candles);
+        candleDataMap = {};
+        data.candles.forEach(candle => {
+            candleDataMap[candle.time] = candle;
+        });
+        
+        // Calculate and store bar numbers
+        barNumberMap = calculateBarNumbers(data.candles, timeframe);
+        
+        // Add 20 EMA line
+        const emaData = calculateEMA(data.candles, 20);
+        if (emaData.length > 0) {
+            emaSeries = chart.addLineSeries({
+                color: '#f59e0b',  // Amber/orange color
+                lineWidth: 1,
+                title: 'EMA 20',
+                priceLineVisible: false,
+                lastValueVisible: false,
+                crosshairMarkerVisible: false,
+            });
+            emaSeries.setData(emaData);
+        }
         
         // Add price lines
         if (data.price_lines) {
@@ -717,13 +827,112 @@ async function loadChartData() {
             });
         }
         
-        // Add markers
+        // Create bar number markers (every 2 bars for 5m, every 5 for 1m, every 10 for others)
+        const barInterval = timeframe === '5m' ? 2 : (timeframe === '1m' ? 5 : 10);
+        const barMarkers = [];
+        
+        data.candles.forEach(candle => {
+            const barNum = barNumberMap[candle.time];
+            // Show marker at bar 1 (start of day) and every barInterval bars
+            if (barNum === 1 || barNum % barInterval === 0) {
+                barMarkers.push({
+                    time: candle.time,
+                    position: 'belowBar',
+                    color: '#9ca3af',  // Gray text color
+                    shape: 'arrowUp',  // Arrow shape (less obtrusive than square)
+                    text: barNum.toString(),
+                    size: 0.001,  // Extremely small, practically invisible shape
+                });
+            }
+        });
+        
+        // Combine trade markers with bar number markers
+        // Trade markers need to come first since they're more important
+        const allMarkers = [];
+        
         if (data.markers && data.markers.length > 0) {
-            candlestickSeries.setMarkers(data.markers);
+            allMarkers.push(...data.markers);
+        }
+        
+        // Add bar markers (these will show below the trade markers)
+        allMarkers.push(...barMarkers);
+        
+        // Sort markers by time (required by Lightweight Charts)
+        allMarkers.sort((a, b) => a.time - b.time);
+        
+        if (allMarkers.length > 0) {
+            candlestickSeries.setMarkers(allMarkers);
         }
         
         // Fit content
         chart.timeScale().fitContent();
+        
+        // OHLC Legend - Subscribe to crosshair move
+        const ohlcLegend = document.getElementById('ohlc-legend');
+        const ohlcTime = document.getElementById('ohlc-time');
+        const ohlcOpen = document.getElementById('ohlc-open');
+        const ohlcHigh = document.getElementById('ohlc-high');
+        const ohlcLow = document.getElementById('ohlc-low');
+        const ohlcClose = document.getElementById('ohlc-close');
+        const ohlcVolume = document.getElementById('ohlc-volume');
+        
+        chart.subscribeCrosshairMove((param) => {
+            if (!param || !param.time || param.point === undefined) {
+                ohlcLegend.classList.add('hidden');
+                return;
+            }
+            
+            const candleData = param.seriesData.get(candlestickSeries);
+            if (!candleData) {
+                ohlcLegend.classList.add('hidden');
+                return;
+            }
+            
+            // Get full candle data from our map (includes volume)
+            const fullCandle = candleDataMap[param.time] || candleData;
+            
+            // Format time in market timezone
+            const date = new Date(param.time * 1000);
+            const formatter = new Intl.DateTimeFormat('en-US', {
+                timeZone: MARKET_TIMEZONE,
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false,
+            });
+            const parts = formatter.formatToParts(date);
+            const get = (type) => parts.find(p => p.type === type)?.value || '';
+            const timeStr = `${get('month')}/${get('day')} ${get('hour')}:${get('minute')}`;
+            
+            // Format numbers
+            const formatPrice = (price) => price !== undefined ? price.toFixed(2) : '-';
+            const formatVolume = (vol) => {
+                if (vol === undefined || vol === null) return '-';
+                if (vol >= 1000000) return (vol / 1000000).toFixed(1) + 'M';
+                if (vol >= 1000) return (vol / 1000).toFixed(1) + 'K';
+                return Math.round(vol).toString();
+            };
+            
+            // Get bar number
+            const barNum = barNumberMap[param.time] || '-';
+            const ohlcBarnum = document.getElementById('ohlc-barnum');
+            
+            // Update legend
+            ohlcTime.textContent = timeStr;
+            ohlcOpen.textContent = formatPrice(candleData.open);
+            ohlcHigh.textContent = formatPrice(candleData.high);
+            ohlcLow.textContent = formatPrice(candleData.low);
+            ohlcClose.textContent = formatPrice(candleData.close);
+            ohlcVolume.textContent = formatVolume(fullCandle.volume);
+            ohlcBarnum.textContent = barNum;
+            
+            // Color close based on bar direction
+            const isUp = candleData.close >= candleData.open;
+            ohlcClose.style.color = isUp ? '#26a69a' : '#ef5350';
+            
+            ohlcLegend.classList.remove('hidden');
+        });
         
         // Handle resize
         const resizeObserver = new ResizeObserver(entries => {

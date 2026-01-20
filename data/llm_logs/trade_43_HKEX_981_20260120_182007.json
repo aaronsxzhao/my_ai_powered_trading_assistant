@@ -1,0 +1,79 @@
+{
+  "metadata": {
+    "trade_id": 43,
+    "ticker": "HKEX:981",
+    "direction": "short",
+    "trade_date": "2026-01-20",
+    "entry_time": "2026-01-20 11:35:16",
+    "exit_time": "2026-01-20 15:21:06",
+    "entry_price": 74.75,
+    "exit_price": 74.65,
+    "r_multiple": 0.03496503496503298,
+    "timeframe": "5m",
+    "generated_at": "2026-01-20T18:20:07.141667"
+  },
+  "ohlcv_context": "=== DAILY_60 (prior day close cutoff) ===\nCutoff: 2026-01-19 23:59 (Asia/Hong_Kong)\nBars: 46\ntimestamp, open, high, low, close, volume\n2025-11-12 09:30, 72.5000, 73.5500, 70.7000, 73.2500, 66485006\n2025-11-13 09:30, 72.8500, 75.6000, 71.7000, 75.6000, 88521178\n2025-11-14 09:30, 74.2500, 77.2500, 73.2000, 73.5000, 93053916\n2025-11-17 09:30, 73.8000, 75.6500, 72.8000, 72.9500, 60837818\n2025-11-18 09:30, 72.6500, 75.6500, 72.2000, 74.0000, 69119836\n2025-11-19 09:30, 74.6000, 74.7500, 72.0500, 73.0000, 49252284\n2025-11-20 09:30, 74.6000, 75.2500, 72.3000, 73.5000, 59009341\n2025-11-21 09:30, 71.1000, 71.9500, 68.6000, 68.8000, 107859632\n2025-11-24 09:30, 69.0500, 69.5500, 63.7000, 68.0500, 146771590\n2025-11-25 09:30, 68.9000, 70.2500, 66.9000, 67.9500, 77251132\n2025-11-26 09:30, 67.8000, 69.9500, 66.9000, 68.8500, 48414677\n2025-11-27 09:30, 69.1500, 71.8000, 68.1500, 68.3500, 67041842\n2025-11-28 09:30, 69.6000, 69.6000, 67.9000, 68.8000, 34635482\n2025-12-01 09:30, 68.9000, 69.9500, 67.8500, 69.4500, 36618423\n2025-12-02 09:30, 69.3500, 69.6500, 68.0500, 68.6500, 23942332\n2025-12-03 09:30, 68.1500, 69.2500, 66.8500, 67.2000, 35626389\n2025-12-04 09:30, 67.3000, 70.2500, 66.5500, 69.8000, 50376074\n2025-12-05 09:30, 69.7500, 70.9000, 68.5500, 69.7500, 45551129\n2025-12-08 09:30, 70.2000, 72.9000, 70.1500, 71.8000, 69233641\n2025-12-09 09:30, 70.6000, 71.0000, 68.4500, 68.8500, 66229434\n2025-12-10 09:30, 69.3000, 69.3500, 67.2000, 68.7000, 44357583\n2025-12-11 09:30, 69.0000, 69.2500, 66.5500, 67.1500, 49462751\n2025-12-12 09:30, 67.6000, 68.6500, 65.3500, 67.7000, 59855565\n2025-12-15 09:30, 68.0000, 68.0000, 64.4500, 64.7000, 67089126\n2025-12-16 09:30, 64.5000, 65.1500, 62.0000, 63.4500, 64784997\n2025-12-17 09:30, 63.0500, 65.2000, 63.0500, 64.7500, 40298935\n2025-12-18 09:30, 64.0000, 65.6000, 63.6500, 64.7000, 39415584\n2025-12-19 09:30, 65.4500, 66.1500, 64.8000, 65.0500, 39163474\n2025-12-22 09:30, 66.0000, 70.4500, 65.9500, 68.9000, 91315684\n2025-12-23 09:30, 69.5000, 70.3500, 68.3000, 68.9000, 49966498\n2025-12-24 09:30, 70.9500, 70.9500, 70.9500, 70.9500, 0\n2025-12-29 09:30, 71.5000, 73.7000, 69.5500, 69.5500, 77352135\n2025-12-30 09:30, 71.5000, 73.1500, 70.4500, 72.5000, 93554254\n2025-12-31 09:30, 71.3500, 71.3500, 71.3500, 71.3500, 0\n2026-01-02 09:30, 71.4500, 75.4000, 70.8000, 75.1000, 40669802\n2026-01-05 09:30, 75.8000, 78.3000, 75.0500, 76.5000, 129977658\n2026-01-06 09:30, 77.0000, 78.9000, 75.4000, 75.6000, 100574288\n2026-01-07 09:30, 76.4000, 76.7000, 73.7000, 74.7000, 98807996\n2026-01-08 09:30, 74.6000, 77.4500, 74.1000, 74.9500, 92810803\n2026-01-09 09:30, 75.5000, 76.2500, 73.5000, 74.4000, 71074224\n2026-01-12 09:30, 74.5000, 75.5000, 73.3500, 75.3000, 64618788\n2026-01-13 09:30, 75.2000, 76.1500, 73.2500, 74.4500, 69713451\n2026-01-14 09:30, 74.6000, 76.4500, 74.1500, 75.9500, 80458547\n2026-01-15 09:30, 75.5000, 78.4000, 74.9500, 77.3500, 72736228\n2026-01-16 09:30, 78.8000, 79.7000, 77.6000, 79.2000, 88248919\n2026-01-19 09:30, 79.2000, 80.1000, 77.0000, 77.0000, 52927092\n\n=== TWOHOUR_120 (entry time cutoff) ===\nEntry time: 2026-01-20 11:35 (Asia/Hong_Kong)\nLast complete bar (SIGNAL BAR): 2026-01-20 09:35 (Asia/Hong_Kong)\nBars: 43\ntimestamp, open, high, low, close, volume\n2026-01-12 09:30, 74.5000, 75.5000, 73.3500, 74.0000, 22194693\n2026-01-12 10:30, 73.9500, 75.0000, 73.8000, 74.7500, 9332597\n2026-01-12 11:30, 74.7500, 74.8000, 74.2000, 74.3500, 3198809\n2026-01-12 12:30, 74.4000, 74.5500, 73.5500, 74.0000, 6541785\n2026-01-12 13:30, 74.0500, 74.9500, 73.9500, 74.8000, 7634652\n2026-01-12 14:30, 74.8500, 74.8500, 74.3500, 74.8500, 6987486\n2026-01-12 15:30, 74.8500, 75.3000, 74.8000, 75.3000, 8729266\n2026-01-13 09:30, 75.2000, 76.1500, 73.7500, 74.7000, 27700204\n2026-01-13 10:30, 74.7000, 75.1000, 74.2000, 74.2000, 6887184\n2026-01-13 11:30, 74.2000, 74.5500, 74.2000, 74.4500, 1508344\n2026-01-13 12:30, 74.4000, 74.8500, 74.0000, 74.4000, 6777055\n2026-01-13 13:30, 74.4000, 74.8000, 73.9000, 74.1000, 5942507\n2026-01-13 14:30, 74.0500, 74.2000, 73.2500, 73.8000, 14237307\n2026-01-13 15:30, 73.8000, 74.4500, 73.7500, 74.4500, 6661850\n2026-01-14 09:30, 74.6000, 76.4500, 74.2000, 75.8500, 28623831\n2026-01-14 10:30, 75.8000, 76.1500, 75.3000, 76.0000, 10130757\n2026-01-14 11:30, 76.0500, 76.1500, 75.8500, 76.0000, 2549805\n2026-01-14 12:30, 75.9000, 76.0000, 74.4000, 74.9000, 11054206\n2026-01-14 13:30, 74.9000, 75.5500, 74.1500, 75.1000, 11576205\n2026-01-14 14:30, 75.1500, 75.8500, 74.9000, 75.6000, 10001698\n2026-01-14 15:30, 75.6000, 75.9500, 75.5500, 75.9500, 0\n2026-01-15 09:30, 75.5000, 76.3500, 74.9500, 75.1000, 12682065\n2026-01-15 10:30, 75.0500, 75.6000, 75.0500, 75.2000, 3793289\n2026-01-15 11:30, 75.2000, 75.3000, 75.0500, 75.0500, 1247400\n2026-01-15 12:30, 75.1000, 76.6500, 75.0000, 76.1000, 10270955\n2026-01-15 13:30, 76.1500, 76.8000, 75.7500, 76.6000, 11154087\n2026-01-15 14:30, 76.5500, 78.4000, 76.3000, 77.7500, 22337946\n2026-01-15 15:30, 77.7500, 78.1000, 77.3500, 77.3500, 11250486\n2026-01-16 09:30, 78.8000, 79.7000, 78.4000, 78.8500, 30502890\n2026-01-16 10:30, 78.8500, 79.2500, 78.2000, 78.4500, 11667578\n2026-01-16 11:30, 78.4000, 78.5500, 78.3000, 78.3500, 1533548\n2026-01-16 12:30, 78.4000, 78.8500, 77.6000, 78.8000, 7712093\n2026-01-16 13:30, 78.8000, 79.6500, 78.1000, 79.1000, 18280837\n2026-01-16 14:30, 79.0500, 79.4500, 78.9000, 79.2000, 11339318\n2026-01-16 15:30, 79.2500, 79.3500, 79.0500, 79.2000, 7212755\n2026-01-19 09:30, 79.1500, 80.1000, 77.5000, 78.5500, 25067574\n2026-01-19 10:30, 78.5000, 78.6000, 77.4000, 77.4500, 8201391\n2026-01-19 11:30, 77.4500, 79.2000, 77.4500, 77.6500, 1256870\n2026-01-19 12:30, 77.6500, 79.2000, 77.4500, 79.2000, 2641807\n2026-01-19 13:30, 77.9000, 78.1000, 77.2000, 77.6500, 6452523\n2026-01-19 14:30, 77.7000, 77.8000, 77.1000, 77.3000, 4342940\n2026-01-19 15:30, 77.3500, 77.4000, 77.0000, 77.0000, 4964826\n2026-01-20 09:30, 77.4500, 77.6000, 74.0000, 74.1500, 22828930\n\n=== FIVEMIN_234 (entry time cutoff) ===\nEntry time: 2026-01-20 11:35 (Asia/Hong_Kong)\nLast complete bar (SIGNAL BAR): 2026-01-20 11:30 (Asia/Hong_Kong)\nBars: 44\ntimestamp, open, high, low, close, volume\n2026-01-19 14:30, 77.7000, 77.8000, 77.5000, 77.5500, 435000\n2026-01-19 14:35, 77.5500, 77.6500, 77.4000, 77.4500, 309200\n2026-01-19 14:40, 77.5500, 77.5500, 77.3000, 77.4000, 334000\n2026-01-19 14:45, 77.3500, 77.4500, 77.2500, 77.3500, 470000\n2026-01-19 14:50, 77.3500, 77.3500, 77.1000, 77.2500, 802000\n2026-01-19 14:55, 77.2000, 77.3500, 77.2000, 77.2500, 247730\n2026-01-19 15:00, 77.2500, 77.3000, 77.1500, 77.2000, 263000\n2026-01-19 15:05, 77.2000, 77.2000, 77.1000, 77.2000, 374000\n2026-01-19 15:10, 77.1500, 77.3000, 77.1000, 77.3000, 353010\n2026-01-19 15:15, 77.3000, 77.3000, 77.2000, 77.3000, 276000\n2026-01-19 15:20, 77.3000, 77.3000, 77.2000, 77.3000, 244500\n2026-01-19 15:25, 77.3000, 77.4000, 77.2500, 77.3000, 234500\n2026-01-19 15:30, 77.3500, 77.4000, 77.2500, 77.3000, 296150\n2026-01-19 15:35, 77.3500, 77.3500, 77.2000, 77.2500, 347700\n2026-01-19 15:40, 77.2500, 77.2500, 77.1500, 77.2500, 472204\n2026-01-19 15:45, 77.2500, 77.2500, 77.1500, 77.2000, 394000\n2026-01-19 15:50, 77.1500, 77.2000, 77.0000, 77.1000, 1270272\n2026-01-19 15:55, 77.1000, 77.1500, 77.0500, 77.0500, 612500\n2026-01-19 16:05, 77.0000, 77.0000, 77.0000, 77.0000, 1572000\n2026-01-20 09:30, 77.4500, 77.6000, 76.9000, 77.1500, 2035600\n2026-01-20 09:35, 77.1500, 77.2500, 76.5000, 76.8000, 1363120\n2026-01-20 09:40, 76.8500, 76.9000, 76.5000, 76.6500, 807667\n2026-01-20 09:45, 76.6500, 77.2500, 76.6500, 77.0000, 1305011\n2026-01-20 09:50, 77.0000, 77.1500, 76.4000, 76.5000, 1407699\n2026-01-20 09:55, 76.4000, 76.4500, 75.9000, 75.9500, 1753200\n2026-01-20 10:00, 75.9500, 76.0000, 75.5000, 75.5500, 2072800\n2026-01-20 10:05, 75.5500, 75.6000, 75.3500, 75.5500, 1580500\n2026-01-20 10:10, 75.5500, 75.5500, 75.1500, 75.2000, 1513200\n2026-01-20 10:15, 75.1500, 75.2000, 74.8500, 74.8500, 2415538\n2026-01-20 10:20, 74.8500, 74.8500, 74.2000, 74.3500, 3544900\n2026-01-20 10:25, 74.3000, 74.3500, 74.0000, 74.1500, 3029695\n2026-01-20 10:30, 74.1500, 74.2000, 73.7500, 74.0000, 3892878\n2026-01-20 10:35, 73.9500, 74.3500, 73.9500, 74.3000, 2431500\n2026-01-20 10:40, 74.3000, 74.5500, 74.1500, 74.5500, 1428758\n2026-01-20 10:45, 74.5500, 74.8500, 74.5000, 74.8500, 1037650\n2026-01-20 10:50, 74.8500, 75.0000, 74.7500, 74.9000, 910549\n2026-01-20 10:55, 74.9000, 74.9000, 74.5000, 74.6000, 872000\n2026-01-20 11:00, 74.5500, 74.7500, 74.4500, 74.5000, 996501\n2026-01-20 11:05, 74.4500, 74.7000, 74.3500, 74.5000, 631010\n2026-01-20 11:10, 74.4500, 74.8000, 74.3500, 74.8000, 860800\n2026-01-20 11:15, 74.8000, 75.0000, 74.7500, 74.9500, 909000\n2026-01-20 11:20, 74.9500, 75.3000, 74.9000, 75.0500, 1050200\n2026-01-20 11:25, 75.1000, 75.1500, 74.7500, 74.8500, 665000\n2026-01-20 11:30, 74.8500, 74.9500, 74.8000, 74.8000, 158500 <<< SIGNAL BAR (bar before entry)\n\n=== SIGNAL BAR ANALYSIS ===\nSignal Bar: 2026-01-19 22:30\nOHLC: O=74.8500, H=74.9500, L=74.8000, C=74.8000\nBar Type: BEAR BAR (body=33% of range)\nClose Location: near LOW (0% from low)\nFor SHORT entry: GOOD signal bar\nFor LONG entry: WEAK signal bar\n\n=== PATTERN DETECTION (last 2 hours before entry) ===\nAnalyzing bars from 2026-01-19 20:40:00-05:00 to 2026-01-19 22:30:00-05:00\n\nSWING HIGHS (last 2 hours):\n  - 02:50: $75.0000\n  - 03:20: $75.3000\n\nSWING LOWS (last 2 hours):\n  - 02:30: $73.7500\n  - 03:05: $74.3500\n\nNo clear wedge pattern detected (3 pushes required)\n\n2-HOUR TREND: BEARISH (-2.41%)\nRange: $73.7500 - $77.2500",
+  "llm_response": {
+    "context": {
+      "daily_regime": "trend_down",
+      "two_hour_regime": "trend_down",
+      "trading_tf_regime": "trading_range",
+      "always_in_direction": "not_clear",
+      "trade_aligned_with_always_in": false
+    },
+    "setup": {
+      "primary_label": "Failed High 2 Short in Trading Range",
+      "secondary_label": "Low 2 Short After Sell Climax",
+      "category": "trading_range",
+      "is_second_entry": true,
+      "with_trend_or_counter": "countertrend"
+    },
+    "entry_quality": {
+      "signal_bar_quality": "weak",
+      "signal_bar_notes": "Doji with 5-tick body in 15-tick range, extremely low volume (158k vs 800k avg), inside bar, no bear conviction - textbook weak signal bar in barbwire context",
+      "entry_location": "wrong_place",
+      "entry_type": "stop",
+      "entry_quality_score": "D"
+    },
+    "risk_reward": {
+      "stop_placement": "too_wide",
+      "stop_notes": "286-tick stop is massive for 5m chart (should be max 60-90 ticks). Stop at 77.61 not anchored to clear structure - above open (77.45) but below prior day high (80.10). Suggests swing trade on scalping timeframe.",
+      "target_logic": "unclear",
+      "target_notes": "Target at 73.74 is 1 tick above Low 1 (73.75) - appears arbitrary. Not at measured move, not at prior swing low. Only 101 ticks reward vs 286 ticks risk = 1:0.35 ratio.",
+      "traders_equation": "unfavorable",
+      "probability_estimate": "LOW_30%"
+    },
+    "management": {
+      "exit_quality": "early",
+      "management_notes": "Held for 3h46m but took only 10-tick profit (91 ticks short of 101-tick target). This is neither scalp (should exit in 5-20 bars) nor swing (should hold to target). Suggests emotional exit due to frustration with choppy price action.",
+      "scalp_vs_swing_match": false,
+      "got_trapped": true
+    },
+    "coaching": {
+      "what_was_good": [
+        "Daily trend alignment: Correctly identified larger bear trend after climactic reversal (prior day's 3.10-point bear bar from 80.10 to 77.00)",
+        "Low 2 pattern recognition: Identified valid second-entry short structure (Low 1 at 73.75, two-legged bounce, attempted Low 2)",
+        "Discipline to take profit: Maintained composure to exit with small profit after 3h46m rather than letting frustration turn it into a loss"
+      ],
+      "what_was_flawed": [
+        "Barbwire entry violation: Signal bar (11:30: O=74.85, H=74.95, L=74.80, C=74.80) was classic barbwire doji with overlapping bars 20-25. Brooks warns: 'Don't touch barbwire or you will be hurt.'",
+        "Middle-of-range entry: Entered at 74.75 in exact middle of 73.75-75.30 trading range (50% location). Should wait for extremes - either rally to 75.30 resistance or break below 73.75 support.",
+        "Massive stop for scalping timeframe: 286-tick stop completely inappropriate for 5m chart (should be max 60-90 ticks). Created 1:0.35 risk/reward ratio that's mathematically losing.",
+        "Scalp/swing identity crisis: Set swing-sized stops/targets but took 10-tick scalp profit after 3h46m hold. Got worst of both worlds - swing-trade time/stress with scalp-trade profits."
+      ],
+      "selection_vs_execution": "both",
+      "better_alternative": "SKIP THIS TRADE. Barbwire in middle of range after climax = low probability. If must trade: (1) Wait for High 2 short at 75.30 resistance with 20-30 tick stop, or (2) Wait for break below 73.75 then short pullback, or (3) Switch to 30m/1H chart to justify 286-tick stop size.",
+      "keep_doing": "Top-down trend analysis - continue identifying larger timeframe trend (daily/2H) before taking trades",
+      "stop_doing": "Trading barbwire patterns - stop entering when you see 3+ overlapping bars with small bodies and prominent tails in middle of range",
+      "rules_for_next_20_trades": [
+        "Barbwire filter: Before entering, check last 3-6 bars. If overlapping ranges (>50% of bar 2 within bars 1&3) AND small bodies (<40% of range) AND prominent tails, mark 'BARBWIRE - WAIT' and only trade breakout pullback.",
+        "Range-position rule: Never enter in middle 40% of trading range. For shorts, wait for top 30% (resistance). For longs, wait for bottom 30% (support). Calculate range percentiles before entry.",
+        "Stop-size-to-timeframe match: Maximum stop = 3× ATR of timeframe. 5m chart = max 90 ticks. If analysis requires bigger stop, switch to 30m/1H chart. Write on sticky note: '5m = max 90 ticks. Bigger stop = bigger timeframe.'",
+        "Pre-trade commitment: Before entry, write 'I am SCALPING (exit 5-20 bars, X ticks)' or 'I am SWINGING (hold through pullbacks to [target])'. Execute exactly what you wrote. No changing mid-trade."
+      ]
+    },
+    "grade": "D",
+    "grade_explanation": "Fundamental Brooks-style errors: (1) Barbwire violation - entered overlapping bars with small bodies (automatic D), (2) Middle-of-range entry with no edge, (3) Unfavorable math (1:0.35 R/R with 30% probability = -170 tick expectancy), (4) Scalp/swing execution mismatch. Only avoided F due to correct daily trend ID and discipline to exit with small profit vs large loss.",
+    "coaching_summary": "You correctly identified the daily bear trend after a climactic reversal, but you violated Brooks' cardinal rule by trading barbwire (overlapping bars with small bodies). Entering at 74.75 in the middle of the 73.75-75.30 range with a 286-tick stop created terrible 1:0.35 risk/reward math, and taking a 10-tick profit after 3h46m showed a scalp/swing identity crisis. For the next 20 trades: (1) Skip barbwire entirely - wait for clear breakouts, (2) Only short at top 30% of ranges, and (3) Match stop size to timeframe (5m = max 90 ticks) or switch to higher timeframe charts. Your trend analysis is sound, but entry selection and execution discipline need major work."
+  }
+}

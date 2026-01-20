@@ -145,11 +145,14 @@ class EndOfDayReport:
             consecutive_losses = self._compute_consecutive_losses(trades)
             daily_loss_limit_hit = total_r < -settings.max_daily_loss_r
 
-            # Rule violations
-            rule_violations = self._detect_rule_violations(trades)
+            # Get trade reviews once (parallel) and share across analysis functions
+            trade_reviews = self._get_trade_reviews_parallel(trades)
 
-            # Coaching
-            top_mistake = self._identify_top_mistake(trades)
+            # Rule violations (use cached reviews)
+            rule_violations = self._detect_rule_violations(trades, reviews=trade_reviews)
+
+            # Coaching (use cached reviews)
+            top_mistake = self._identify_top_mistake(trades, reviews=trade_reviews)
             improvement_focus = self._generate_improvement_focus(trades, rule_violations)
 
             # Format trades for output
@@ -253,13 +256,47 @@ class EndOfDayReport:
 
         return max_streak
 
-    def _detect_rule_violations(self, trades: list[Trade]) -> list[str]:
+    def _get_trade_reviews_parallel(self, trades: list[Trade]) -> dict:
+        """Get reviews for all trades in parallel. Returns dict of trade_id -> review."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        
+        reviews = {}
+        max_workers = min(4, len(trades))  # Limit concurrency
+        
+        if not trades:
+            return reviews
+        
+        logger.info(f"📊 Reviewing {len(trades)} trades in parallel ({max_workers} workers)")
+        
+        def review_trade_safe(trade_id):
+            try:
+                return trade_id, self.coach.review_trade(trade_id)
+            except Exception as e:
+                logger.warning(f"Failed to review trade {trade_id}: {e}")
+                return trade_id, None
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(review_trade_safe, t.id) for t in trades]
+            
+            for future in as_completed(futures):
+                try:
+                    trade_id, review = future.result()
+                    reviews[trade_id] = review
+                except Exception as e:
+                    logger.warning(f"Error getting review result: {e}")
+        
+        return reviews
+
+    def _detect_rule_violations(self, trades: list[Trade], reviews: dict = None) -> list[str]:
         """Detect rule violations in trades."""
         violations = []
+        
+        # Use provided reviews or fetch them
+        if reviews is None:
+            reviews = self._get_trade_reviews_parallel(trades)
 
         for trade in trades:
-            # Review each trade for errors
-            review = self.coach.review_trade(trade.id)
+            review = reviews.get(trade.id)
             if review and review.errors_detected:
                 for error in review.errors_detected:
                     key = error.split(":")[0]
@@ -268,12 +305,16 @@ class EndOfDayReport:
         # Deduplicate
         return list(set(violations))[:5]
 
-    def _identify_top_mistake(self, trades: list[Trade]) -> str:
+    def _identify_top_mistake(self, trades: list[Trade], reviews: dict = None) -> str:
         """Identify the biggest mistake of the day."""
         mistake_counts: dict[str, int] = {}
+        
+        # Use provided reviews or fetch them
+        if reviews is None:
+            reviews = self._get_trade_reviews_parallel(trades)
 
         for trade in trades:
-            review = self.coach.review_trade(trade.id)
+            review = reviews.get(trade.id)
             if review and review.errors_detected:
                 for error in review.errors_detected:
                     key = error.split(":")[0]

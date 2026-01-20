@@ -105,7 +105,7 @@
                         </td>
                         <td class="text-sm font-mono text-dark-400">
                             {% if trade.exit_time %}
-                                {{ trade.exit_time.strftime('%m/%d %H:%M') }}
+                                {{ trade.exit_time.strftime('%m/%d/%y %H:%M') }}
                                 {% if trade.input_timezone and trade.input_timezone != trade.market_timezone %}
                                 <div class="text-xs text-dark-500">
                                     ({{ trade.exit_time_local.strftime('%H:%M') if trade.exit_time_local else '' }} {{ trade.input_timezone.split('/')[-1] | replace('_', ' ') }})
@@ -116,7 +116,10 @@
                             {% endif %}
                         </td>
                         <td>
-                            <span class="font-bold text-white">{{ trade.ticker }}</span>
+                            <span class="font-bold text-white">{{ trade.ticker | ticker_display }}</span>
+                            {% if trade.ticker | ticker_exchange %}
+                            <span class="text-xs text-dark-500 ml-1">({{ trade.ticker | ticker_exchange }})</span>
+                            {% endif %}
                         </td>
                         <td>
                             {% if trade.direction.value == 'long' %}

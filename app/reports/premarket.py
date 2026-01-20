@@ -108,10 +108,17 @@ class PremarketReport:
 
         logger.info(f"Generating premarket report for {ticker} on {report_date}")
 
-        # Fetch data for each timeframe
-        daily_df = self._fetch_daily_data(ticker, report_date)
-        two_hour_df = self._fetch_2h_data(ticker, report_date)
-        five_min_df = self._fetch_5m_data(ticker, report_date)
+        # Fetch data for each timeframe in parallel
+        from concurrent.futures import ThreadPoolExecutor
+        
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            future_daily = executor.submit(self._fetch_daily_data, ticker, report_date)
+            future_2h = executor.submit(self._fetch_2h_data, ticker, report_date)
+            future_5m = executor.submit(self._fetch_5m_data, ticker, report_date)
+            
+            daily_df = future_daily.result()
+            two_hour_df = future_2h.result()
+            five_min_df = future_5m.result()
 
         # Get current price
         current_price = None
@@ -124,10 +131,15 @@ class PremarketReport:
             if llm_result:
                 return llm_result
 
-        # Fallback to rule-based analysis
-        daily_analysis = self._analyze_timeframe(daily_df, "daily")
-        two_hour_analysis = self._analyze_timeframe(two_hour_df, "2h") if not two_hour_df.empty else None
-        five_min_analysis = self._analyze_timeframe(five_min_df, "5m") if not five_min_df.empty else None
+        # Fallback to rule-based analysis (parallel)
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            future_daily_analysis = executor.submit(self._analyze_timeframe, daily_df, "daily")
+            future_2h_analysis = executor.submit(self._analyze_timeframe, two_hour_df, "2h") if not two_hour_df.empty else None
+            future_5m_analysis = executor.submit(self._analyze_timeframe, five_min_df, "5m") if not five_min_df.empty else None
+            
+            daily_analysis = future_daily_analysis.result()
+            two_hour_analysis = future_2h_analysis.result() if future_2h_analysis else None
+            five_min_analysis = future_5m_analysis.result() if future_5m_analysis else None
 
         # Get magnets
         magnets_above, magnets_below, measured_moves = self._get_magnets(
@@ -611,22 +623,39 @@ class PremarketReport:
         Returns:
             List of TickerReport objects
         """
-        import time
+        from concurrent.futures import ThreadPoolExecutor, as_completed
         
         tickers = settings.tickers
         reports = []
-
-        for i, ticker in enumerate(tickers):
+        
+        # Use limited workers to avoid overwhelming the API (rate limiting)
+        # Each ticker fetches 3 timeframes, so limit concurrency
+        max_concurrent = min(3, len(tickers))  # Max 3 tickers at once
+        
+        logger.info(f"📊 Generating premarket reports for {len(tickers)} tickers (parallel, {max_concurrent} workers)")
+        
+        def generate_with_error_handling(ticker):
             try:
-                report = self.generate_ticker_report(ticker, report_date)
-                reports.append(report)
-                
-                # Delay between tickers to avoid rate limiting (skip after last)
-                if i < len(tickers) - 1:
-                    time.sleep(delay_between)
-                    
+                return self.generate_ticker_report(ticker, report_date)
             except Exception as e:
                 logger.error(f"Failed to generate report for {ticker}: {e}")
+                return None
+        
+        with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
+            futures = {executor.submit(generate_with_error_handling, ticker): ticker for ticker in tickers}
+            
+            for future in as_completed(futures):
+                ticker = futures[future]
+                try:
+                    report = future.result()
+                    if report:
+                        reports.append(report)
+                except Exception as e:
+                    logger.error(f"Failed to get result for {ticker}: {e}")
+        
+        # Sort reports to maintain original ticker order
+        ticker_order = {t: i for i, t in enumerate(tickers)}
+        reports.sort(key=lambda r: ticker_order.get(r.ticker, 999))
 
         return reports
 

@@ -109,6 +109,108 @@ class TradeCoach:
         except ImportError:
             return self.data_provider
 
+    def _save_llm_log(self, trade, ohlcv_context: str, llm_response: dict):
+        """
+        Save LLM request context and response to local file for debugging/review.
+        
+        Files are saved to data/llm_logs/ with format:
+        trade_{id}_{ticker}_{timestamp}.json
+        """
+        import json
+        from pathlib import Path
+        from datetime import datetime
+        
+        try:
+            # Create logs directory
+            logs_dir = Path("data/llm_logs")
+            logs_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Generate filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_ticker = trade.ticker.replace(":", "_").replace("/", "_")
+            filename = f"trade_{trade.id}_{safe_ticker}_{timestamp}.json"
+            filepath = logs_dir / filename
+            
+            # Build log data
+            log_data = {
+                "metadata": {
+                    "trade_id": trade.id,
+                    "ticker": trade.ticker,
+                    "direction": trade.direction.value if trade.direction else None,
+                    "trade_date": str(trade.trade_date) if trade.trade_date else None,
+                    "entry_time": str(trade.entry_time) if trade.entry_time else None,
+                    "exit_time": str(trade.exit_time) if trade.exit_time else None,
+                    "entry_price": trade.entry_price,
+                    "exit_price": trade.exit_price,
+                    "r_multiple": trade.r_multiple,
+                    "timeframe": trade.timeframe,
+                    "generated_at": datetime.now().isoformat(),
+                },
+                "ohlcv_context": ohlcv_context,
+                "llm_response": llm_response,
+            }
+            
+            # Write to file
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(log_data, f, indent=2, ensure_ascii=False, default=str)
+            
+            logger.info(f"📝 Saved LLM log to {filepath}")
+            
+        except Exception as e:
+            logger.warning(f"Failed to save LLM log: {e}")
+
+    def _get_market_name(self, trade) -> str:
+        """
+        Derive market name from trade's ticker or timezone.
+        
+        Returns human-readable market name like "Hong Kong stocks", "US stocks", etc.
+        """
+        # Check for explicit market attribute first
+        if hasattr(trade, 'market') and trade.market:
+            return trade.market
+        
+        # Derive from ticker
+        ticker = trade.ticker.upper() if trade.ticker else ""
+        
+        # Check exchange prefix (HKEX:0981, AMEX:SOXL)
+        if ":" in ticker:
+            exchange = ticker.split(":")[0]
+            exchange_markets = {
+                "HKEX": "Hong Kong stocks",
+                "HKG": "Hong Kong stocks",
+                "SSE": "China A-shares",
+                "SZSE": "China A-shares",
+                "TSE": "Japan stocks",
+                "JPX": "Japan stocks",
+                "LSE": "UK stocks",
+            }
+            if exchange in exchange_markets:
+                return exchange_markets[exchange]
+        
+        # Check ticker suffix (.HK, .SS, etc.)
+        if ".HK" in ticker:
+            return "Hong Kong stocks"
+        if ".SS" in ticker or ".SZ" in ticker:
+            return "China A-shares"
+        if ".T" in ticker:
+            return "Japan stocks"
+        if ".L" in ticker:
+            return "UK stocks"
+        
+        # Check market_timezone
+        tz = getattr(trade, 'market_timezone', None) or ""
+        timezone_markets = {
+            "Asia/Hong_Kong": "Hong Kong stocks",
+            "Asia/Shanghai": "China A-shares",
+            "Asia/Tokyo": "Japan stocks",
+            "Europe/London": "UK stocks",
+        }
+        if tz in timezone_markets:
+            return timezone_markets[tz]
+        
+        # Default to US
+        return "US stocks"
+
     def review_trade(self, trade_id: int, cancellation_check: Optional[callable] = None) -> Optional[TradeReview]:
         """
         Perform comprehensive review of a trade using LLM analysis.
@@ -125,6 +227,8 @@ class TradeCoach:
                 logger.info(f"⏹️ Review cancelled for trade {trade_id}")
                 return True
             return False
+        
+        from app.journal.ingest import get_market_timezone
         
         session = get_session()
         try:
@@ -187,8 +291,8 @@ class TradeCoach:
                     mistakes_and_lessons=trade.effective_mistakes_lessons,
                     # New extended fields
                     trade_date=str(trade.trade_date) if trade.trade_date else None,
-                    market=getattr(trade, 'market', None) or "US stocks",
-                    timezone=getattr(trade, 'market_timezone', None) or "America/New_York",
+                    market=self._get_market_name(trade),
+                    timezone=get_market_timezone(trade.ticker),
                     intended_setup=trade.entry_reason,
                     management_plan=trade.target_reason,
                     pd_high=pd_high,
@@ -209,6 +313,9 @@ class TradeCoach:
                     # Cancellation support
                     cancellation_check=is_cancelled,
                 )
+
+                # Save LLM response and context to local file for debugging/review
+                self._save_llm_log(trade, ohlcv_context, llm_analysis)
 
                 # If cancelled during analysis, return None
                 if llm_analysis.get("error") == "Cancelled":
@@ -313,6 +420,9 @@ class TradeCoach:
                 entry_cutoff = datetime.combine(trade.trade_date, datetime.max.time().replace(microsecond=0))
 
             timeframe = trade.timeframe or "5m"
+            # Derive timezone from ticker for reliability (stored field may be wrong for old trades)
+            from app.journal.ingest import get_market_timezone
+            market_tz = get_market_timezone(trade.ticker)
 
             all_context = []
             daily_df = None  # Store daily DataFrame for session context reuse
@@ -327,60 +437,101 @@ class TradeCoach:
             daily_cutoff = datetime.combine(trade.trade_date - timedelta(days=1), datetime.max.time())
             daily_fetch_end = datetime.combine(trade.trade_date, datetime.max.time())  # Include trade date for session context
 
-            if timeframe == "5m":
-                # 5-min scalp/day trades: Full Brooks package
-                # Check cancellation between each fetch (rate-limited operations)
-                if cancellation_check and cancellation_check():
-                    return ("Cancelled", None) if return_daily_df else "Cancelled"
-                daily_context, daily_df = self._fetch_ohlcv_section_with_cutoff_and_df(trade.ticker, "1d", daily_fetch_end, 60, "DAILY_60 (prior day close cutoff)", daily_cutoff, cancellation_check)
-                all_context.append(daily_context)
-
-                if cancellation_check and cancellation_check():
-                    return ("Cancelled", None) if return_daily_df else "Cancelled"
-                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "2h", entry_cutoff, 120, "TWOHOUR_120 (entry time cutoff)", cancellation_check))
-
-                if cancellation_check and cancellation_check():
-                    return ("Cancelled", None) if return_daily_df else "Cancelled"
-                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "5m", entry_cutoff, 234, "FIVEMIN_234 (entry time cutoff)", cancellation_check))
+            # Use parallel fetching for OHLCV data (significant speedup)
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            
+            if cancellation_check and cancellation_check():
+                return ("Cancelled", None) if return_daily_df else "Cancelled"
+            
+            if timeframe == "5m" or timeframe not in ["2h", "1d"]:
+                # 5-min scalp/day trades: Full Brooks package - fetch all 3 timeframes in parallel
+                logger.info(f"📊 Fetching OHLCV data in parallel for {trade.ticker} (daily, 2h, 5m)")
+                
+                with ThreadPoolExecutor(max_workers=4) as executor:
+                    # Submit all fetches in parallel
+                    future_daily = executor.submit(
+                        self._fetch_ohlcv_section_with_cutoff_and_df,
+                        trade.ticker, "1d", daily_fetch_end, 60, 
+                        "DAILY_60 (prior day close cutoff)", daily_cutoff, cancellation_check, market_tz
+                    )
+                    future_2h = executor.submit(
+                        self._fetch_ohlcv_section_with_cutoff,
+                        trade.ticker, "2h", entry_cutoff, 120,
+                        "TWOHOUR_120 (entry time cutoff)", cancellation_check, market_tz
+                    )
+                    future_5m = executor.submit(
+                        self._fetch_ohlcv_section_with_cutoff,
+                        trade.ticker, "5m", entry_cutoff, 234,
+                        "FIVEMIN_234 (entry time cutoff)", cancellation_check, market_tz
+                    )
+                    future_pattern = executor.submit(
+                        self._detect_patterns_before_entry,
+                        trade, entry_cutoff
+                    ) if trade.entry_time else None
+                    
+                    # Collect results (order matters for context)
+                    try:
+                        daily_context, daily_df = future_daily.result()
+                        all_context.append(daily_context)
+                    except Exception as e:
+                        logger.warning(f"Daily fetch failed: {e}")
+                        all_context.append(f"=== DAILY_60 ===\nFetch failed: {e}")
+                    
+                    try:
+                        all_context.append(future_2h.result())
+                    except Exception as e:
+                        logger.warning(f"2-hour fetch failed: {e}")
+                        all_context.append(f"=== TWOHOUR_120 ===\nFetch failed: {e}")
+                    
+                    try:
+                        all_context.append(future_5m.result())
+                    except Exception as e:
+                        logger.warning(f"5-min fetch failed: {e}")
+                        all_context.append(f"=== FIVEMIN_234 ===\nFetch failed: {e}")
+                    
+                    # Add pattern detection result
+                    if future_pattern:
+                        try:
+                            pattern_context = future_pattern.result()
+                            if pattern_context:
+                                all_context.append(pattern_context)
+                        except Exception as e:
+                            logger.warning(f"Pattern detection failed: {e}")
 
             elif timeframe == "2h":
-                # 2-hour swing trades: Daily + 2H context
-                if cancellation_check and cancellation_check():
-                    return ("Cancelled", None) if return_daily_df else "Cancelled"
-                daily_context, daily_df = self._fetch_ohlcv_section_with_cutoff_and_df(trade.ticker, "1d", daily_fetch_end, 60, "DAILY_60 (prior day close cutoff)", daily_cutoff, cancellation_check)
-                all_context.append(daily_context)
-
-                if cancellation_check and cancellation_check():
-                    return ("Cancelled", None) if return_daily_df else "Cancelled"
-                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "2h", entry_cutoff, 120, "TWOHOUR_120 (entry time cutoff)", cancellation_check))
+                # 2-hour swing trades: Daily + 2H context - fetch in parallel
+                logger.info(f"📊 Fetching OHLCV data in parallel for {trade.ticker} (daily, 2h)")
+                
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    future_daily = executor.submit(
+                        self._fetch_ohlcv_section_with_cutoff_and_df,
+                        trade.ticker, "1d", daily_fetch_end, 60,
+                        "DAILY_60 (prior day close cutoff)", daily_cutoff, cancellation_check, market_tz
+                    )
+                    future_2h = executor.submit(
+                        self._fetch_ohlcv_section_with_cutoff,
+                        trade.ticker, "2h", entry_cutoff, 120,
+                        "TWOHOUR_120 (entry time cutoff)", cancellation_check, market_tz
+                    )
+                    
+                    try:
+                        daily_context, daily_df = future_daily.result()
+                        all_context.append(daily_context)
+                    except Exception as e:
+                        logger.warning(f"Daily fetch failed: {e}")
+                    
+                    try:
+                        all_context.append(future_2h.result())
+                    except Exception as e:
+                        logger.warning(f"2-hour fetch failed: {e}")
 
             elif timeframe == "1d":
-                # Daily position trades: Extended daily context
-                if cancellation_check and cancellation_check():
-                    return ("Cancelled", None) if return_daily_df else "Cancelled"
-                daily_context, daily_df = self._fetch_ohlcv_section_with_cutoff_and_df(trade.ticker, "1d", daily_fetch_end, 120, "DAILY_120 (prior day close cutoff)", daily_cutoff, cancellation_check)
+                # Daily position trades: Just daily context (no parallelization needed)
+                daily_context, daily_df = self._fetch_ohlcv_section_with_cutoff_and_df(
+                    trade.ticker, "1d", daily_fetch_end, 120,
+                    "DAILY_120 (prior day close cutoff)", daily_cutoff, cancellation_check, market_tz
+                )
                 all_context.append(daily_context)
-
-            else:
-                # Default to 5m timeframe with full Brooks package
-                if cancellation_check and cancellation_check():
-                    return ("Cancelled", None) if return_daily_df else "Cancelled"
-                daily_context, daily_df = self._fetch_ohlcv_section_with_cutoff_and_df(trade.ticker, "1d", daily_fetch_end, 60, "DAILY_60 (prior day close cutoff)", daily_cutoff, cancellation_check)
-                all_context.append(daily_context)
-
-                if cancellation_check and cancellation_check():
-                    return ("Cancelled", None) if return_daily_df else "Cancelled"
-                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "2h", entry_cutoff, 120, "TWOHOUR_120 (entry time cutoff)", cancellation_check))
-
-                if cancellation_check and cancellation_check():
-                    return ("Cancelled", None) if return_daily_df else "Cancelled"
-                all_context.append(self._fetch_ohlcv_section_with_cutoff(trade.ticker, "5m", entry_cutoff, 234, "FIVEMIN_234 (entry time cutoff)", cancellation_check))
-
-            # Add pattern detection for intraday trades
-            if timeframe == "5m" and trade.entry_time:
-                pattern_context = self._detect_patterns_before_entry(trade, entry_cutoff)
-                if pattern_context:
-                    all_context.append(pattern_context)
             
             result = "\n\n".join([ctx for ctx in all_context if ctx])
             if not result:
@@ -405,7 +556,7 @@ class TradeCoach:
             logger.warning(f"Failed to get OHLCV context: {e}")
             return ("Market data unavailable", None) if return_daily_df else "Market data unavailable"
     
-    def _fetch_ohlcv_section_with_cutoff(self, ticker: str, interval: str, cutoff_time: datetime, num_bars: int, label: str, cancellation_check: callable = None) -> str:
+    def _fetch_ohlcv_section_with_cutoff(self, ticker: str, interval: str, cutoff_time: datetime, num_bars: int, label: str, cancellation_check: callable = None, market_timezone: str = "America/New_York") -> str:
         """Fetch OHLCV data up to a specific cutoff time (no future data).
         
         IMPORTANT: Only includes COMPLETED bars. A bar is complete when:
@@ -421,28 +572,40 @@ class TradeCoach:
             cutoff_time: Entry time - only completed bars before this are included
             num_bars: Number of bars to fetch
             label: Label for this section
+            cancellation_check: Optional cancellation callback
+            market_timezone: Timezone of the market (e.g., "Asia/Hong_Kong" for HK stocks)
         """
         try:
+            from zoneinfo import ZoneInfo
+            
+            # Make cutoff_time timezone-aware if it's naive
+            # This is critical for correct UTC conversion in the provider
+            market_tz = ZoneInfo(market_timezone)
+            if cutoff_time.tzinfo is None:
+                cutoff_aware = cutoff_time.replace(tzinfo=market_tz)
+            else:
+                cutoff_aware = cutoff_time
+            
             # Calculate interval duration for filtering complete bars
             if interval == "1d":
                 interval_delta = timedelta(days=1)
-                start_date = cutoff_time - timedelta(days=num_bars + 10)
+                start_date = cutoff_aware - timedelta(days=num_bars + 10)
             elif interval == "2h":
                 interval_delta = timedelta(hours=2)
-                start_date = cutoff_time - timedelta(hours=num_bars * 2 + 20)
+                start_date = cutoff_aware - timedelta(hours=num_bars * 2 + 20)
             elif interval == "1h":
                 interval_delta = timedelta(hours=1)
-                start_date = cutoff_time - timedelta(hours=num_bars + 10)
+                start_date = cutoff_aware - timedelta(hours=num_bars + 10)
             elif interval == "5m":
                 interval_delta = timedelta(minutes=5)
-                start_date = cutoff_time - timedelta(minutes=num_bars * 5 + 100)
+                start_date = cutoff_aware - timedelta(minutes=num_bars * 5 + 100)
             else:
                 interval_delta = timedelta(days=1)
-                start_date = cutoff_time - timedelta(days=num_bars + 10)
+                start_date = cutoff_aware - timedelta(days=num_bars + 10)
             
             # Calculate the maximum bar start time for a COMPLETE bar
             # A bar starting at this time would end exactly at cutoff_time
-            max_complete_bar_start = cutoff_time - interval_delta
+            max_complete_bar_start = cutoff_aware - interval_delta
             
             # Check for cancellation before fetch
             if cancellation_check and cancellation_check():
@@ -454,7 +617,7 @@ class TradeCoach:
                 ticker,
                 interval,
                 start_date,
-                cutoff_time,  # Fetch up to cutoff_time, filter below
+                cutoff_aware,  # Fetch up to cutoff_time, filter below
                 cancellation_check=cancellation_check
             )
             
@@ -475,12 +638,18 @@ class TradeCoach:
                 time_col = 'datetime'
             
             if time_col:
-                # Make cutoff timezone-aware if OHLCV data is timezone-aware
+                # Handle timezone comparison for filtering
                 filter_cutoff = max_complete_bar_start
-                if ohlcv[time_col].dt.tz is not None and filter_cutoff.tzinfo is None:
-                    # OHLCV is timezone-aware, cutoff is naive - assume cutoff is in market timezone
-                    from zoneinfo import ZoneInfo
-                    filter_cutoff = max_complete_bar_start.replace(tzinfo=ZoneInfo("America/New_York"))
+                ohlcv_is_tz_aware = ohlcv[time_col].dt.tz is not None
+                cutoff_is_tz_aware = filter_cutoff.tzinfo is not None
+                
+                if ohlcv_is_tz_aware and not cutoff_is_tz_aware:
+                    # OHLCV is timezone-aware, cutoff is naive - make cutoff aware
+                    filter_cutoff = max_complete_bar_start.replace(tzinfo=market_tz)
+                elif not ohlcv_is_tz_aware and cutoff_is_tz_aware:
+                    # OHLCV is naive (UTC from Yahoo API), cutoff is aware - convert cutoff to UTC naive
+                    import pandas as pd
+                    filter_cutoff = pd.Timestamp(filter_cutoff).tz_convert('UTC').tz_localize(None).to_pydatetime()
                 
                 before_filter_count = len(ohlcv)
                 ohlcv = ohlcv[ohlcv[time_col] <= filter_cutoff]
@@ -498,19 +667,45 @@ class TradeCoach:
                 return f"=== {label} ===\nNo data available before cutoff"
             
             # Format as readable string
+            # Convert times to market timezone for consistent display to LLM
+            import pandas as pd
+            from zoneinfo import ZoneInfo
+            market_tz_obj = ZoneInfo(market_timezone)
+            
+            # Format entry time in market timezone
+            if cutoff_time.tzinfo is None:
+                entry_display = cutoff_time.strftime('%Y-%m-%d %H:%M')
+            else:
+                entry_display = cutoff_time.astimezone(market_tz_obj).strftime('%Y-%m-%d %H:%M')
+            
+            # Format signal bar time in market timezone  
+            if max_complete_bar_start.tzinfo is None:
+                signal_bar_display = max_complete_bar_start.strftime('%Y-%m-%d %H:%M')
+            else:
+                signal_bar_display = max_complete_bar_start.astimezone(market_tz_obj).strftime('%Y-%m-%d %H:%M')
+            
             lines = [f"=== {label} ==="]
-            lines.append(f"Entry time: {cutoff_time.strftime('%Y-%m-%d %H:%M')}")
-            lines.append(f"Last complete bar (SIGNAL BAR): {max_complete_bar_start.strftime('%Y-%m-%d %H:%M')}")
+            lines.append(f"Entry time: {entry_display} ({market_timezone})")
+            lines.append(f"Last complete bar (SIGNAL BAR): {signal_bar_display} ({market_timezone})")
             lines.append(f"Bars: {len(ohlcv)}")
             lines.append("timestamp, open, high, low, close, volume")
             
             # Track the last bar to explicitly label it as signal bar
             ohlcv_list = list(ohlcv.iterrows())
             for i, (_, row) in enumerate(ohlcv_list):
-                # Get timestamp from available column
+                # Get timestamp from available column and convert to market timezone
                 ts = row.get('timestamp') or row.get('datetime') or row.name
                 if hasattr(ts, 'strftime'):
-                    ts_str = ts.strftime('%Y-%m-%d %H:%M')
+                    # Convert UTC timestamp to market timezone
+                    if hasattr(ts, 'tzinfo') and ts.tzinfo is None:
+                        # Naive timestamp - assume UTC from Yahoo API
+                        ts_utc = pd.Timestamp(ts).tz_localize('UTC')
+                        ts_local = ts_utc.tz_convert(market_timezone)
+                        ts_str = ts_local.strftime('%Y-%m-%d %H:%M')
+                    elif hasattr(ts, 'tz_convert'):
+                        ts_str = ts.tz_convert(market_timezone).strftime('%Y-%m-%d %H:%M')
+                    else:
+                        ts_str = ts.strftime('%Y-%m-%d %H:%M')
                 else:
                     ts_str = str(ts)
                 
@@ -567,7 +762,7 @@ class TradeCoach:
             logger.warning(f"Failed to fetch {interval} data for {ticker}: {e}")
             return f"=== {label} ===\nData fetch failed: {e}"
 
-    def _fetch_ohlcv_section_with_cutoff_and_df(self, ticker: str, interval: str, fetch_end: datetime, num_bars: int, label: str, display_cutoff: datetime, cancellation_check: callable = None) -> tuple:
+    def _fetch_ohlcv_section_with_cutoff_and_df(self, ticker: str, interval: str, fetch_end: datetime, num_bars: int, label: str, display_cutoff: datetime, cancellation_check: callable = None, market_timezone: str = "America/New_York") -> tuple:
         """Fetch OHLCV data and return both formatted string and raw DataFrame.
         
         This is used for daily data to reuse it for session context.
@@ -580,13 +775,29 @@ class TradeCoach:
             label: Label for this section
             display_cutoff: Cutoff time for display (prior day close for LLM context)
             cancellation_check: Optional cancellation check callable
+            market_timezone: Timezone of the market (e.g., "Asia/Hong_Kong" for HK stocks)
         
         Returns:
             tuple: (formatted_string, raw_dataframe)
         """
         try:
-            # Calculate start date
-            start_date = fetch_end - timedelta(days=num_bars + 10)
+            from zoneinfo import ZoneInfo
+            import pandas as pd
+            
+            # Make fetch_end and display_cutoff timezone-aware if naive
+            market_tz = ZoneInfo(market_timezone)
+            if fetch_end.tzinfo is None:
+                fetch_end_aware = fetch_end.replace(tzinfo=market_tz)
+            else:
+                fetch_end_aware = fetch_end
+            
+            if display_cutoff.tzinfo is None:
+                display_cutoff_aware = display_cutoff.replace(tzinfo=market_tz)
+            else:
+                display_cutoff_aware = display_cutoff
+            
+            # Calculate start date (also timezone-aware)
+            start_date = fetch_end_aware - timedelta(days=num_bars + 10)
             
             # Check for cancellation before fetch
             if cancellation_check and cancellation_check():
@@ -598,7 +809,7 @@ class TradeCoach:
                 ticker,
                 interval,
                 start_date,
-                fetch_end,
+                fetch_end_aware,
                 cancellation_check=cancellation_check
             )
             
@@ -618,11 +829,14 @@ class TradeCoach:
                 time_col = 'datetime'
             
             if time_col:
-                # Make cutoff timezone-aware if OHLCV data is timezone-aware
-                filter_cutoff = display_cutoff
-                if ohlcv[time_col].dt.tz is not None and filter_cutoff.tzinfo is None:
-                    from zoneinfo import ZoneInfo
-                    filter_cutoff = display_cutoff.replace(tzinfo=ZoneInfo("America/New_York"))
+                # Handle timezone comparison for filtering
+                filter_cutoff = display_cutoff_aware
+                ohlcv_is_tz_aware = ohlcv[time_col].dt.tz is not None
+                
+                if not ohlcv_is_tz_aware and filter_cutoff.tzinfo is not None:
+                    # OHLCV is naive (UTC from Yahoo API), cutoff is aware - convert to UTC naive
+                    filter_cutoff = pd.Timestamp(filter_cutoff).tz_convert('UTC').tz_localize(None).to_pydatetime()
+                
                 ohlcv = ohlcv[ohlcv[time_col] <= filter_cutoff]
             
             # Limit to requested number of bars
@@ -632,16 +846,35 @@ class TradeCoach:
                 return f"=== {label} ===\nNo data available before cutoff", full_df
             
             # Format as readable string
+            # Convert times to market timezone for consistent display
+            from zoneinfo import ZoneInfo
+            market_tz_obj = ZoneInfo(market_timezone)
+            
+            # Format cutoff in market timezone
+            if display_cutoff_aware.tzinfo is not None:
+                cutoff_display = display_cutoff_aware.astimezone(market_tz_obj).strftime('%Y-%m-%d %H:%M')
+            else:
+                cutoff_display = display_cutoff.strftime('%Y-%m-%d %H:%M')
+            
             lines = [f"=== {label} ==="]
-            lines.append(f"Cutoff: {display_cutoff.strftime('%Y-%m-%d %H:%M')}")
+            lines.append(f"Cutoff: {cutoff_display} ({market_timezone})")
             lines.append(f"Bars: {len(ohlcv)}")
             lines.append("timestamp, open, high, low, close, volume")
             
             for _, row in ohlcv.iterrows():
-                # Get timestamp from available column
+                # Get timestamp from available column and convert to market timezone
                 ts = row.get('timestamp') or row.get('datetime') or row.name
                 if hasattr(ts, 'strftime'):
-                    ts_str = ts.strftime('%Y-%m-%d %H:%M')
+                    # Convert UTC timestamp to market timezone
+                    if hasattr(ts, 'tzinfo') and ts.tzinfo is None:
+                        # Naive timestamp - assume UTC from Yahoo API
+                        ts_utc = pd.Timestamp(ts).tz_localize('UTC')
+                        ts_local = ts_utc.tz_convert(market_timezone)
+                        ts_str = ts_local.strftime('%Y-%m-%d %H:%M')
+                    elif hasattr(ts, 'tz_convert'):
+                        ts_str = ts.tz_convert(market_timezone).strftime('%Y-%m-%d %H:%M')
+                    else:
+                        ts_str = ts.strftime('%Y-%m-%d %H:%M')
                 else:
                     ts_str = str(ts)
                 
@@ -674,16 +907,28 @@ class TradeCoach:
         rather than requiring it to parse raw OHLCV data.
         """
         try:
+            from zoneinfo import ZoneInfo
+            from app.journal.ingest import get_market_timezone
+            
+            # Make entry_cutoff timezone-aware
+            market_tz_str = get_market_timezone(trade.ticker)
+            market_tz = ZoneInfo(market_tz_str)
+            
+            if entry_cutoff.tzinfo is None:
+                entry_cutoff_aware = entry_cutoff.replace(tzinfo=market_tz)
+            else:
+                entry_cutoff_aware = entry_cutoff
+            
             # Fetch 5-min data for the trading session up to entry
             interval_delta = timedelta(minutes=5)
-            start_date = entry_cutoff - timedelta(hours=2)  # Look at last 2 hours before entry
+            start_date = entry_cutoff_aware - timedelta(hours=2)  # Look at last 2 hours before entry
             
             provider = self._get_provider_for_ticker(trade.ticker)
             ohlcv = provider.get_ohlcv(
                 trade.ticker,
                 "5m",
                 start_date,
-                entry_cutoff
+                entry_cutoff_aware
             )
             
             if ohlcv is None or ohlcv.empty or len(ohlcv) < 10:
@@ -695,11 +940,18 @@ class TradeCoach:
                 return ""
             
             # Filter to only include complete bars before entry
-            max_complete_bar_start = entry_cutoff - interval_delta
-            if ohlcv[time_col].dt.tz is not None and max_complete_bar_start.tzinfo is None:
-                from zoneinfo import ZoneInfo
-                max_complete_bar_start = max_complete_bar_start.replace(tzinfo=ZoneInfo("America/New_York"))
-            ohlcv = ohlcv[ohlcv[time_col] <= max_complete_bar_start]
+            import pandas as pd
+            max_complete_bar_start = entry_cutoff_aware - interval_delta
+            
+            # Handle timezone for filtering
+            ohlcv_is_tz_aware = ohlcv[time_col].dt.tz is not None
+            if not ohlcv_is_tz_aware and max_complete_bar_start.tzinfo is not None:
+                # OHLCV is naive (UTC), cutoff is aware - convert to UTC naive
+                filter_cutoff = pd.Timestamp(max_complete_bar_start).tz_convert('UTC').tz_localize(None).to_pydatetime()
+            else:
+                filter_cutoff = max_complete_bar_start
+            
+            ohlcv = ohlcv[ohlcv[time_col] <= filter_cutoff]
             
             if len(ohlcv) < 10:
                 return ""

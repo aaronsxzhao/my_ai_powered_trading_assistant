@@ -90,6 +90,37 @@ TEMPLATES_DIR.mkdir(exist_ok=True)
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
+# Custom Jinja2 filters
+def ticker_display(ticker: str) -> str:
+    """
+    Strip exchange prefix from ticker for display.
+    
+    Examples:
+        "HKEX:0981" -> "0981"
+        "AMEX:SOXL" -> "SOXL"
+        "SOXL" -> "SOXL"
+    """
+    if ticker and ":" in ticker:
+        return ticker.split(":", 1)[1]
+    return ticker or ""
+
+def ticker_exchange(ticker: str) -> str:
+    """
+    Extract exchange prefix from ticker.
+    
+    Examples:
+        "HKEX:0981" -> "HKEX"
+        "AMEX:SOXL" -> "AMEX"
+        "SOXL" -> ""
+    """
+    if ticker and ":" in ticker:
+        return ticker.split(":", 1)[0]
+    return ""
+
+# Register custom filters
+templates.env.filters["ticker_display"] = ticker_display
+templates.env.filters["ticker_exchange"] = ticker_exchange
+
 # Initialize database on startup
 @app.on_event("startup")
 async def startup():
@@ -436,8 +467,9 @@ async def get_trade_chart_data(trade_id: int, timeframe: str = "5m"):
         if not trade:
             return JSONResponse({"success": False, "error": "Trade not found"})
         
-        # Get the market timezone for this trade (default to NY)
-        market_tz_str = trade.market_timezone or "America/New_York"
+        # Derive market timezone from ticker (more reliable than stored field for old trades)
+        from app.journal.ingest import get_market_timezone
+        market_tz_str = get_market_timezone(trade.ticker)
         market_tz = ZoneInfo(market_tz_str)
         
         # Determine the time range to fetch
@@ -446,10 +478,19 @@ async def get_trade_chart_data(trade_id: int, timeframe: str = "5m"):
         exit_time = trade.exit_time or trade.entry_time
         
         if not entry_time and not exit_time:
-            # Fallback to trade_date
+            # Fallback to trade_date with market-specific times
             from datetime import datetime as dt
-            entry_time = dt.combine(trade.trade_date, dt.min.time().replace(hour=9, minute=30))
-            exit_time = dt.combine(trade.trade_date, dt.min.time().replace(hour=16))
+            # Market open/close times by timezone
+            market_hours = {
+                "Asia/Hong_Kong": (9, 30, 16, 0),     # 9:30 AM - 4:00 PM HKT
+                "Asia/Shanghai": (9, 30, 15, 0),     # 9:30 AM - 3:00 PM CST
+                "Asia/Tokyo": (9, 0, 15, 0),         # 9:00 AM - 3:00 PM JST
+                "Europe/London": (8, 0, 16, 30),     # 8:00 AM - 4:30 PM GMT/BST
+                "America/New_York": (9, 30, 16, 0),  # 9:30 AM - 4:00 PM EST/EDT
+            }
+            open_h, open_m, close_h, close_m = market_hours.get(market_tz_str, (9, 30, 16, 0))
+            entry_time = dt.combine(trade.trade_date, dt.min.time().replace(hour=open_h, minute=open_m))
+            exit_time = dt.combine(trade.trade_date, dt.min.time().replace(hour=close_h, minute=close_m))
         
         # Make times timezone-aware in market timezone
         if entry_time.tzinfo is None:
@@ -512,7 +553,7 @@ async def get_trade_chart_data(trade_id: int, timeframe: str = "5m"):
             })
         
         # Convert to TradingView Lightweight Charts format
-        # Format: { time: unix_timestamp, open, high, low, close }
+        # Format: { time: unix_timestamp, open, high, low, close, volume }
         candles = []
         for _, row in df.iterrows():
             # Convert datetime to Unix timestamp (seconds)
@@ -524,6 +565,7 @@ async def get_trade_chart_data(trade_id: int, timeframe: str = "5m"):
                 "high": round(float(row['high']), 4),
                 "low": round(float(row['low']), 4),
                 "close": round(float(row['close']), 4),
+                "volume": int(row['volume']) if 'volume' in row and row['volume'] else 0,
             })
         
         # Sort by time
@@ -556,7 +598,7 @@ async def get_trade_chart_data(trade_id: int, timeframe: str = "5m"):
             # Entry color: LONG=BUY=Green, SHORT=SELL=Red
             is_long = trade.direction.value == "long"
             entry_color = "#26a69a" if is_long else "#ef5350"  # Green for buy, Red for sell
-            entry_label = "BUY" if is_long else "SELL"
+            entry_label = "𝗕𝗨𝗬" if is_long else "𝗦𝗘𝗟𝗟"  # Bold Unicode
             
             markers.append({
                 "time": snapped_entry_ts,
@@ -582,7 +624,7 @@ async def get_trade_chart_data(trade_id: int, timeframe: str = "5m"):
             # Exit color: LONG exit=SELL=Red, SHORT exit=BUY=Green
             is_long = trade.direction.value == "long"
             exit_color = "#ef5350" if is_long else "#26a69a"  # Red for sell, Green for buy
-            exit_label = "SELL" if is_long else "BUY"
+            exit_label = "𝗦𝗘𝗟𝗟" if is_long else "𝗕𝗨𝗬"  # Bold Unicode
             
             markers.append({
                 "time": snapped_exit_ts,
@@ -601,8 +643,8 @@ async def get_trade_chart_data(trade_id: int, timeframe: str = "5m"):
         price_lines.append({
             "price": trade.entry_price,
             "color": entry_line_color,
-            "lineWidth": 2,
-            "lineStyle": 0,  # Solid
+            "lineWidth": 1,
+            "lineStyle": 2,  # Dashed (same as stop/target)
             "title": "Entry",
         })
         
@@ -612,8 +654,8 @@ async def get_trade_chart_data(trade_id: int, timeframe: str = "5m"):
             price_lines.append({
                 "price": trade.exit_price,
                 "color": exit_line_color,
-                "lineWidth": 2,
-                "lineStyle": 0,
+                "lineWidth": 1,
+                "lineStyle": 2,  # Dashed (same as stop/target)
                 "title": "Exit",
             })
         
