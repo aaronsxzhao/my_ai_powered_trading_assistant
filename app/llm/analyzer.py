@@ -298,6 +298,7 @@ class LLMAnalyzer:
         stop_price: Optional[float] = None,  # SL - Stop Loss level (where trade is wrong)
         target_price: Optional[float] = None,  # TP - Take Profit level
         entry_reason: Optional[str] = None,
+        exit_reason: Optional[str] = None,
         notes: Optional[str] = None,
         ohlcv_context: Optional[str] = None,
         r_multiple: Optional[float] = None,
@@ -514,6 +515,7 @@ class LLMAnalyzer:
             intended_setup=intended_setup or entry_reason or "not specified",
             trade_type=trade_type or "not specified",
             entry_reason=entry_reason or "not provided",
+            exit_reason=exit_reason or "not provided",
             invalidation=invalidation_condition or "not provided",
             management_plan=management_plan or "not specified",
             # Session context

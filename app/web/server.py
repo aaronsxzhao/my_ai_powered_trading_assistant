@@ -266,7 +266,7 @@ async def update_trade_notes(trade_id: int, request: Request):
         # Allowed fields that can be updated via this endpoint
         allowed_fields = {
             # Notes
-            'notes', 'entry_reason', 'setup_type', 'signal_reason', 'mistakes', 'lessons', 'mistakes_and_lessons',
+            'notes', 'entry_reason', 'exit_reason', 'setup_type', 'signal_reason', 'mistakes', 'lessons', 'mistakes_and_lessons',
             # Brooks intent
             'trade_type', 'confidence_level', 'emotional_state', 'followed_plan',
             'stop_reason', 'target_reason', 'invalidation_condition',
@@ -729,6 +729,18 @@ async def get_trade_chart_data(
     
     Returns candlestick data up to (and optionally after) the trade's entry time.
     """
+    import asyncio
+    
+    # Run the blocking data fetch in a thread to not block the event loop
+    # This allows other requests (like navigation) to be processed during data fetch
+    result = await asyncio.to_thread(
+        _fetch_chart_data_sync, trade_id, timeframe, rth_only, show_after_entry
+    )
+    return JSONResponse(result)
+
+
+def _fetch_chart_data_sync(trade_id: int, timeframe: str, rth_only: bool, show_after_entry: bool) -> dict:
+    """Synchronous chart data fetching - runs in a thread pool."""
     from datetime import timedelta
     from zoneinfo import ZoneInfo
     from app.data.cache import get_cached_ohlcv
@@ -738,7 +750,7 @@ async def get_trade_chart_data(
     try:
         trade = session.query(Trade).filter(Trade.id == trade_id).first()
         if not trade:
-            return JSONResponse({"success": False, "error": "Trade not found"})
+            return {"success": False, "error": "Trade not found"}
         
         # Derive market timezone from ticker (more reliable than stored field for old trades)
         from app.journal.ingest import get_market_timezone
@@ -870,10 +882,10 @@ async def get_trade_chart_data(
                 )
             else:
                 error_msg = f"No data available for {trade.ticker} ({original_timeframe})"
-            return JSONResponse({
+            return {
                 "success": False, 
                 "error": error_msg
-            })
+            }
         
         # Filter to RTH (Regular Trading Hours) if requested
         # RTH for US: 9:30 AM - 4:00 PM ET
@@ -910,10 +922,10 @@ async def get_trade_chart_data(
             df = df[rth_mask]
             
             if df.empty:
-                return JSONResponse({
+                return {
                     "success": False,
                     "error": f"No RTH data available. Try disabling RTH filter."
-                })
+                }
         
         # Filter to cut off at entry time if show_after_entry is False
         if not show_after_entry:
@@ -927,10 +939,10 @@ async def get_trade_chart_data(
             df = df[df['datetime'] <= entry_compare]
             
             if df.empty:
-                return JSONResponse({
+                return {
                     "success": False,
                     "error": f"No data before entry time."
-                })
+                }
         
         # Convert to TradingView Lightweight Charts format
         # Format: { time: unix_timestamp, open, high, low, close, volume }
@@ -1076,7 +1088,7 @@ async def get_trade_chart_data(
             days_old = (datetime.now().date() - trade.trade_date).days
             timeframe_note = f"Intraday data not available (trade is {days_old} days old). Showing daily chart."
         
-        return JSONResponse({
+        return {
             "success": True,
             "ticker": trade.ticker,
             "timeframe": timeframe,
@@ -1096,12 +1108,12 @@ async def get_trade_chart_data(
                 "r_multiple": trade.r_multiple,
             },
             "debug": debug_info,
-        })
+        }
         
     except Exception as e:
         logger.error(f"Error fetching chart data: {e}")
         import traceback
-        return JSONResponse({"success": False, "error": str(e), "traceback": traceback.format_exc()})
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
     finally:
         session.close()
 

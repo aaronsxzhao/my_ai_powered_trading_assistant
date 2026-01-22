@@ -272,6 +272,7 @@ class TradeCoach:
                     stop_price=trade.effective_stop_loss,
                     target_price=trade.effective_take_profit,
                     entry_reason=trade.entry_reason,
+                    exit_reason=trade.exit_reason,
                     notes=trade.notes,
                     ohlcv_context=ohlcv_context,
                     r_multiple=trade.r_multiple,

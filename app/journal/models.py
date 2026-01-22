@@ -168,7 +168,6 @@ class Trade(Base):
     strategy_id = Column(Integer, ForeignKey("strategies.id"))
     strategy = relationship("Strategy", back_populates="trades")
     setup_type = Column(String(50))  # Quick classification
-    setup_notes = Column(Text)
     
     # Original AI classification (preserved even if strategy is manually changed)
     ai_setup_classification = Column(String(100))  # Original AI classification, never overwritten

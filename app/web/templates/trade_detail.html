@@ -140,183 +140,169 @@
         </div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <!-- Trade Details -->
-        <div class="card">
-            <div class="flex items-center justify-between mb-4">
-                <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                    📊 Trade Details
-                </h2>
-                <button onclick="openEditTradeModal()" class="btn btn-secondary text-sm py-1.5 px-3">
-                    ✏️ Edit
-                </button>
-            </div>
-            <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <div class="stat-card">
-                    <div class="text-sm text-dark-400 mb-1">Entry</div>
-                    <div class="text-xl font-mono font-bold text-white">${{ "%.4f"|format(trade.entry_price) }}</div>
-                </div>
-                <div class="stat-card">
-                    <div class="text-sm text-dark-400 mb-1">Exit</div>
-                    <div class="text-xl font-mono font-bold text-white">${{ "%.4f"|format(trade.exit_price) if trade.exit_price else '-' }}</div>
-                </div>
-                <div class="stat-card">
-                    <div class="text-sm text-dark-400 mb-1">Stop Loss</div>
-                    <div class="text-xl font-mono font-bold text-white">
-                        {% if trade.effective_stop_loss %}
-                        ${{ "%.4f"|format(trade.effective_stop_loss) }}
-                        {% else %}
-                        <span class="text-dark-500">Not set</span>
-                        {% endif %}
-                    </div>
-                </div>
-                <div class="stat-card">
-                    <div class="text-sm text-dark-400 mb-1">Take Profit</div>
-                    <div class="text-xl font-mono font-bold text-white">
-                        {% if trade.effective_take_profit %}
-                        ${{ "%.4f"|format(trade.effective_take_profit) }}
-                        {% else %}
-                        <span class="text-dark-500">Not set</span>
-                        {% endif %}
-                    </div>
-                </div>
-                <div class="stat-card">
-                    <div class="text-sm text-dark-400 mb-1">Size</div>
-                    <div class="text-xl font-bold text-white">{{ "%.0f"|format(trade.size) if trade.size else '1' }}</div>
-                </div>
-                <div class="stat-card">
-                    <div class="text-sm text-dark-400 mb-1">Duration</div>
-                    <div class="text-lg font-mono text-white">{{ trade.duration_display }}</div>
-                </div>
+    <!-- Trade Details (Full Width) -->
+    <div class="card mb-6">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                📊 Trade Details
+            </h2>
+            <button onclick="openEditTradeModal()" class="btn btn-secondary text-sm py-1.5 px-3">
+                ✏️ Edit
+            </button>
+        </div>
+        
+        <!-- Main Stats Grid -->
+        <div class="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-10 gap-3">
+            <!-- Entry -->
+            <div class="bg-dark-800/50 rounded-lg p-3 text-center">
+                <div class="text-xs text-dark-500 mb-1">Entry</div>
+                <div class="text-lg font-mono font-bold text-white">${{ "%.2f"|format(trade.entry_price) }}</div>
                 {% if trade.entry_time %}
-                <div class="stat-card">
-                    <div class="text-sm text-dark-400 mb-1">Entry Time</div>
-                    <div class="text-sm font-mono text-white">{{ trade.entry_time.strftime('%m/%d %H:%M:%S') }}</div>
-                    {% if trade.input_timezone and trade.input_timezone != trade.market_timezone and trade.entry_time_local %}
-                    <div class="text-xs text-dark-500 mt-1">({{ trade.entry_time_local.strftime('%H:%M:%S') }} {{ trade.input_timezone.split('/')[-1] | replace('_', ' ') }})</div>
-                    {% endif %}
-                </div>
+                <div class="text-xs text-dark-500 mt-1">{{ trade.entry_time.strftime('%H:%M') }}</div>
                 {% endif %}
+            </div>
+            <!-- Exit -->
+            <div class="bg-dark-800/50 rounded-lg p-3 text-center">
+                <div class="text-xs text-dark-500 mb-1">Exit</div>
+                <div class="text-lg font-mono font-bold text-white">${{ "%.2f"|format(trade.exit_price) if trade.exit_price else '-' }}</div>
                 {% if trade.exit_time %}
-                <div class="stat-card">
-                    <div class="text-sm text-dark-400 mb-1">Exit Time</div>
-                    <div class="text-sm font-mono text-white">{{ trade.exit_time.strftime('%m/%d %H:%M:%S') }}</div>
-                    {% if trade.input_timezone and trade.input_timezone != trade.market_timezone and trade.exit_time_local %}
-                    <div class="text-xs text-dark-500 mt-1">({{ trade.exit_time_local.strftime('%H:%M:%S') }} {{ trade.input_timezone.split('/')[-1] | replace('_', ' ') }})</div>
-                    {% endif %}
-                </div>
+                <div class="text-xs text-dark-500 mt-1">{{ trade.exit_time.strftime('%H:%M') }}</div>
                 {% endif %}
-                <div class="stat-card">
-                    <div class="text-sm text-dark-400 mb-1">Timeframe</div>
-                    <div class="text-sm font-medium">
-                        {% set tf = trade.timeframe or '5m' %}
-                        {% if tf == '5m' %}
-                            <span class="badge bg-purple-500/20 text-purple-400 border border-purple-500/30">5 min</span>
-                        {% elif tf == '2h' %}
-                            <span class="badge bg-amber-500/20 text-amber-400 border border-amber-500/30">2 hour</span>
-                        {% elif tf == '1d' %}
-                            <span class="badge bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">Daily</span>
-                        {% else %}
-                            <span class="badge bg-dark-600 text-dark-300">{{ tf }}</span>
-                        {% endif %}
-                    </div>
+            </div>
+            <!-- Stop Loss -->
+            <div class="bg-dark-800/50 rounded-lg p-3 text-center">
+                <div class="text-xs text-dark-500 mb-1">Stop</div>
+                <div class="text-lg font-mono font-bold {% if trade.effective_stop_loss %}text-orange-400{% else %}text-dark-600{% endif %}">
+                    {% if trade.effective_stop_loss %}${{ "%.2f"|format(trade.effective_stop_loss) }}{% else %}—{% endif %}
                 </div>
-                <div class="stat-card overflow-hidden">
-                    <div class="text-sm text-dark-400 mb-1">Strategy</div>
-                    <div class="text-sm font-medium text-accent-400 truncate max-w-full" title="{{ trade.strategy.name if trade.strategy else 'Unclassified' }}">
-                        {{ trade.strategy.name if trade.strategy else 'Unclassified' }}
-                    </div>
-                    {% if trade.ai_setup_classification and trade.strategy and trade.ai_setup_classification != trade.strategy.name %}
-                    <div class="text-xs text-dark-500 mt-1 truncate" title="AI: {{ trade.ai_setup_classification }}">AI: {{ trade.ai_setup_classification }}</div>
-                    {% endif %}
-                    <button onclick="openStrategyModal()" class="text-xs text-dark-400 hover:text-accent-400 mt-1">✏️ Edit</button>
+            </div>
+            <!-- Take Profit -->
+            <div class="bg-dark-800/50 rounded-lg p-3 text-center">
+                <div class="text-xs text-dark-500 mb-1">Target</div>
+                <div class="text-lg font-mono font-bold {% if trade.effective_take_profit %}text-blue-400{% else %}text-dark-600{% endif %}">
+                    {% if trade.effective_take_profit %}${{ "%.2f"|format(trade.effective_take_profit) }}{% else %}—{% endif %}
                 </div>
-                <div class="stat-card">
-                    <div class="text-sm text-dark-400 mb-1">Result</div>
-                    {% if trade.outcome %}
-                        {% if trade.outcome.value == 'win' %}
-                            <span class="win text-base">WIN</span>
-                        {% elif trade.outcome.value == 'loss' %}
-                            <span class="loss text-base">LOSS</span>
-                        {% else %}
-                            <span class="breakeven text-base">B/E</span>
-                        {% endif %}
+            </div>
+            <!-- Size -->
+            <div class="bg-dark-800/50 rounded-lg p-3 text-center">
+                <div class="text-xs text-dark-500 mb-1">Size</div>
+                <div class="text-lg font-bold text-white">{{ "%.0f"|format(trade.size) if trade.size else '1' }}</div>
+            </div>
+            <!-- Direction -->
+            <div class="bg-dark-800/50 rounded-lg p-3 text-center">
+                <div class="text-xs text-dark-500 mb-1">Direction</div>
+                {% if trade.direction.value == 'long' %}
+                <div class="text-lg font-bold text-success-400">LONG</div>
+                {% else %}
+                <div class="text-lg font-bold text-danger-400">SHORT</div>
+                {% endif %}
+            </div>
+            <!-- Duration -->
+            <div class="bg-dark-800/50 rounded-lg p-3 text-center">
+                <div class="text-xs text-dark-500 mb-1">Duration</div>
+                <div class="text-sm font-mono text-white">{{ trade.duration_display }}</div>
+            </div>
+            <!-- Timeframe -->
+            <div class="bg-dark-800/50 rounded-lg p-3 text-center">
+                <div class="text-xs text-dark-500 mb-1">TF</div>
+                {% set tf = trade.timeframe or '5m' %}
+                {% if tf == '5m' %}
+                <span class="text-sm font-medium text-purple-400">5m</span>
+                {% elif tf == '2h' %}
+                <span class="text-sm font-medium text-amber-400">2h</span>
+                {% elif tf == '1d' %}
+                <span class="text-sm font-medium text-cyan-400">1D</span>
+                {% else %}
+                <span class="text-sm font-medium text-dark-300">{{ tf }}</span>
+                {% endif %}
+            </div>
+            <!-- Strategy -->
+            <div class="bg-dark-800/50 rounded-lg p-3 text-center">
+                <div class="text-xs text-dark-500 mb-1">Setup</div>
+                <div class="text-sm font-medium text-accent-400 truncate" title="{{ trade.strategy.name if trade.strategy else 'Unclassified' }}">
+                    {{ (trade.strategy.name if trade.strategy else 'Unclassified')[:12] }}{% if trade.strategy and trade.strategy.name|length > 12 %}...{% endif %}
+                </div>
+                <button onclick="openStrategyModal()" class="text-xs text-dark-500 hover:text-accent-400">edit</button>
+            </div>
+            <!-- Result -->
+            <div class="bg-dark-800/50 rounded-lg p-3 text-center">
+                <div class="text-xs text-dark-500 mb-1">Result</div>
+                {% if trade.outcome %}
+                    {% if trade.outcome.value == 'win' %}
+                    <span class="text-lg font-bold text-success-400">WIN</span>
+                    {% elif trade.outcome.value == 'loss' %}
+                    <span class="text-lg font-bold text-danger-400">LOSS</span>
                     {% else %}
-                        <span class="text-dark-500">-</span>
+                    <span class="text-lg font-bold text-dark-400">B/E</span>
                     {% endif %}
-                </div>
-            </div>
-
-            {% if trade.mae or trade.mfe %}
-            <div class="mt-4 pt-4 border-t border-dark-700 grid grid-cols-2 gap-4">
-                {% if trade.mae %}
-                <div>
-                    <div class="text-sm text-dark-400">MAE (Max Adverse)</div>
-                    <div class="font-mono text-danger-400 text-lg">{{ "%.2f"|format(trade.mae) }}R</div>
-                </div>
-                {% endif %}
-                {% if trade.mfe %}
-                <div>
-                    <div class="text-sm text-dark-400">MFE (Max Favorable)</div>
-                    <div class="font-mono text-success-400 text-lg">{{ "%.2f"|format(trade.mfe) }}R</div>
-                </div>
+                {% else %}
+                <span class="text-dark-600">—</span>
                 {% endif %}
             </div>
-            {% endif %}
+        </div>
 
-            {% if trade.notes %}
-            <div class="mt-4 pt-4 border-t border-dark-700">
-                <div class="text-sm text-dark-400 mb-2">Notes</div>
-                <div class="text-dark-200 bg-dark-900/50 rounded-lg p-3">{{ trade.notes }}</div>
+        <!-- MAE/MFE Row (if available) -->
+        {% if trade.mae or trade.mfe %}
+        <div class="mt-3 pt-3 border-t border-dark-700/50 flex items-center gap-6 text-sm">
+            {% if trade.mae %}
+            <div class="flex items-center gap-2">
+                <span class="text-dark-500">MAE:</span>
+                <span class="font-mono text-danger-400">{{ "%.2f"|format(trade.mae) }}R</span>
             </div>
             {% endif %}
-
-            {% if trade.entry_reason %}
-            <div class="mt-4 pt-4 border-t border-dark-700">
-                <div class="text-sm text-dark-400 mb-2">Entry Reason</div>
-                <div class="text-dark-200 bg-dark-900/50 rounded-lg p-3">{{ trade.entry_reason }}</div>
+            {% if trade.mfe %}
+            <div class="flex items-center gap-2">
+                <span class="text-dark-500">MFE:</span>
+                <span class="font-mono text-success-400">{{ "%.2f"|format(trade.mfe) }}R</span>
+            </div>
+            {% endif %}
+            {% if trade.ai_setup_classification and trade.strategy and trade.ai_setup_classification != trade.strategy.name %}
+            <div class="flex items-center gap-2 ml-auto">
+                <span class="text-dark-500 text-xs">AI classified:</span>
+                <span class="text-xs text-dark-400">{{ trade.ai_setup_classification }}</span>
             </div>
             {% endif %}
         </div>
+        {% endif %}
+    </div>
 
-        <!-- AI Review -->
-        <div class="card" id="review-card">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                    🧠 AI Coaching Review
-                    <span id="cache-badge" class="badge bg-dark-700 text-dark-400 text-xs hidden">Cached</span>
-                </h2>
-                <div class="flex items-center gap-3">
-                    <div id="review-grade" class="flex items-center gap-2 hidden">
-                        <span class="text-sm text-dark-400">Grade:</span>
-                        <span id="grade-value" class="text-3xl font-bold"></span>
-                    </div>
+    <!-- AI Coaching Review (Full Width) -->
+    <div class="card mb-6" id="review-card">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                🧠 AI Coaching Review
+                <span id="cache-badge" class="badge bg-dark-700 text-dark-400 text-xs hidden">Cached</span>
+            </h2>
+            <div class="flex items-center gap-3">
+                <div id="review-grade" class="flex items-center gap-2 hidden">
+                    <span class="text-sm text-dark-400">Grade:</span>
+                    <span id="grade-value" class="text-2xl font-bold"></span>
                 </div>
             </div>
-            <div id="review-meta" class="text-xs text-dark-500 mb-3 hidden">
-                Generated: <span id="generated-at"></span>
-            </div>
+        </div>
+        <div id="review-meta" class="text-xs text-dark-500 mb-3 hidden">
+            Generated: <span id="generated-at"></span>
+        </div>
 
-            <!-- Initial State - Show Generate Button -->
-            <div id="review-initial" class="py-12 text-center">
-                <div class="text-5xl mb-4">🧠</div>
-                <h3 class="text-lg font-medium text-white mb-2">AI Coaching Review</h3>
-                <p class="text-dark-400 text-sm mb-6 max-w-sm mx-auto">
-                    Get Brooks-style analysis of your trade including setup classification, execution review, and coaching advice.
-                </p>
-                {% if has_materials %}
-                <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-500/10 border border-green-500/30 text-green-400 text-xs mb-4">
-                    <span>📚</span>
-                    <span>Training materials active</span>
-                </div>
-                {% endif %}
-                <div>
-                    <button onclick="loadReview(false)" class="btn btn-primary text-lg px-8 py-3">
-                        ✨ Generate Review
-                    </button>
-                </div>
-                <p class="text-dark-500 text-xs mt-3">Uses cached review if available</p>
+        <!-- Initial State - Show Generate Button -->
+        <div id="review-initial" class="py-8 text-center">
+            <div class="text-4xl mb-3">🧠</div>
+            <p class="text-dark-400 text-sm mb-4 max-w-sm mx-auto">
+                Get Brooks-style analysis including setup classification, execution review, and coaching advice.
+            </p>
+            {% if has_materials %}
+            <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-500/10 border border-green-500/30 text-green-400 text-xs mb-4">
+                <span>📚</span>
+                <span>Training materials active</span>
             </div>
+            {% endif %}
+            <div>
+                <button onclick="loadReview(false)" class="btn btn-primary px-6 py-2">
+                    ✨ Generate Review
+                </button>
+            </div>
+            <p class="text-dark-500 text-xs mt-2">Uses cached review if available</p>
+        </div>
 
             <!-- Loading State with Progress -->
             <div id="review-loading" class="py-8 hidden">
@@ -414,13 +400,12 @@
                 </div>
             </div>
 
-            <!-- Error State -->
-            <div id="review-error" class="hidden text-center py-12">
-                <div class="text-4xl mb-3">🤔</div>
-                <p class="text-dark-300 mb-2" id="error-message">Review not available</p>
-                <p class="text-sm text-dark-500">Check your LLM connection in Settings</p>
-                <a href="/settings" class="btn btn-secondary mt-4">⚙️ Check Settings</a>
-            </div>
+        <!-- Error State -->
+        <div id="review-error" class="hidden text-center py-12">
+            <div class="text-4xl mb-3">🤔</div>
+            <p class="text-dark-300 mb-2" id="error-message">Review not available</p>
+            <p class="text-sm text-dark-500">Check your LLM connection in Settings</p>
+            <a href="/settings" class="btn btn-secondary mt-4">⚙️ Check Settings</a>
         </div>
     </div>
 
@@ -550,10 +535,17 @@
             </div>
             
             <!-- 9. Entry-TP Distance -->
-            <div class="md:col-span-2">
+            <div>
                 <label class="label">8️⃣ Are Entry and TP Too Far Apart?</label>
                 <textarea id="entry-tp-distance-field" rows="2" class="input resize-none" 
                     placeholder="Is the R:R realistic? Is the target too ambitious? Would you scale out?">{{ trade.entry_tp_distance or '' }}</textarea>
+            </div>
+            
+            <!-- 10. Reason for Exit -->
+            <div>
+                <label class="label">9️⃣ Reason for Exit</label>
+                <textarea id="exit-reason-field" rows="2" class="input resize-none" 
+                    placeholder="Why did you exit? Hit target? Hit stop? Trailed out? Time-based? Fear/greed?">{{ trade.exit_reason or '' }}</textarea>
             </div>
         </div>
         
@@ -567,14 +559,14 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             <!-- 10. Entry/Exit Emotions -->
             <div class="md:col-span-2">
-                <label class="label">9️⃣ Emotions at Entry & Exit (Any Hesitation?)</label>
+                <label class="label">🔟 Emotions at Entry & Exit (Any Hesitation?)</label>
                 <textarea id="entry-exit-emotions-field" rows="2" class="input resize-none" 
                     placeholder="How did you feel entering? Exiting? Any hesitation? Fear? Greed? Rushed?">{{ trade.entry_exit_emotions or '' }}</textarea>
             </div>
             
-            <!-- 6. Mistakes Made & Lessons Learned (Merged) -->
+            <!-- 11. Mistakes Made & Lessons Learned (Merged) -->
             <div class="md:col-span-2">
-                <label class="label">🔟 Mistakes Made & Lessons Learned (Why did trade succeed/fail?)</label>
+                <label class="label">⓫ Mistakes Made & Lessons Learned (Why did trade succeed/fail?)</label>
                 <textarea id="mistakes-lessons-field" rows="4" class="input resize-none" 
                     placeholder="What mistakes were made? Selection error? Execution error? Entered too early/late?&#10;What would you do differently next time? What rule for the next 20 trades?">{{ trade.mistakes_and_lessons or ((trade.mistakes or '') + ('\n\n' if trade.mistakes and trade.lessons else '') + (trade.lessons or '')) }}</textarea>
             </div>
@@ -1492,6 +1484,7 @@ async function saveNotes() {
         // Risk & Targets
         stop_reason: document.getElementById('stop-reason-field').value || null,
         target_reason: document.getElementById('target-reason-field').value || null,
+        exit_reason: document.getElementById('exit-reason-field').value || null,
         // Extended Brooks analysis fields
         trend_assessment: document.getElementById('trend-assessment-field').value || null,
         signal_reason: document.getElementById('signal-reason-field').value || null,
