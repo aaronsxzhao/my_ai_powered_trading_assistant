@@ -266,7 +266,7 @@ async def update_trade_notes(trade_id: int, request: Request):
         # Allowed fields that can be updated via this endpoint
         allowed_fields = {
             # Notes
-            'notes', 'entry_reason', 'mistakes', 'lessons', 'mistakes_and_lessons',
+            'notes', 'entry_reason', 'setup_type', 'signal_reason', 'mistakes', 'lessons', 'mistakes_and_lessons',
             # Brooks intent
             'trade_type', 'confidence_level', 'emotional_state', 'followed_plan',
             'stop_reason', 'target_reason', 'invalidation_condition',
@@ -602,6 +602,9 @@ async def download_trade_data(trade_id: int):
         
         # Run download in thread pool
         def _download():
+            # Suppress SWIG warnings before import
+            import warnings
+            warnings.filterwarnings("ignore", category=DeprecationWarning)
             import databento as db
             
             client = db.Historical(key=api_key)

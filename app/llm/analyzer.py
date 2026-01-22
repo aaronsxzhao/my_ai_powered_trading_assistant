@@ -46,8 +46,8 @@ def _get_materials_for_trade(
                 timeframe=timeframe,
                 entry_reason=entry_reason,
                 setup_type=setup_type,
-                n_chunks=5,
-                max_chars=8000
+                n_chunks=50,
+                max_chars=50000
             )
             if materials:
                 logger.debug(f"📚 Retrieved relevant materials via RAG")
@@ -66,8 +66,8 @@ def _get_materials_for_trade(
                     timeframe=timeframe,
                     entry_reason=entry_reason,
                     setup_type=setup_type,
-                    n_chunks=5,
-                    max_chars=8000
+                    n_chunks=50,
+                    max_chars=50000
                 )
                 if materials:
                     return materials

@@ -19,9 +19,10 @@ import warnings
 
 # Suppress SWIG deprecation warnings from databento's C++ bindings
 # These come from C++ SWIG wrappers and are harmless
-warnings.filterwarnings("ignore", message=".*Swig.*has no __module__ attribute")
-warnings.filterwarnings("ignore", message=".*swig.*has no __module__ attribute")
-warnings.filterwarnings("ignore", message="builtin type .* has no __module__ attribute")
+warnings.filterwarnings("ignore", message=".*Swig.*")
+warnings.filterwarnings("ignore", message=".*swig.*")
+warnings.filterwarnings("ignore", message=".*__module__ attribute.*")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="importlib.*")
 
 import pandas as pd
 import pytz
@@ -1061,6 +1062,9 @@ class DatabentoProvider(DataProvider):
         """Get or create Databento client (lazy initialization)."""
         if self._client is None and self.api_key:
             try:
+                # Suppress SWIG warnings right before import
+                import warnings
+                warnings.filterwarnings("ignore", category=DeprecationWarning)
                 import databento as db
                 self._client = db.Historical(key=self.api_key)
             except ImportError:
@@ -1229,6 +1233,9 @@ class DatabentoProvider(DataProvider):
         Returns:
             DataFrame with OHLCV data, or empty DataFrame if no data found
         """
+        # Suppress SWIG warnings before import
+        import warnings
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
         import databento as db
         
         matching_files = self._find_local_dbn_files(base_symbol, schema, start, end)

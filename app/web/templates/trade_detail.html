@@ -501,27 +501,27 @@
             <!-- 2. Entry Setup (Brooks Label) -->
             <div>
                 <label class="label">2️⃣ Entry Setup (Brooks Label)</label>
-                <textarea id="entry-reason-field" rows="2" class="input resize-none" 
-                    placeholder="What Brooks setup? (H2 pullback, breakout pullback, failed BO fade, wedge reversal...)">{{ trade.entry_reason or '' }}</textarea>
+                <textarea id="setup-type-field" rows="2" class="input resize-none" 
+                    placeholder="What Brooks setup? (H2 pullback, breakout pullback, failed BO fade, wedge reversal...)">{{ trade.setup_type or '' }}</textarea>
             </div>
             
             <!-- 3. Reason for Entry -->
             <div>
                 <label class="label">3️⃣ Reason for Entry</label>
-                <textarea id="signal-reason-field" rows="2" class="input resize-none" 
-                    placeholder="Strong Signal Bar, BO & Follow-thru, High 2, Low 2, Gap setup, 2nd entry...">{{ trade.signal_reason or '' }}</textarea>
+                <textarea id="entry-reason-field" rows="2" class="input resize-none" 
+                    placeholder="Why did you take this entry? What convinced you to enter?">{{ trade.entry_reason or '' }}</textarea>
             </div>
             
-            <!-- 4. Was There a Signal? -->
+            <!-- 4. Signal Bar Details -->
             <div>
-                <label class="label">4️⃣ Was There a Signal? If Not, Why?</label>
-                <textarea id="was-signal-field" rows="2" class="input resize-none" 
-                    placeholder="Did you wait for the signal bar? If you entered without a signal, why?">{{ trade.was_signal_present or '' }}</textarea>
+                <label class="label">4️⃣ Signal Bar Details</label>
+                <textarea id="signal-reason-field" rows="3" class="input resize-none" 
+                    placeholder="Was there a signal bar? What type? (Strong bull bar, doji, etc.) If no signal, why did you enter anyway?">{{ trade.signal_reason or trade.was_signal_present or '' }}</textarea>
             </div>
             
             <!-- 5. Strategy Alignment & Invalidation -->
             <div>
-                <label class="label">5️⃣ Does this entry align with all the criteria of the chosen strategt? Any invalidation?</label>
+                <label class="label">5️⃣ Does this entry align with all the criteria of the chosen strategy? Any invalidation?</label>
                 <textarea id="strategy-alignment-field" rows="2" class="input resize-none" 
                     placeholder="Does entry align with all criteria? Any invalidation condition met? What would prove trade wrong?">{{ trade.strategy_alignment or trade.invalidation_condition or '' }}</textarea>
             </div>
@@ -1480,7 +1480,9 @@ async function saveNotes() {
     const data = {
         // Basic notes
         notes: document.getElementById('notes-field').value,
+        setup_type: document.getElementById('setup-type-field').value,
         entry_reason: document.getElementById('entry-reason-field').value,
+        signal_reason: document.getElementById('signal-reason-field').value,
         mistakes_and_lessons: document.getElementById('mistakes-lessons-field').value,
         // Quick selectors
         trade_type: document.getElementById('trade-type-field').value || null,
@@ -1493,7 +1495,6 @@ async function saveNotes() {
         // Extended Brooks analysis fields
         trend_assessment: document.getElementById('trend-assessment-field').value || null,
         signal_reason: document.getElementById('signal-reason-field').value || null,
-        was_signal_present: document.getElementById('was-signal-field').value || null,
         strategy_alignment: document.getElementById('strategy-alignment-field').value || null,
         entry_exit_emotions: document.getElementById('entry-exit-emotions-field').value || null,
         entry_tp_distance: document.getElementById('entry-tp-distance-field').value || null,

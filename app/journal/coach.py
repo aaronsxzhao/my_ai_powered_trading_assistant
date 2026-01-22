@@ -299,7 +299,7 @@ class TradeCoach:
                     trade_date=str(trade.trade_date) if trade.trade_date else None,
                     market=self._get_market_name(trade),
                     timezone=get_market_timezone(trade.ticker),
-                    intended_setup=trade.entry_reason,
+                    intended_setup=trade.setup_type,  # Brooks setup label (e.g., "H2 pullback")
                     management_plan=trade.target_reason,
                     pd_high=pd_high,
                     pd_low=pd_low,

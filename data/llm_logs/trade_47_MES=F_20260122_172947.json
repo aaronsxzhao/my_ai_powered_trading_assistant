@@ -1,0 +1,78 @@
+{
+  "metadata": {
+    "trade_id": 47,
+    "ticker": "MES=F",
+    "direction": "short",
+    "trade_date": "2025-11-12",
+    "entry_time": "2025-11-12 10:55:01",
+    "exit_time": "2025-11-12 11:45:00",
+    "entry_price": 6921.75,
+    "exit_price": 6911.5,
+    "r_multiple": 0.3565217391304348,
+    "timeframe": "5m",
+    "generated_at": "2026-01-22T17:29:47.579227"
+  },
+  "ohlcv_context": "=== DAILY_60 (prior day close cutoff) ===\nCutoff: 2025-11-11 23:59 (America/New_York)\nBars: 2\ntimestamp, open, high, low, close, volume\n2025-11-10 19:00, 6922.5000, 6941.0000, 6891.0000, 6934.5000, 1529\n2025-11-11 19:00, 6933.0000, 6962.0000, 6913.7500, 6919.5000, 1767\n\n=== TWOHOUR_120 (entry time cutoff) ===\nEntry time: 2025-11-12 10:55 (America/New_York)\nLast complete bar (SIGNAL BAR): 2025-11-12 08:55 (America/New_York)\nBars: 3\ntimestamp, open, high, low, close, volume\n2025-11-11 11:00, 6894.7500, 6926.5000, 6894.0000, 6925.2500, 231\n2025-11-11 13:00, 6926.2500, 6938.0000, 6926.0000, 6936.7500, 244\n2025-11-11 15:00, 6936.0000, 6940.7500, 6928.0000, 6934.7500, 95\n\n=== FIVEMIN_234 (entry time cutoff) ===\nEntry time: 2025-11-12 10:55 (America/New_York)\nLast complete bar (SIGNAL BAR): 2025-11-12 10:50 (America/New_York)\nBars: 42\ntimestamp, open, high, low, close, volume\n2025-11-11 13:45, 6934.7500, 6935.5000, 6934.0000, 6935.5000, 5\n2025-11-11 13:50, 6935.7500, 6937.2500, 6935.7500, 6937.2500, 2\n2025-11-11 13:55, 6937.7500, 6937.7500, 6937.0000, 6937.0000, 2\n2025-11-11 14:00, 6936.0000, 6936.0000, 6930.5000, 6934.7500, 15\n2025-11-11 14:05, 6934.0000, 6934.0000, 6928.5000, 6930.5000, 11\n2025-11-11 14:10, 6931.5000, 6931.5000, 6931.5000, 6931.5000, 1\n2025-11-11 14:15, 6935.7500, 6935.7500, 6934.5000, 6934.5000, 4\n2025-11-11 14:20, 6935.0000, 6935.0000, 6935.0000, 6935.0000, 1\n2025-11-11 14:25, 6936.0000, 6936.7500, 6936.0000, 6936.0000, 3\n2025-11-11 14:30, 6938.0000, 6938.0000, 6937.2500, 6937.2500, 2\n2025-11-11 14:35, 6936.0000, 6936.0000, 6933.7500, 6936.0000, 7\n2025-11-11 14:40, 6934.5000, 6934.5000, 6934.5000, 6934.5000, 1\n2025-11-11 14:45, 6933.0000, 6936.2500, 6933.0000, 6936.2500, 3\n2025-11-11 14:50, 6936.0000, 6937.2500, 6936.0000, 6937.2500, 14\n2025-11-11 14:55, 6937.5000, 6938.0000, 6936.7500, 6936.7500, 3\n2025-11-11 15:00, 6936.0000, 6937.0000, 6936.0000, 6937.0000, 5\n2025-11-11 15:10, 6939.0000, 6939.7500, 6938.0000, 6938.0000, 5\n2025-11-11 15:20, 6934.2500, 6935.2500, 6932.2500, 6935.2500, 6\n2025-11-11 15:25, 6934.2500, 6934.2500, 6934.2500, 6934.2500, 2\n2025-11-11 15:30, 6930.0000, 6935.0000, 6930.0000, 6935.0000, 11\n2025-11-11 15:35, 6931.7500, 6931.7500, 6931.7500, 6931.7500, 1\n2025-11-11 15:40, 6931.5000, 6932.7500, 6931.5000, 6932.7500, 3\n2025-11-11 15:45, 6936.0000, 6936.0000, 6933.7500, 6933.7500, 8\n2025-11-11 15:50, 6936.0000, 6940.7500, 6936.0000, 6938.7500, 13\n2025-11-11 15:55, 6930.0000, 6930.0000, 6928.0000, 6930.0000, 14\n2025-11-12 09:30, 6951.0000, 6951.0000, 6945.0000, 6945.5000, 41\n2025-11-12 09:35, 6948.7500, 6953.7500, 6948.7500, 6952.2500, 10\n2025-11-12 09:40, 6952.2500, 6952.7500, 6947.2500, 6947.5000, 18\n2025-11-12 09:45, 6946.7500, 6948.0000, 6936.0000, 6937.7500, 73\n2025-11-12 09:50, 6935.7500, 6942.2500, 6935.7500, 6940.0000, 23\n2025-11-12 09:55, 6937.2500, 6941.2500, 6934.5000, 6941.2500, 22\n2025-11-12 10:00, 6944.0000, 6945.7500, 6943.5000, 6945.7500, 4\n2025-11-12 10:05, 6941.0000, 6944.0000, 6940.2500, 6942.5000, 14\n2025-11-12 10:10, 6942.5000, 6942.5000, 6935.2500, 6935.5000, 4\n2025-11-12 10:15, 6934.0000, 6937.0000, 6933.2500, 6935.0000, 25\n2025-11-12 10:20, 6935.2500, 6936.0000, 6933.5000, 6933.5000, 15\n2025-11-12 10:25, 6933.0000, 6939.0000, 6931.7500, 6937.5000, 16\n2025-11-12 10:30, 6933.5000, 6933.5000, 6929.5000, 6929.5000, 20\n2025-11-12 10:35, 6929.0000, 6929.5000, 6922.0000, 6925.7500, 51\n2025-11-12 10:40, 6933.5000, 6933.5000, 6931.0000, 6932.7500, 8\n2025-11-12 10:45, 6930.7500, 6930.7500, 6929.5000, 6929.5000, 3\n2025-11-12 10:50, 6929.2500, 6929.2500, 6925.0000, 6925.5000, 14 <<< SIGNAL BAR (bar before entry)\n\n=== SIGNAL BAR ANALYSIS ===\nSignal Bar: 2025-11-12 10:50\nOHLC: O=6929.2500, H=6929.2500, L=6925.0000, C=6925.5000\nBar Type: BEAR BAR (body=88% of range)\nClose Location: near LOW (12% from low)\nFor SHORT entry: GOOD signal bar\nFor LONG entry: WEAK signal bar\n\n=== PATTERN DETECTION (last 2 hours before entry) ===\nAnalyzing bars from 2025-11-12 08:55:00-05:00 to 2025-11-12 10:50:00-05:00\n\nSWING HIGHS (last 2 hours):\n  - 14:20: $6895.0000\n  - 15:00: $6885.2500\n  - 15:25: $6878.0000\n\nSWING LOWS (last 2 hours):\n  - 14:05: $6891.7500\n  - 14:30: $6882.2500\n  - 14:55: $6873.7500\n  - 15:35: $6860.7500\n\n*** PATTERN DETECTED: WEDGE BOTTOM (3 lower highs - potential bullish reversal) ***\nWedge pushes:\n  Push at 14:20: $6895.0000\n  Push at 15:00: $6885.2500\n  Push at 15:25: $6878.0000\n\nNOTE: If trader shorted after this wedge top, this is a WITH-TREND reversal setup.\n\n2-HOUR TREND: SIDEWAYS (-0.45%)\nRange: $6860.7500 - $6896.7500",
+  "llm_response": {
+    "context": {
+      "daily_regime": "transition",
+      "two_hour_regime": "trading_range",
+      "trading_tf_regime": "bear_breakout_attempt",
+      "always_in_direction": "short",
+      "trade_aligned_with_always_in": false
+    },
+    "setup": {
+      "primary_label": "wedge_bottom_fade_short",
+      "secondary_label": "low_2_short",
+      "category": "reversal",
+      "is_second_entry": true,
+      "with_trend_or_counter": "countertrend"
+    },
+    "entry_quality": {
+      "signal_bar_quality": "strong",
+      "signal_bar_notes": "Bar 17 was a strong 4.25-point bear trend bar with close on low and minimal tails. However, this was the 3rd push down in a wedge bottom pattern, making it a bear trap despite the strong bar.",
+      "entry_location": "wrong_place",
+      "entry_type": "stop",
+      "entry_quality_score": "D"
+    },
+    "risk_reward": {
+      "stop_placement": "correct",
+      "stop_notes": "Initial stop 1 tick above today's high (bar 2) was correct structural placement. However, trailing stop to 1 tick above bar 16 was premature - moved before market proved itself.",
+      "target_logic": "scalp",
+      "target_notes": "Original target was 10.25 points, but after trailing stop, adjusted to 1:1 R/R. This mid-trade plan change shows lack of conviction in the setup.",
+      "traders_equation": "unfavorable",
+      "probability_estimate": "LOW_40%-"
+    },
+    "management": {
+      "exit_quality": "early",
+      "management_notes": "Took profit at 1:1 R/R after trailing stop. This was wise given the countertrend nature of the trade (wedge bottom), but inconsistent with original swing plan. Lucky to exit before potential wedge reversal.",
+      "scalp_vs_swing_match": false,
+      "got_trapped": false
+    },
+    "coaching": {
+      "what_was_good": [
+        "Disciplined exit: Took profit when available instead of hoping for more. In a countertrend trade at a wedge bottom, taking quick profit was wise.",
+        "Strong signal bar recognition: Correctly identified bar 17 as a strong bear trend bar with good close on low and minimal tails.",
+        "Protective stop discipline: Initially placed stop above structure (today's high), showing understanding of price action stop placement.",
+        "Avoided barbwire: Correctly identified the first 10 bars as barbwire and waited for clearer price action before entering."
+      ],
+      "what_was_flawed": [
+        "Wedge bottom violation: Entered short at the 3rd push down of a wedge bottom pattern. Wedge bottoms are BULLISH reversal patterns - the 3rd push typically fails and reverses UP. This was a classic bear trap.",
+        "Trading range context ignored: The 2-hour chart showed a tight trading range (6925-6940). Brooks principle: Buy low, sell high in trading ranges. You sold at the LOW of the range, violating this fundamental rule.",
+        "Premature stop trailing: Trailed stop from 32 points to 12 points after just a few bars, before the market proved the trade. This changed the entire risk/reward equation mid-trade and showed lack of conviction."
+      ],
+      "selection_vs_execution": "selection_error",
+      "better_alternative": "Wait for the wedge bottom to complete and reverse UP. Once bars 15-17 formed the 3rd push, look for a bull reversal bar or failed breakout below bar 15 low. Buy above a strong bull bar that holds above 6922, with stop below the wedge low. Target the top of the 2-hour range at 6940 for 18+ points. This would be WITH the wedge reversal pattern and WITH the trading range principle of buying low.",
+      "keep_doing": "Continue identifying strong signal bars and placing stops above/below structure. Your technical execution of stop placement was correct.",
+      "stop_doing": "Stop shorting at wedge bottoms and at the lows of trading ranges. These are classic bear traps that violate fundamental Brooks principles.",
+      "rules_for_next_20_trades": [
+        "Wedge bottom filter: Before entering any short, check the last 6-10 bars for a wedge bottom pattern (3 lower highs or 3 pushes down). If you see 3 distinct pushes down with converging swing highs, DO NOT SHORT - this is a bullish reversal pattern. Instead, wait for the wedge to break out UP and buy the breakout pullback.",
+        "Trading range low filter: Before shorting, check the 2-hour chart. If the market is in a trading range and your entry is in the bottom third of that range, DO NOT SHORT. Wait for the market to rally to the top third of the range, then look for short setups.",
+        "Stop management consistency: Once you place a protective stop based on structure, do NOT trail it until the market has moved at least 1.5× your initial risk in your favor. If you entered with a 32-point stop, don't trail until you have at least 48 points of profit."
+      ]
+    },
+    "grade": "C-",
+    "grade_explanation": "Trade made money (+0.36R) but violated core Brooks principles. Shorted at wedge bottom (3rd push down = bullish reversal pattern) and at low of 2-hour trading range (should buy low, not sell low). Signal bar was strong but context was terrible. Made money due to luck/timing, not sound analysis. Premature stop trailing showed lack of conviction. Grade reflects that profit came from luck rather than proper price action trading.",
+    "coaching_summary": "You shorted the 3rd push of a wedge bottom at the low of a 2-hour trading range - a double violation of Brooks principles. Wedge bottoms are BULLISH reversal patterns, and you should buy low in ranges, not sell low. Your signal bar was strong, but context trumps signal bar quality. The trade made money only because you took quick profit before the likely wedge reversal occurred. Next time, before shorting a 'second entry,' count the pushes - if it's the 3rd push down with converging highs, that's a wedge bottom and you should be looking to BUY, not sell."
+  }
+}
