@@ -5,6 +5,12 @@ Uses LLM (Claude/OpenAI) for intelligent trade analysis and coaching.
 Falls back to rule-based analysis if LLM is unavailable.
 """
 
+# Suppress SWIG deprecation warnings from databento's C++ bindings EARLY
+import warnings
+warnings.filterwarnings("ignore", message=".*Swig.*has no __module__ attribute")
+warnings.filterwarnings("ignore", message=".*swig.*has no __module__ attribute")
+warnings.filterwarnings("ignore", message="builtin type .* has no __module__ attribute")
+
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Optional, Literal, Union
@@ -455,17 +461,17 @@ class TradeCoach:
                     future_daily = executor.submit(
                         self._fetch_ohlcv_section_with_cutoff_and_df,
                         trade.ticker, "1d", daily_fetch_end, 60, 
-                        "DAILY_60 (prior day close cutoff)", daily_cutoff, cancellation_check, market_tz, entry_price
+                        "DAILY_60 (prior day close cutoff)", daily_cutoff, cancellation_check, market_tz, entry_price, trade.trade_date
                     )
                     future_2h = executor.submit(
                         self._fetch_ohlcv_section_with_cutoff,
                         trade.ticker, "2h", entry_cutoff, 120,
-                        "TWOHOUR_120 (entry time cutoff)", cancellation_check, market_tz, entry_price
+                        "TWOHOUR_120 (entry time cutoff)", cancellation_check, market_tz, entry_price, trade.trade_date
                     )
                     future_5m = executor.submit(
                         self._fetch_ohlcv_section_with_cutoff,
                         trade.ticker, "5m", entry_cutoff, 234,
-                        "FIVEMIN_234 (entry time cutoff)", cancellation_check, market_tz, entry_price
+                        "FIVEMIN_234 (entry time cutoff)", cancellation_check, market_tz, entry_price, trade.trade_date
                     )
                     future_pattern = executor.submit(
                         self._detect_patterns_before_entry,
@@ -509,12 +515,12 @@ class TradeCoach:
                     future_daily = executor.submit(
                         self._fetch_ohlcv_section_with_cutoff_and_df,
                         trade.ticker, "1d", daily_fetch_end, 60,
-                        "DAILY_60 (prior day close cutoff)", daily_cutoff, cancellation_check, market_tz, entry_price
+                        "DAILY_60 (prior day close cutoff)", daily_cutoff, cancellation_check, market_tz, entry_price, trade.trade_date
                     )
                     future_2h = executor.submit(
                         self._fetch_ohlcv_section_with_cutoff,
                         trade.ticker, "2h", entry_cutoff, 120,
-                        "TWOHOUR_120 (entry time cutoff)", cancellation_check, market_tz, entry_price
+                        "TWOHOUR_120 (entry time cutoff)", cancellation_check, market_tz, entry_price, trade.trade_date
                     )
                     
                     try:
@@ -532,7 +538,7 @@ class TradeCoach:
                 # Daily position trades: Just daily context (no parallelization needed)
                 daily_context, daily_df = self._fetch_ohlcv_section_with_cutoff_and_df(
                     trade.ticker, "1d", daily_fetch_end, 120,
-                    "DAILY_120 (prior day close cutoff)", daily_cutoff, cancellation_check, market_tz, entry_price
+                    "DAILY_120 (prior day close cutoff)", daily_cutoff, cancellation_check, market_tz, entry_price, trade.trade_date
                 )
                 all_context.append(daily_context)
             
@@ -559,7 +565,7 @@ class TradeCoach:
             logger.warning(f"Failed to get OHLCV context: {e}")
             return ("Market data unavailable", None) if return_daily_df else "Market data unavailable"
     
-    def _fetch_ohlcv_section_with_cutoff(self, ticker: str, interval: str, cutoff_time: datetime, num_bars: int, label: str, cancellation_check: callable = None, market_timezone: str = "America/New_York", target_price: float = None) -> str:
+    def _fetch_ohlcv_section_with_cutoff(self, ticker: str, interval: str, cutoff_time: datetime, num_bars: int, label: str, cancellation_check: callable = None, market_timezone: str = "America/New_York", target_price: float = None, trade_date = None) -> str:
         """Fetch OHLCV data up to a specific cutoff time (no future data).
         
         IMPORTANT: Only includes COMPLETED bars. A bar is complete when:
@@ -618,9 +624,20 @@ class TradeCoach:
             # Use ticker-specific provider (e.g., AllTick for HK stocks, Databento for futures)
             provider = self._get_provider_for_ticker(ticker)
             
-            # Check if provider supports target_price (for futures contract selection)
+            # Check if provider supports target_price and trade_date (for futures contract selection)
             import inspect
-            if target_price and 'target_price' in inspect.signature(provider.get_ohlcv).parameters:
+            sig = inspect.signature(provider.get_ohlcv)
+            if target_price and 'target_price' in sig.parameters and 'trade_date' in sig.parameters:
+                ohlcv = provider.get_ohlcv(
+                    ticker,
+                    interval,
+                    start_date,
+                    cutoff_aware,  # Fetch up to cutoff_time, filter below
+                    cancellation_check=cancellation_check,
+                    target_price=target_price,
+                    trade_date=trade_date
+                )
+            elif target_price and 'target_price' in sig.parameters:
                 ohlcv = provider.get_ohlcv(
                     ticker,
                     interval,
@@ -676,6 +693,31 @@ class TradeCoach:
                     last_ts = ohlcv[time_col].iloc[-1]
                     first_ts = ohlcv[time_col].iloc[0]
                     logger.info(f"📊 {label}: Data range {first_ts} to {last_ts}")
+            
+            # For futures intraday data, filter to RTH (9:30 AM - 4:00 PM ET) to avoid confusing LLM
+            # with overnight session data
+            from app.data.providers import is_futures_ticker
+            if is_futures_ticker(ticker) and interval not in ["1d", "1w"]:
+                if time_col:
+                    import pandas as pd
+                    from zoneinfo import ZoneInfo
+                    market_tz_obj = ZoneInfo(market_timezone)
+                    
+                    # Convert to market timezone for filtering
+                    if ohlcv[time_col].dt.tz is not None:
+                        ohlcv_times = ohlcv[time_col].dt.tz_convert(market_timezone)
+                    else:
+                        ohlcv_times = ohlcv[time_col]
+                    
+                    # RTH: 9:30 AM - 4:00 PM
+                    rth_start_minutes = 9 * 60 + 30  # 9:30 = 570
+                    rth_end_minutes = 16 * 60        # 16:00 = 960
+                    bar_minutes = ohlcv_times.dt.hour * 60 + ohlcv_times.dt.minute
+                    rth_mask = (bar_minutes >= rth_start_minutes) & (bar_minutes < rth_end_minutes)
+                    
+                    before_rth_count = len(ohlcv)
+                    ohlcv = ohlcv[rth_mask]
+                    logger.info(f"📊 {label}: RTH filter {before_rth_count} → {len(ohlcv)} bars")
             
             # Limit to requested number of bars (most recent ones before cutoff)
             ohlcv = ohlcv.tail(num_bars)
@@ -779,7 +821,7 @@ class TradeCoach:
             logger.warning(f"Failed to fetch {interval} data for {ticker}: {e}")
             return f"=== {label} ===\nData fetch failed: {e}"
 
-    def _fetch_ohlcv_section_with_cutoff_and_df(self, ticker: str, interval: str, fetch_end: datetime, num_bars: int, label: str, display_cutoff: datetime, cancellation_check: callable = None, market_timezone: str = "America/New_York", target_price: float = None) -> tuple:
+    def _fetch_ohlcv_section_with_cutoff_and_df(self, ticker: str, interval: str, fetch_end: datetime, num_bars: int, label: str, display_cutoff: datetime, cancellation_check: callable = None, market_timezone: str = "America/New_York", target_price: float = None, trade_date = None) -> tuple:
         """Fetch OHLCV data and return both formatted string and raw DataFrame.
         
         This is used for daily data to reuse it for session context.
@@ -823,9 +865,20 @@ class TradeCoach:
             # Fetch data up to fetch_end (includes trade date)
             provider = self._get_provider_for_ticker(ticker)
             
-            # Check if provider supports target_price (for futures contract selection)
+            # Check if provider supports target_price and trade_date (for futures contract selection)
             import inspect
-            if target_price and 'target_price' in inspect.signature(provider.get_ohlcv).parameters:
+            sig = inspect.signature(provider.get_ohlcv)
+            if target_price and 'target_price' in sig.parameters and 'trade_date' in sig.parameters:
+                ohlcv = provider.get_ohlcv(
+                    ticker,
+                    interval,
+                    start_date,
+                    fetch_end_aware,
+                    cancellation_check=cancellation_check,
+                    target_price=target_price,
+                    trade_date=trade_date
+                )
+            elif target_price and 'target_price' in sig.parameters:
                 ohlcv = provider.get_ohlcv(
                     ticker,
                     interval,
@@ -868,6 +921,28 @@ class TradeCoach:
                     filter_cutoff = pd.Timestamp(filter_cutoff).tz_convert('UTC').tz_localize(None).to_pydatetime()
                 
                 ohlcv = ohlcv[ohlcv[time_col] <= filter_cutoff]
+            
+            # For futures intraday data, filter to RTH (9:30 AM - 4:00 PM ET) to avoid confusing LLM
+            from app.data.providers import is_futures_ticker
+            if is_futures_ticker(ticker) and interval not in ["1d", "1w"]:
+                if time_col:
+                    from zoneinfo import ZoneInfo
+                    
+                    # Convert to market timezone for filtering
+                    if ohlcv[time_col].dt.tz is not None:
+                        ohlcv_times = ohlcv[time_col].dt.tz_convert(market_timezone)
+                    else:
+                        ohlcv_times = ohlcv[time_col]
+                    
+                    # RTH: 9:30 AM - 4:00 PM
+                    rth_start_minutes = 9 * 60 + 30  # 9:30 = 570
+                    rth_end_minutes = 16 * 60        # 16:00 = 960
+                    bar_minutes = ohlcv_times.dt.hour * 60 + ohlcv_times.dt.minute
+                    rth_mask = (bar_minutes >= rth_start_minutes) & (bar_minutes < rth_end_minutes)
+                    
+                    before_rth_count = len(ohlcv)
+                    ohlcv = ohlcv[rth_mask]
+                    logger.info(f"📊 {label}: RTH filter {before_rth_count} → {len(ohlcv)} bars")
             
             # Limit to requested number of bars
             ohlcv = ohlcv.tail(num_bars)

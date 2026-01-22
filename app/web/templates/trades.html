@@ -181,7 +181,7 @@
                         </td>
                         <td>
                             <div class="flex items-center space-x-1 opacity-50 group-hover:opacity-100 transition-opacity">
-                                <button onclick="openEditModal({{ trade.id }}, '{{ trade.ticker }}', {{ trade.size or 0 }}, {{ trade.entry_price }}, {{ trade.exit_price or 0 }}, {{ trade.stop_loss or trade.stop_price or 0 }}, {{ trade.take_profit or trade.target_price or 0 }}, '{{ trade.currency or "USD" }}', {{ trade.currency_rate or 1.0 }}, '{{ trade.entry_time.strftime('%Y-%m-%dT%H:%M:%S') if trade.entry_time else '' }}', '{{ trade.exit_time.strftime('%Y-%m-%dT%H:%M:%S') if trade.exit_time else '' }}', '{{ trade.timeframe or "5m" }}')"
+                                <button onclick="openEditModal({{ trade.id }}, '{{ trade.ticker }}', {{ trade.size or 0 }}, {{ trade.entry_price }}, {{ trade.exit_price or 0 }}, {{ trade.stop_loss or trade.stop_price or 0 }}, {{ trade.take_profit or trade.target_price or 0 }}, '{{ trade.currency or "USD" }}', {{ trade.currency_rate or 1.0 }}, '{{ trade.entry_time.strftime('%Y-%m-%dT%H:%M:%S') if trade.entry_time else '' }}', '{{ trade.exit_time.strftime('%Y-%m-%dT%H:%M:%S') if trade.exit_time else '' }}', '{{ trade.timeframe or "5m" }}', '{{ trade.direction.value if trade.direction else "long" }}')"
                                         class="btn btn-ghost p-2 text-sm" title="Edit">
                                     ✏️
                                 </button>
@@ -226,10 +226,17 @@
         <form id="edit-form" class="space-y-4">
             <input type="hidden" id="edit-id">
             
-            <div class="grid grid-cols-2 gap-4">
+            <div class="grid grid-cols-3 gap-4">
                 <div>
                     <label class="label">Ticker</label>
                     <input type="text" id="edit-ticker" class="input text-sm uppercase" placeholder="SPY">
+                </div>
+                <div>
+                    <label class="label">Direction</label>
+                    <select id="edit-direction" class="select">
+                        <option value="long">LONG</option>
+                        <option value="short">SHORT</option>
+                    </select>
                 </div>
                 <div>
                     <label class="label">Shares</label>
@@ -313,13 +320,14 @@
 let currentTradeId = null;
 let currentTradeDate = null;
 
-function openEditModal(id, ticker, shares, entry, exit, sl, tp, currency, rate, entryTime, exitTime, timeframe) {
+function openEditModal(id, ticker, shares, entry, exit, sl, tp, currency, rate, entryTime, exitTime, timeframe, direction) {
     currentTradeId = id;
     currentTradeDate = exitTime || entryTime;
     
     document.getElementById('edit-trade-id').textContent = id;
     document.getElementById('edit-id').value = id;
     document.getElementById('edit-ticker').value = ticker || '';
+    document.getElementById('edit-direction').value = direction || 'long';
     document.getElementById('edit-shares').value = shares;
     document.getElementById('edit-entry').value = entry;
     document.getElementById('edit-exit').value = exit;
@@ -378,6 +386,7 @@ document.getElementById('edit-form').addEventListener('submit', async (e) => {
     
     const data = {
         ticker: document.getElementById('edit-ticker').value.toUpperCase(),
+        direction: document.getElementById('edit-direction').value,
         size: parseFloat(document.getElementById('edit-shares').value),
         entry_price: parseFloat(document.getElementById('edit-entry').value),
         exit_price: parseFloat(document.getElementById('edit-exit').value),

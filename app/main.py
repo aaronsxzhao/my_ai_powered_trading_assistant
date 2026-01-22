@@ -4,6 +4,12 @@ Brooks Trading Coach CLI Application.
 Command-line interface for the trading coach system.
 """
 
+# Suppress SWIG deprecation warnings from databento's C++ bindings EARLY
+import warnings
+warnings.filterwarnings("ignore", message=".*Swig.*has no __module__ attribute")
+warnings.filterwarnings("ignore", message=".*swig.*has no __module__ attribute")
+warnings.filterwarnings("ignore", message="builtin type .* has no __module__ attribute")
+
 from datetime import date, datetime
 from pathlib import Path
 from typing import Optional

@@ -10,7 +10,7 @@ Supports: Polygon, YFinance, AllTick, Alpaca (placeholder)
 """
 
 from abc import ABC, abstractmethod
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import Literal
 import logging
 import time
@@ -18,7 +18,10 @@ import threading
 import warnings
 
 # Suppress SWIG deprecation warnings from databento's C++ bindings
-warnings.filterwarnings("ignore", message="builtin type Swig.*has no __module__ attribute")
+# These come from C++ SWIG wrappers and are harmless
+warnings.filterwarnings("ignore", message=".*Swig.*has no __module__ attribute")
+warnings.filterwarnings("ignore", message=".*swig.*has no __module__ attribute")
+warnings.filterwarnings("ignore", message="builtin type .* has no __module__ attribute")
 
 import pandas as pd
 import pytz
@@ -1208,6 +1211,7 @@ class DatabentoProvider(DataProvider):
         start: datetime,
         end: datetime,
         target_price: float = None,
+        trade_date: date = None,
     ) -> pd.DataFrame:
         """
         Load data from local DBN files.
@@ -1219,6 +1223,8 @@ class DatabentoProvider(DataProvider):
             end: End datetime
             target_price: Optional target price to help select correct contract
                          (useful when multiple contracts exist at different price levels)
+            trade_date: Optional trade date to use for contract price comparison
+                       (more accurate than using highest volume day)
         
         Returns:
             DataFrame with OHLCV data, or empty DataFrame if no data found
@@ -1264,22 +1270,38 @@ class DatabentoProvider(DataProvider):
                 selected_contract = None
                 
                 # If target price provided, select contract with closest price
-                # Use only the LAST day of data for price comparison (most relevant to trade)
+                # Use trade_date if provided (most accurate), else fall back to heuristics
                 if target_price is not None:
                     best_match = None
                     best_diff = float('inf')
                     
-                    # Get data from the last day only for price comparison
-                    last_date = combined.index.max().date()
-                    last_day_data = combined[combined.index.date == last_date]
+                    # Determine reference date for price comparison
+                    if trade_date is not None:
+                        # Use the specific trade date (most accurate)
+                        reference_date = trade_date
+                    else:
+                        # Fallback: find the date with most trading volume
+                        volume_by_date = combined.groupby(combined.index.date)['volume'].sum()
+                        if not volume_by_date.empty:
+                            reference_date = volume_by_date.idxmax()
+                        else:
+                            all_dates = sorted(set(combined.index.date))
+                            reference_date = all_dates[len(all_dates) // 2] if all_dates else None
                     
-                    if last_day_data.empty:
-                        last_day_data = combined  # Fallback to all data
+                    if reference_date:
+                        reference_day_data = combined[combined.index.date == reference_date]
+                    else:
+                        reference_day_data = combined
+                    
+                    if reference_day_data.empty:
+                        reference_day_data = combined  # Fallback to all data
+                    
+                    logger.debug(f"Using {reference_date} for contract selection (target={target_price})")
                     
                     for symbol in unique_symbols:
-                        sym_data = last_day_data[last_day_data['symbol'] == symbol]
+                        sym_data = reference_day_data[reference_day_data['symbol'] == symbol]
                         if sym_data.empty:
-                            # If no data on last day for this symbol, use all data
+                            # If no data on reference day for this symbol, use all data
                             sym_data = combined[combined['symbol'] == symbol]
                         
                         avg_price = sym_data['close'].mean()
@@ -1293,7 +1315,7 @@ class DatabentoProvider(DataProvider):
                     
                     if best_match and best_diff < target_price * 0.05:  # Within 5%
                         selected_contract = best_match
-                        logger.info(f"Selected contract {selected_contract} (closest to target price {target_price}, diff={best_diff:.2f})")
+                        logger.info(f"Selected contract {selected_contract} (closest to target price {target_price} on {reference_date}, diff={best_diff:.2f})")
                 
                 # Fallback: select by highest volume
                 if selected_contract is None:
@@ -1425,6 +1447,7 @@ class DatabentoProvider(DataProvider):
         end: datetime,
         cancellation_check: callable = None,
         target_price: float = None,
+        trade_date: date = None,
     ) -> pd.DataFrame:
         """
         Fetch OHLCV data from Databento.
@@ -1437,8 +1460,8 @@ class DatabentoProvider(DataProvider):
         Args:
             target_price: Optional price to help select correct contract 
                          (e.g., entry price to distinguish between different contract months)
+            trade_date: Optional trade date to use for contract price comparison
         """
-        
         # Check for cancellation
         if cancellation_check and cancellation_check():
             logger.info(f"⏹️ Cancelled fetching {ticker}")
@@ -1460,7 +1483,7 @@ class DatabentoProvider(DataProvider):
         schema = self.SCHEMA_MAP.get(timeframe, "ohlcv-1d")
         
         # ===== PRIORITY 1: Try local DBN files first =====
-        local_df = self._load_from_local_dbn(base_symbol, schema, start, end, target_price=target_price)
+        local_df = self._load_from_local_dbn(base_symbol, schema, start, end, target_price=target_price, trade_date=trade_date)
         
         if not local_df.empty:
             # Process and return local data

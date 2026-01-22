@@ -1632,6 +1632,7 @@ document.addEventListener('DOMContentLoaded', function() {
             
             const payload = {
                 ticker: document.getElementById('edit-ticker').value.toUpperCase(),
+                direction: document.getElementById('edit-direction').value,
                 size: parseFloat(document.getElementById('edit-size').value),
                 entry_price: parseFloat(document.getElementById('edit-entry-price').value),
                 exit_price: parseFloat(document.getElementById('edit-exit-price').value),
@@ -1679,11 +1680,18 @@ document.addEventListener('DOMContentLoaded', function() {
         </div>
 
         <form id="edit-trade-form" class="space-y-4">
-            <div class="grid grid-cols-2 gap-4">
+            <div class="grid grid-cols-3 gap-4">
                 <div>
                     <label class="label">Ticker</label>
                     <input type="text" id="edit-ticker" class="input text-sm uppercase"
                            value="{{ trade.ticker }}" placeholder="SPY">
+                </div>
+                <div>
+                    <label class="label">Direction</label>
+                    <select id="edit-direction" class="select">
+                        <option value="long" {% if trade.direction and trade.direction.value == 'long' %}selected{% endif %}>LONG</option>
+                        <option value="short" {% if trade.direction and trade.direction.value == 'short' %}selected{% endif %}>SHORT</option>
+                    </select>
                 </div>
                 <div>
                     <label class="label">Shares</label>

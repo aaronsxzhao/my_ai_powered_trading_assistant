@@ -9,6 +9,13 @@ Provides a browser-based interface for:
 - Report generation
 """
 
+# Suppress SWIG deprecation warnings from databento's C++ bindings EARLY
+# Must be before any databento imports
+import warnings
+warnings.filterwarnings("ignore", message=".*Swig.*has no __module__ attribute")
+warnings.filterwarnings("ignore", message=".*swig.*has no __module__ attribute")
+warnings.filterwarnings("ignore", message="builtin type .* has no __module__ attribute")
+
 import asyncio
 import json
 import logging
@@ -822,10 +829,14 @@ async def get_trade_chart_data(
         df = get_cached_ohlcv(trade.ticker, timeframe, start_time, end_time)
         
         if df.empty:
-            # Cache miss - fetch from provider with target_price for contract selection
+            # Cache miss - fetch from provider with target_price and trade_date for contract selection
             # Check if provider supports target_price parameter
             import inspect
-            if 'target_price' in inspect.signature(provider.get_ohlcv).parameters:
+            sig = inspect.signature(provider.get_ohlcv)
+            if 'target_price' in sig.parameters and 'trade_date' in sig.parameters:
+                df = provider.get_ohlcv(trade.ticker, timeframe, start_time, end_time, 
+                                        target_price=target_price, trade_date=trade.trade_date)
+            elif 'target_price' in sig.parameters:
                 df = provider.get_ohlcv(trade.ticker, timeframe, start_time, end_time, target_price=target_price)
             else:
                 df = provider.get_ohlcv(trade.ticker, timeframe, start_time, end_time)
@@ -901,6 +912,23 @@ async def get_trade_chart_data(
                     "error": f"No RTH data available. Try disabling RTH filter."
                 })
         
+        # Filter to cut off at entry time if show_after_entry is False
+        if not show_after_entry:
+            # Include only bars up to and including entry time
+            # Entry bar starts at entry_time - bar_delta, so include bars <= entry_time
+            if df['datetime'].dt.tz is not None:
+                entry_compare = entry_time_aware
+            else:
+                entry_compare = entry_time_aware.replace(tzinfo=None)
+            
+            df = df[df['datetime'] <= entry_compare]
+            
+            if df.empty:
+                return JSONResponse({
+                    "success": False,
+                    "error": f"No data before entry time."
+                })
+        
         # Convert to TradingView Lightweight Charts format
         # Format: { time: unix_timestamp, open, high, low, close, volume }
         candles = []
@@ -957,9 +985,9 @@ async def get_trade_chart_data(
                 "text": f"{entry_label} ${trade.entry_price:.2f}",
             })
         
-        # Exit marker
+        # Exit marker (only show when after entry is selected)
         # For LONG: Exit = SELL (red), for SHORT: Exit = BUY (green)
-        if trade.exit_time and trade.exit_price:
+        if show_after_entry and trade.exit_time and trade.exit_price:
             # Convert trade exit time to Unix timestamp
             if trade.exit_time.tzinfo is None:
                 exit_aware = trade.exit_time.replace(tzinfo=market_tz)
@@ -997,8 +1025,9 @@ async def get_trade_chart_data(
             "title": "Entry",
         })
         
-        # Exit price line (LONG exit=SELL=Red, SHORT exit=BUY=Green)
-        if trade.exit_price:
+        # Exit price line (only show when after entry is selected)
+        # LONG exit=SELL=Red, SHORT exit=BUY=Green
+        if show_after_entry and trade.exit_price:
             exit_line_color = "#ef5350" if is_long else "#26a69a"
             price_lines.append({
                 "price": trade.exit_price,
@@ -1611,6 +1640,13 @@ async def update_trade(trade_id: int, request: Request):
         # Update fields if provided
         if data.get("ticker") is not None:
             trade.ticker = data["ticker"].upper()
+        if data.get("direction") is not None:
+            from app.journal.models import TradeDirection
+            direction_str = data["direction"].lower()
+            if direction_str == "long":
+                trade.direction = TradeDirection.LONG
+            elif direction_str == "short":
+                trade.direction = TradeDirection.SHORT
         if data.get("size") is not None:
             trade.size = float(data["size"])
         if data.get("entry_price") is not None:
