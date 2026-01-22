@@ -86,9 +86,17 @@ def get_market_timezone(ticker: str) -> str:
     """
     ticker = ticker.upper().strip()
     
-    # Check exchange prefix (e.g., "HKEX:0981")
+    # Detect futures (=F suffix or CME prefix) - CME is in Chicago but we use Eastern
+    # for consistency with US equity hours and chart display
+    if "=F" in ticker:
+        return "America/New_York"
+    
+    # Check exchange prefix (e.g., "HKEX:0981", "CME_MINI:MES1!")
     if ":" in ticker:
         exchange = ticker.split(":")[0]
+        # CME futures exchanges
+        if exchange in ["CME", "CME_MINI", "CBOT", "NYMEX", "COMEX"]:
+            return "America/New_York"  # Use Eastern for consistency
         return EXCHANGE_TIMEZONES.get(exchange, EXCHANGE_TIMEZONES["DEFAULT"])
     
     # Check suffix (e.g., "0981.HK")

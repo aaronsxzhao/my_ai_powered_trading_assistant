@@ -15,6 +15,7 @@ rich>=13.7.0
 
 # Market data
 yfinance>=0.2.36
+databento>=0.30.0  # Optional: Professional futures data (ES, MES, NQ, etc.)
 
 # Charting
 mplfinance>=0.12.10b0

@@ -15,7 +15,7 @@ import logging
 import os
 import shutil
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -183,8 +183,7 @@ async def dashboard(request: Request):
         data_provider = settings.data_provider
         polygon_available = get_polygon_api_key() is not None
         
-        return templates.TemplateResponse("dashboard.html", {
-            "request": request,
+        return templates.TemplateResponse(request, "dashboard.html", {
             "recent_trades": recent_trades,
             "total_trades": total_trades,
             "total_r": total_r,
@@ -213,8 +212,7 @@ async def trades_page(request: Request):
         
         strategies = get_active_strategies_cached(session)
 
-        return templates.TemplateResponse("trades.html", {
-            "request": request,
+        return templates.TemplateResponse(request, "trades.html", {
             "trades": trades,
             "strategies": strategies,
             "data_provider": settings.data_provider,
@@ -236,8 +234,7 @@ async def trade_detail(request: Request, trade_id: int):
             raise HTTPException(status_code=404, detail="Trade not found")
 
         # Don't block on LLM - page loads instantly, review fetched async
-        return templates.TemplateResponse("trade_detail.html", {
-            "request": request,
+        return templates.TemplateResponse(request, "trade_detail.html", {
             "trade": trade,
             "review": None,  # Will be loaded via AJAX
             "data_provider": settings.data_provider,
@@ -397,7 +394,7 @@ async def get_trade_review(trade_id: int, force: bool = False, check_only: bool 
             
             # Cache and clear in_progress
             trade.cached_review = json.dumps(review_dict)
-            trade.review_generated_at = datetime.utcnow()
+            trade.review_generated_at = datetime.now(timezone.utc)
             trade.review_in_progress = False
             session.commit()
             
@@ -449,12 +446,278 @@ async def cancel_trade_review(trade_id: int):
         session.close()
 
 
+@app.get("/api/trades/{trade_id}/check-data")
+async def check_trade_data_availability(trade_id: int):
+    """
+    Check if local data is available for a futures trade.
+    
+    Returns:
+        - has_data: True if all required data is available locally
+        - is_futures: True if this is a futures ticker
+        - missing_schemas: List of schemas that need data
+        - missing_dates: Date range that needs data
+        - ticker: The normalized ticker
+    """
+    from datetime import timedelta
+    from app.data.providers import normalize_ticker, is_futures_ticker, DatabentoProvider
+    from app.journal.ingest import get_market_timezone
+    
+    session = get_session()
+    try:
+        trade = session.query(Trade).filter(Trade.id == trade_id).first()
+        if not trade:
+            return JSONResponse({"success": False, "error": "Trade not found"})
+        
+        normalized_ticker, exchange = normalize_ticker(trade.ticker)
+        
+        # Only check for futures - stocks use Yahoo/Polygon which don't need local data
+        if exchange != 'FUTURES':
+            return JSONResponse({
+                "success": True,
+                "is_futures": False,
+                "has_data": True,
+                "message": "Stock data fetched from online APIs"
+            })
+        
+        # For futures, check local Databento data
+        provider = DatabentoProvider()
+        
+        # Determine the date range we need for analysis
+        # We need: daily (60 days back), 2h (30 days), 5m (5 days)
+        trade_date = trade.trade_date
+        
+        # Date ranges needed for each schema
+        schemas_needed = {
+            "ohlcv-1d": (trade_date - timedelta(days=60), trade_date),
+            "ohlcv-1h": (trade_date - timedelta(days=30), trade_date),
+            "ohlcv-1m": (trade_date - timedelta(days=5), trade_date),
+        }
+        
+        missing_schemas = []
+        missing_date_ranges = {}
+        
+        for schema, (start_date, end_date) in schemas_needed.items():
+            available = provider.get_available_dates(schema)
+            
+            # Check if we have data for the trade date and some context
+            # For daily, we need at least 20 bars; for intraday, at least the trade date
+            if schema == "ohlcv-1d":
+                # Check if we have at least 20 days of data before trade
+                count = sum(1 for d in available if start_date <= d <= end_date)
+                if count < 20:
+                    missing_schemas.append(schema)
+                    missing_date_ranges[schema] = {
+                        "start": start_date.isoformat(),
+                        "end": end_date.isoformat(),
+                        "have": count,
+                        "need": 20,
+                    }
+            else:
+                # For intraday, check if trade date is covered
+                if trade_date not in available:
+                    missing_schemas.append(schema)
+                    missing_date_ranges[schema] = {
+                        "start": start_date.isoformat(),
+                        "end": end_date.isoformat(),
+                        "have": len([d for d in available if start_date <= d <= end_date]),
+                        "need": "trade date",
+                    }
+        
+        has_data = len(missing_schemas) == 0
+        
+        return JSONResponse({
+            "success": True,
+            "is_futures": True,
+            "has_data": has_data,
+            "ticker": normalized_ticker,
+            "trade_date": trade_date.isoformat(),
+            "missing_schemas": missing_schemas,
+            "missing_details": missing_date_ranges,
+            "message": "Data available locally" if has_data else f"Missing data for: {', '.join(missing_schemas)}"
+        })
+        
+    except Exception as e:
+        logger.exception(f"Error checking data availability: {e}")
+        return JSONResponse({"success": False, "error": str(e)})
+    finally:
+        session.close()
+
+
+@app.post("/api/trades/{trade_id}/download-data")
+async def download_trade_data(trade_id: int):
+    """
+    Download missing Databento data for a futures trade.
+    
+    Only downloads what's needed for the specific trade analysis.
+    """
+    from datetime import timedelta
+    from app.data.providers import normalize_ticker, DatabentoProvider, get_databento_api_key
+    
+    session = get_session()
+    try:
+        trade = session.query(Trade).filter(Trade.id == trade_id).first()
+        if not trade:
+            return JSONResponse({"success": False, "error": "Trade not found"})
+        
+        normalized_ticker, exchange = normalize_ticker(trade.ticker)
+        
+        if exchange != 'FUTURES':
+            return JSONResponse({
+                "success": True,
+                "message": "No download needed for stocks"
+            })
+        
+        # Check API key
+        api_key = get_databento_api_key()
+        if not api_key:
+            return JSONResponse({
+                "success": False,
+                "error": "DATABENTO_API_KEY not configured. Please add it to your .env file or download data manually from databento.com"
+            })
+        
+        # Get base symbol from ticker (e.g., MES=F -> MES)
+        provider = DatabentoProvider()
+        if normalized_ticker not in provider.FUTURES_MAP:
+            return JSONResponse({
+                "success": False,
+                "error": f"Unknown futures symbol: {normalized_ticker}"
+            })
+        
+        _, base_symbol = provider.FUTURES_MAP[normalized_ticker]
+        trade_date = trade.trade_date
+        
+        # Define what we need to download
+        download_tasks = [
+            ("ohlcv-1d", trade_date - timedelta(days=60), trade_date),
+            ("ohlcv-1h", trade_date - timedelta(days=30), trade_date),
+            ("ohlcv-1m", trade_date - timedelta(days=5), trade_date),
+        ]
+        
+        # Run download in thread pool
+        def _download():
+            import databento as db
+            
+            client = db.Historical(key=api_key)
+            results = []
+            
+            for schema, start, end in download_tasks:
+                try:
+                    # Check what we already have
+                    available = provider.get_available_dates(schema)
+                    
+                    # Find missing dates (skip weekends - futures don't trade Sat/Sun)
+                    missing_dates = []
+                    current = start
+                    while current <= end:
+                        # Skip weekends (5=Saturday, 6=Sunday)
+                        if current.weekday() < 5 and current not in available:
+                            missing_dates.append(current)
+                        current += timedelta(days=1)
+                    
+                    if not missing_dates:
+                        results.append({
+                            "schema": schema,
+                            "status": "skipped",
+                            "message": "Already have data"
+                        })
+                        continue
+                    
+                    # Download the missing range
+                    download_start = min(missing_dates)
+                    download_end = max(missing_dates)
+                    
+                    logger.info(f"Downloading {base_symbol} {schema} from {download_start} to {download_end}")
+                    
+                    # Use [ROOT].FUT format for futures parent symbol
+                    # This gets all contracts for the product (e.g., MES.FUT gets MESZ5, MESH6, etc.)
+                    parent_symbol = f"{base_symbol}.FUT"
+                    data = client.timeseries.get_range(
+                        dataset="GLBX.MDP3",
+                        symbols=[parent_symbol],
+                        stype_in="parent",  # Get all contracts for this product
+                        schema=schema,
+                        start=download_start.strftime("%Y-%m-%d"),
+                        end=(download_end + timedelta(days=1)).strftime("%Y-%m-%d"),
+                    )
+                    
+                    # Check if we got data
+                    df = data.to_df()
+                    if df.empty:
+                        logger.warning(f"No data returned for {base_symbol} {schema}")
+                        results.append({
+                            "schema": schema,
+                            "status": "no_data",
+                            "message": f"No data available for {download_start} to {download_end}"
+                        })
+                        continue
+                    
+                    # Save to file
+                    filename = f"{base_symbol}_{schema}_{download_start.strftime('%Y-%m-%d')}_{download_end.strftime('%Y-%m-%d')}.dbn.zst"
+                    output_path = provider.data_dir / filename
+                    data.to_file(str(output_path))
+                    
+                    size_kb = output_path.stat().st_size / 1024
+                    results.append({
+                        "schema": schema,
+                        "status": "downloaded",
+                        "file": filename,
+                        "size_kb": round(size_kb, 1),
+                        "dates": len(missing_dates),
+                        "bars": len(df),
+                    })
+                    
+                except Exception as e:
+                    logger.error(f"Error downloading {schema}: {e}")
+                    results.append({
+                        "schema": schema,
+                        "status": "error",
+                        "error": str(e)
+                    })
+            
+            return results
+        
+        results = await asyncio.to_thread(_download)
+        
+        # Check if any downloads failed
+        errors = [r for r in results if r["status"] == "error"]
+        if errors:
+            return JSONResponse({
+                "success": False,
+                "partial": True,
+                "results": results,
+                "error": f"Some downloads failed: {errors[0]['error']}"
+            })
+        
+        return JSONResponse({
+            "success": True,
+            "results": results,
+            "message": "Data downloaded successfully"
+        })
+        
+    except Exception as e:
+        logger.exception(f"Error downloading data: {e}")
+        return JSONResponse({"success": False, "error": str(e)})
+    finally:
+        session.close()
+
+
 @app.get("/api/trades/{trade_id}/chart-data")
-async def get_trade_chart_data(trade_id: int, timeframe: str = "5m"):
+async def get_trade_chart_data(
+    trade_id: int, 
+    timeframe: str = "5m",
+    rth_only: bool = True,
+    show_after_entry: bool = False,
+):
     """
     Get OHLCV data for charting a trade.
     
-    Returns candlestick data centered around the trade's entry/exit times.
+    Args:
+        trade_id: Trade ID
+        timeframe: Candle timeframe (1m, 5m, 15m, 1h, 2h, 1d)
+        rth_only: If True, filter to Regular Trading Hours only (9:30 AM - 4:00 PM)
+        show_after_entry: If True, show data after entry time. If False, cut off at entry.
+    
+    Returns candlestick data up to (and optionally after) the trade's entry time.
     """
     from datetime import timedelta
     from zoneinfo import ZoneInfo
@@ -503,6 +766,9 @@ async def get_trade_chart_data(trade_id: int, timeframe: str = "5m"):
         else:
             exit_time_aware = exit_time
         
+        # Store original timeframe (may fall back to daily for old trades)
+        original_timeframe = timeframe
+        
         # Calculate lookback based on timeframe
         timeframe_bars = {
             "1m": 200,
@@ -525,32 +791,115 @@ async def get_trade_chart_data(trade_id: int, timeframe: str = "5m"):
         }
         bar_delta = timeframe_deltas.get(timeframe, timedelta(minutes=5))
         
-        # Fetch data with context before and after
-        lookback = bar_delta * (bars_to_fetch // 2)
+        # Fetch data with lookback before entry
+        lookback = bar_delta * bars_to_fetch
         start_time = entry_time_aware - lookback
-        end_time = exit_time_aware + lookback
+        
+        # End time: either at entry or include some bars after
+        if show_after_entry:
+            # Show a few bars after exit for context
+            end_time = exit_time_aware + (bar_delta * 10)
+        else:
+            # Cut off at entry time - show only what trader saw before entering
+            end_time = entry_time_aware + bar_delta  # Include entry bar
         
         # For intraday, add extra days for weekend handling
         if timeframe in ["1m", "5m", "15m", "1h", "2h"]:
             start_time = start_time - timedelta(days=5)
-            end_time = end_time + timedelta(days=2)
+            if show_after_entry:
+                end_time = end_time + timedelta(days=2)
         else:
             start_time = start_time - timedelta(days=30)
-            end_time = end_time + timedelta(days=10)
+            if show_after_entry:
+                end_time = end_time + timedelta(days=10)
         
-        # Fetch OHLCV data - try cache first to avoid unnecessary API calls
+        # Fetch OHLCV data
+        # For futures, pass entry_price to help select correct contract month
+        provider = get_provider_for_ticker(trade.ticker)
+        target_price = trade.entry_price if trade.entry_price else None
+        
+        # Try cache first (but cache doesn't support target_price filtering)
         df = get_cached_ohlcv(trade.ticker, timeframe, start_time, end_time)
         
         if df.empty:
-            # Cache miss - fetch from provider (will also populate cache)
-            provider = get_provider_for_ticker(trade.ticker)
-            df = provider.get_ohlcv(trade.ticker, timeframe, start_time, end_time)
+            # Cache miss - fetch from provider with target_price for contract selection
+            # Check if provider supports target_price parameter
+            import inspect
+            if 'target_price' in inspect.signature(provider.get_ohlcv).parameters:
+                df = provider.get_ohlcv(trade.ticker, timeframe, start_time, end_time, target_price=target_price)
+            else:
+                df = provider.get_ohlcv(trade.ticker, timeframe, start_time, end_time)
+        
+        # If intraday data is empty for old trades, try falling back to daily data
+        original_timeframe = timeframe
+        if df.empty and timeframe != "1d":
+            # Check if trade is older than 30 days (Yahoo only keeps ~30 days of intraday)
+            days_old = (datetime.now().date() - trade.trade_date).days
+            if days_old > 30:
+                logger.info(f"Trade is {days_old} days old, falling back to daily data for {trade.ticker}")
+                # Fetch daily data with wider range
+                daily_start = start_time - timedelta(days=30)
+                daily_end = end_time + timedelta(days=10)
+                df = get_cached_ohlcv(trade.ticker, "1d", daily_start, daily_end)
+                if df.empty:
+                    df = provider.get_ohlcv(trade.ticker, "1d", daily_start, daily_end)
+                timeframe = "1d"  # Update timeframe for response
         
         if df.empty:
+            # Provide more helpful error message
+            days_old = (datetime.now().date() - trade.trade_date).days
+            if days_old > 30:
+                error_msg = (
+                    f"No data available for {trade.ticker}. "
+                    f"Trade is {days_old} days old - intraday data typically only available for ~30 days. "
+                    f"Try viewing with Daily timeframe."
+                )
+            else:
+                error_msg = f"No data available for {trade.ticker} ({original_timeframe})"
             return JSONResponse({
                 "success": False, 
-                "error": f"No data available for {trade.ticker} ({timeframe})"
+                "error": error_msg
             })
+        
+        # Filter to RTH (Regular Trading Hours) if requested
+        # RTH for US: 9:30 AM - 4:00 PM ET
+        # RTH for HK: 9:30 AM - 4:00 PM HKT
+        # RTH for futures: typically 9:30 AM - 4:00 PM ET (cash session)
+        if rth_only and timeframe != "1d":
+            # Define RTH hours based on market
+            rth_hours = {
+                "America/New_York": (9, 30, 16, 0),   # 9:30 AM - 4:00 PM ET
+                "Asia/Hong_Kong": (9, 30, 16, 0),    # 9:30 AM - 4:00 PM HKT
+                "Asia/Shanghai": (9, 30, 15, 0),    # 9:30 AM - 3:00 PM CST
+                "Asia/Tokyo": (9, 0, 15, 0),        # 9:00 AM - 3:00 PM JST
+                "Europe/London": (8, 0, 16, 30),    # 8:00 AM - 4:30 PM GMT
+            }
+            open_h, open_m, close_h, close_m = rth_hours.get(market_tz_str, (9, 30, 16, 0))
+            
+            # Filter DataFrame to RTH only
+            # Convert datetime to market timezone for filtering
+            df_filtered = df.copy()
+            if df_filtered['datetime'].dt.tz is not None:
+                df_times = df_filtered['datetime'].dt.tz_convert(market_tz_str)
+            else:
+                df_times = df_filtered['datetime']
+            
+            # Create time bounds
+            rth_start_minutes = open_h * 60 + open_m
+            rth_end_minutes = close_h * 60 + close_m
+            
+            # Calculate minutes since midnight for each bar
+            bar_minutes = df_times.dt.hour * 60 + df_times.dt.minute
+            
+            # Filter to RTH
+            rth_mask = (bar_minutes >= rth_start_minutes) & (bar_minutes < rth_end_minutes)
+            df = df[rth_mask]
+            
+            if df.empty:
+                return JSONResponse({
+                    "success": False,
+                    "error": f"No RTH data available. Try disabling RTH filter."
+                })
         
         # Convert to TradingView Lightweight Charts format
         # Format: { time: unix_timestamp, open, high, low, close, volume }
@@ -689,10 +1038,20 @@ async def get_trade_chart_data(trade_id: int, timeframe: str = "5m"):
             "last_candle_time": candles[-1]['time'] if candles else None,
         }
         
+        # Note if we fell back to daily timeframe
+        timeframe_note = None
+        if timeframe != original_timeframe:
+            days_old = (datetime.now().date() - trade.trade_date).days
+            timeframe_note = f"Intraday data not available (trade is {days_old} days old). Showing daily chart."
+        
         return JSONResponse({
             "success": True,
             "ticker": trade.ticker,
             "timeframe": timeframe,
+            "requested_timeframe": original_timeframe,
+            "timeframe_note": timeframe_note,
+            "rth_only": rth_only,
+            "show_after_entry": show_after_entry,
             "candles": candles,
             "markers": markers,
             "price_lines": price_lines,
@@ -727,8 +1086,7 @@ async def add_trade_page(request: Request):
         processed_dir = IMPORTS_DIR / "processed"
         processed_files = list(processed_dir.glob("*.csv")) if processed_dir.exists() else []
         
-        return templates.TemplateResponse("add_trade.html", {
-            "request": request,
+        return templates.TemplateResponse(request, "add_trade.html", {
             "strategies": strategies,
             "tickers": load_tickers_from_file(),
             "data_provider": settings.data_provider,
@@ -751,8 +1109,7 @@ async def import_page():
 async def tickers_page(request: Request):
     """Ticker management page."""
     tickers = load_tickers_from_file()
-    return templates.TemplateResponse("tickers.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "tickers.html", {
         "tickers": tickers,
         "data_provider": settings.data_provider,
         "llm_available": get_llm_api_key() is not None,
@@ -775,8 +1132,7 @@ async def reports_page(request: Request):
                 "has_eod": (d / "eod_report.md").exists(),
             })
     
-    return templates.TemplateResponse("reports.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "reports.html", {
         "reports": reports,
         "tickers": load_tickers_from_file(),
         "data_provider": settings.data_provider,
@@ -801,8 +1157,7 @@ async def stats_page(request: Request):
             cumulative += t.r_multiple
             equity_data.append({"date": str(t.trade_date), "r": cumulative})
     
-    return templates.TemplateResponse("stats.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "stats.html", {
         "strategy_stats": strategy_stats,
         "edge_analysis": edge_analysis,
         "equity_data": equity_data,
@@ -1179,7 +1534,7 @@ async def analyze_all_trades(force: bool = False):
                         
                         # Cache the review
                         trade.cached_review = json_module.dumps(review_dict)
-                        trade.review_generated_at = datetime.utcnow()
+                        trade.review_generated_at = datetime.now(timezone.utc)
                         thread_session.commit()
                         
                         return {"id": trade_id, "success": True, "strategy": current_strategy}
@@ -1323,8 +1678,7 @@ async def settings_page(request: Request):
         'market_context': get_editable_prompt('market_context', is_user_prompt=True),
     }
 
-    return templates.TemplateResponse("settings.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "settings.html", {
         "candles": current_settings.get('candles', {}),
         "system_prompts": system_prompts,
         "user_prompts": user_prompts,
@@ -1425,8 +1779,7 @@ async def strategies_page(request: Request):
             trade_count = session.query(Trade).filter(Trade.strategy_id == strategy.id).count()
             strategy_stats[strategy.id] = trade_count
         
-        return templates.TemplateResponse("strategies.html", {
-            "request": request,
+        return templates.TemplateResponse(request, "strategies.html", {
             "strategies": strategies,
             "strategy_stats": strategy_stats,
             "data_provider": settings.data_provider,
@@ -1810,8 +2163,7 @@ async def materials_page(request: Request):
                     "size_kb": round(f.stat().st_size / 1024, 1),
                 })
     
-    return templates.TemplateResponse("materials.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "materials.html", {
         "materials": materials,
         "llm_available": get_llm_api_key() is not None,
         "data_provider": settings.data_provider,
@@ -1946,8 +2298,7 @@ async def delete_all_materials():
 @app.get("/analysis", response_class=HTMLResponse)
 async def analysis_page(request: Request):
     """Bulk trade analysis page."""
-    return templates.TemplateResponse("analysis.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "analysis.html", {
         "llm_available": get_llm_api_key() is not None,
         "data_provider": settings.data_provider,
     })

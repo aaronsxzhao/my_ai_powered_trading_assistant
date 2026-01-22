@@ -443,6 +443,9 @@ class TradeCoach:
             if cancellation_check and cancellation_check():
                 return ("Cancelled", None) if return_daily_df else "Cancelled"
             
+            # Get entry_price for futures contract selection
+            entry_price = trade.entry_price if trade.entry_price else None
+            
             if timeframe == "5m" or timeframe not in ["2h", "1d"]:
                 # 5-min scalp/day trades: Full Brooks package - fetch all 3 timeframes in parallel
                 logger.info(f"📊 Fetching OHLCV data in parallel for {trade.ticker} (daily, 2h, 5m)")
@@ -452,17 +455,17 @@ class TradeCoach:
                     future_daily = executor.submit(
                         self._fetch_ohlcv_section_with_cutoff_and_df,
                         trade.ticker, "1d", daily_fetch_end, 60, 
-                        "DAILY_60 (prior day close cutoff)", daily_cutoff, cancellation_check, market_tz
+                        "DAILY_60 (prior day close cutoff)", daily_cutoff, cancellation_check, market_tz, entry_price
                     )
                     future_2h = executor.submit(
                         self._fetch_ohlcv_section_with_cutoff,
                         trade.ticker, "2h", entry_cutoff, 120,
-                        "TWOHOUR_120 (entry time cutoff)", cancellation_check, market_tz
+                        "TWOHOUR_120 (entry time cutoff)", cancellation_check, market_tz, entry_price
                     )
                     future_5m = executor.submit(
                         self._fetch_ohlcv_section_with_cutoff,
                         trade.ticker, "5m", entry_cutoff, 234,
-                        "FIVEMIN_234 (entry time cutoff)", cancellation_check, market_tz
+                        "FIVEMIN_234 (entry time cutoff)", cancellation_check, market_tz, entry_price
                     )
                     future_pattern = executor.submit(
                         self._detect_patterns_before_entry,
@@ -506,12 +509,12 @@ class TradeCoach:
                     future_daily = executor.submit(
                         self._fetch_ohlcv_section_with_cutoff_and_df,
                         trade.ticker, "1d", daily_fetch_end, 60,
-                        "DAILY_60 (prior day close cutoff)", daily_cutoff, cancellation_check, market_tz
+                        "DAILY_60 (prior day close cutoff)", daily_cutoff, cancellation_check, market_tz, entry_price
                     )
                     future_2h = executor.submit(
                         self._fetch_ohlcv_section_with_cutoff,
                         trade.ticker, "2h", entry_cutoff, 120,
-                        "TWOHOUR_120 (entry time cutoff)", cancellation_check, market_tz
+                        "TWOHOUR_120 (entry time cutoff)", cancellation_check, market_tz, entry_price
                     )
                     
                     try:
@@ -529,7 +532,7 @@ class TradeCoach:
                 # Daily position trades: Just daily context (no parallelization needed)
                 daily_context, daily_df = self._fetch_ohlcv_section_with_cutoff_and_df(
                     trade.ticker, "1d", daily_fetch_end, 120,
-                    "DAILY_120 (prior day close cutoff)", daily_cutoff, cancellation_check, market_tz
+                    "DAILY_120 (prior day close cutoff)", daily_cutoff, cancellation_check, market_tz, entry_price
                 )
                 all_context.append(daily_context)
             
@@ -556,7 +559,7 @@ class TradeCoach:
             logger.warning(f"Failed to get OHLCV context: {e}")
             return ("Market data unavailable", None) if return_daily_df else "Market data unavailable"
     
-    def _fetch_ohlcv_section_with_cutoff(self, ticker: str, interval: str, cutoff_time: datetime, num_bars: int, label: str, cancellation_check: callable = None, market_timezone: str = "America/New_York") -> str:
+    def _fetch_ohlcv_section_with_cutoff(self, ticker: str, interval: str, cutoff_time: datetime, num_bars: int, label: str, cancellation_check: callable = None, market_timezone: str = "America/New_York", target_price: float = None) -> str:
         """Fetch OHLCV data up to a specific cutoff time (no future data).
         
         IMPORTANT: Only includes COMPLETED bars. A bar is complete when:
@@ -574,6 +577,7 @@ class TradeCoach:
             label: Label for this section
             cancellation_check: Optional cancellation callback
             market_timezone: Timezone of the market (e.g., "Asia/Hong_Kong" for HK stocks)
+            target_price: Optional price to help select correct futures contract
         """
         try:
             from zoneinfo import ZoneInfo
@@ -611,15 +615,28 @@ class TradeCoach:
             if cancellation_check and cancellation_check():
                 return f"=== {label} ===\nCancelled"
             
-            # Use ticker-specific provider (e.g., AllTick for HK stocks)
+            # Use ticker-specific provider (e.g., AllTick for HK stocks, Databento for futures)
             provider = self._get_provider_for_ticker(ticker)
-            ohlcv = provider.get_ohlcv(
-                ticker,
-                interval,
-                start_date,
-                cutoff_aware,  # Fetch up to cutoff_time, filter below
-                cancellation_check=cancellation_check
-            )
+            
+            # Check if provider supports target_price (for futures contract selection)
+            import inspect
+            if target_price and 'target_price' in inspect.signature(provider.get_ohlcv).parameters:
+                ohlcv = provider.get_ohlcv(
+                    ticker,
+                    interval,
+                    start_date,
+                    cutoff_aware,  # Fetch up to cutoff_time, filter below
+                    cancellation_check=cancellation_check,
+                    target_price=target_price
+                )
+            else:
+                ohlcv = provider.get_ohlcv(
+                    ticker,
+                    interval,
+                    start_date,
+                    cutoff_aware,  # Fetch up to cutoff_time, filter below
+                    cancellation_check=cancellation_check
+                )
             
             if ohlcv is None or ohlcv.empty:
                 logger.warning(f"No {interval} data returned for {ticker}")
@@ -762,7 +779,7 @@ class TradeCoach:
             logger.warning(f"Failed to fetch {interval} data for {ticker}: {e}")
             return f"=== {label} ===\nData fetch failed: {e}"
 
-    def _fetch_ohlcv_section_with_cutoff_and_df(self, ticker: str, interval: str, fetch_end: datetime, num_bars: int, label: str, display_cutoff: datetime, cancellation_check: callable = None, market_timezone: str = "America/New_York") -> tuple:
+    def _fetch_ohlcv_section_with_cutoff_and_df(self, ticker: str, interval: str, fetch_end: datetime, num_bars: int, label: str, display_cutoff: datetime, cancellation_check: callable = None, market_timezone: str = "America/New_York", target_price: float = None) -> tuple:
         """Fetch OHLCV data and return both formatted string and raw DataFrame.
         
         This is used for daily data to reuse it for session context.
@@ -805,13 +822,26 @@ class TradeCoach:
             
             # Fetch data up to fetch_end (includes trade date)
             provider = self._get_provider_for_ticker(ticker)
-            ohlcv = provider.get_ohlcv(
-                ticker,
-                interval,
-                start_date,
-                fetch_end_aware,
-                cancellation_check=cancellation_check
-            )
+            
+            # Check if provider supports target_price (for futures contract selection)
+            import inspect
+            if target_price and 'target_price' in inspect.signature(provider.get_ohlcv).parameters:
+                ohlcv = provider.get_ohlcv(
+                    ticker,
+                    interval,
+                    start_date,
+                    fetch_end_aware,
+                    cancellation_check=cancellation_check,
+                    target_price=target_price
+                )
+            else:
+                ohlcv = provider.get_ohlcv(
+                    ticker,
+                    interval,
+                    start_date,
+                    fetch_end_aware,
+                    cancellation_check=cancellation_check
+                )
             
             if ohlcv is None or ohlcv.empty:
                 logger.warning(f"No {interval} data returned for {ticker}")

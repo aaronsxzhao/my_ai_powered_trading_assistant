@@ -8,9 +8,14 @@ Models:
 - Tag: Trade tags for categorization
 """
 
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from typing import Optional, Literal
 import enum
+
+
+def utc_now():
+    """Get current UTC time (timezone-aware replacement for deprecated utc_now())."""
+    return datetime.now(timezone.utc)
 
 from sqlalchemy import (
     create_engine,
@@ -72,7 +77,7 @@ class Strategy(Base):
     category = Column(String(50))  # with_trend, countertrend, trading_range, special
     description = Column(Text)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     # Relationship to trades
     trades = relationship("Trade", back_populates="strategy")
@@ -217,8 +222,8 @@ class Trade(Base):
     review_in_progress = Column(Boolean, default=False)  # True while regenerating
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     # Tags relationship
     tags = relationship("Tag", secondary=trade_tags, back_populates="trades")
@@ -434,8 +439,8 @@ class DailySummary(Base):
     rule_violations = Column(Text)
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     def __repr__(self):
         return f"<DailySummary(date='{self.summary_date}', trades={self.total_trades}, r={self.total_r})>"

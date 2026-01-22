@@ -57,7 +57,7 @@
             <h2 class="text-xl font-bold text-white flex items-center gap-2">
                 📈 Price Chart
             </h2>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 flex-wrap">
                 <select id="chart-timeframe" class="select text-sm py-1.5 px-3" onchange="loadChartData()">
                     <option value="5m" {% if trade.timeframe == '5m' or not trade.timeframe %}selected{% endif %}>5 min</option>
                     <option value="15m">15 min</option>
@@ -65,8 +65,25 @@
                     <option value="2h" {% if trade.timeframe == '2h' %}selected{% endif %}>2 hour</option>
                     <option value="1d" {% if trade.timeframe == '1d' %}selected{% endif %}>Daily</option>
                 </select>
+                
+                <!-- RTH/ETH Toggle -->
+                <div class="flex items-center gap-1 px-2 py-1 bg-dark-700 rounded-lg">
+                    <button id="btn-rth" onclick="setRthMode(true)" class="text-xs px-2 py-1 rounded bg-accent-600 text-white" title="Regular Trading Hours (9:30 AM - 4:00 PM)">
+                        RTH
+                    </button>
+                    <button id="btn-eth" onclick="setRthMode(false)" class="text-xs px-2 py-1 rounded text-dark-400 hover:text-white" title="Electronic Trading Hours (includes overnight)">
+                        ETH
+                    </button>
+                </div>
+                
+                <!-- Show After Entry Toggle -->
+                <label class="flex items-center gap-1 text-xs text-dark-400 cursor-pointer">
+                    <input type="checkbox" id="show-after-entry" onchange="loadChartData()" class="rounded">
+                    <span title="Show bars after entry (see outcome)">After Entry</span>
+                </label>
+                
                 <button onclick="loadChartData()" class="btn btn-secondary text-sm py-1.5 px-3">
-                    🔄 Refresh
+                    🔄
                 </button>
             </div>
         </div>
@@ -669,8 +686,34 @@ function calculateBarNumbers(candles, timeframe) {
     return barNumbers;
 }
 
+// Track RTH mode (default: true)
+let rthMode = true;
+
+function setRthMode(isRth) {
+    rthMode = isRth;
+    
+    // Update button styles
+    const btnRth = document.getElementById('btn-rth');
+    const btnEth = document.getElementById('btn-eth');
+    
+    if (isRth) {
+        btnRth.classList.add('bg-accent-600', 'text-white');
+        btnRth.classList.remove('text-dark-400');
+        btnEth.classList.remove('bg-accent-600', 'text-white');
+        btnEth.classList.add('text-dark-400');
+    } else {
+        btnEth.classList.add('bg-accent-600', 'text-white');
+        btnEth.classList.remove('text-dark-400');
+        btnRth.classList.remove('bg-accent-600', 'text-white');
+        btnRth.classList.add('text-dark-400');
+    }
+    
+    loadChartData();
+}
+
 async function loadChartData() {
     const timeframe = document.getElementById('chart-timeframe').value;
+    const showAfterEntry = document.getElementById('show-after-entry')?.checked || false;
     const chartLoading = document.getElementById('chart-loading');
     const chartContainer = document.getElementById('tradingview-chart');
     
@@ -678,7 +721,12 @@ async function loadChartData() {
     chartLoading.classList.remove('hidden');
     
     try {
-        const response = await fetch(`/api/trades/${TRADE_ID}/chart-data?timeframe=${timeframe}`);
+        const params = new URLSearchParams({
+            timeframe: timeframe,
+            rth_only: rthMode,
+            show_after_entry: showAfterEntry,
+        });
+        const response = await fetch(`/api/trades/${TRADE_ID}/chart-data?${params}`);
         const data = await response.json();
         
         // Log debug info
@@ -992,10 +1040,141 @@ async function checkExistingReview() {
     }
 }
 
+// Track if we should skip data check (user chose to continue anyway)
+let skipDataCheck = false;
+
+// Data modal functions
+function openDataModal() {
+    document.getElementById('data-download-modal').classList.remove('hidden');
+}
+
+function closeDataModal() {
+    document.getElementById('data-download-modal').classList.add('hidden');
+    document.getElementById('data-download-progress').classList.add('hidden');
+    document.getElementById('data-download-error').classList.add('hidden');
+}
+
+async function checkFuturesData() {
+    try {
+        const response = await fetch(`/api/trades/${TRADE_ID}/check-data`);
+        const data = await response.json();
+        return data;
+    } catch (e) {
+        console.error('Error checking data:', e);
+        return { success: false, error: e.message };
+    }
+}
+
+function updateDataStatus(data) {
+    const statusDiv = document.getElementById('data-status');
+    const downloadBtn = document.getElementById('download-data-btn');
+    const continueBtn = document.getElementById('continue-anyway-btn');
+    
+    if (data.has_data) {
+        statusDiv.innerHTML = `
+            <div class="flex items-center gap-2 text-green-400">
+                <span>✅</span>
+                <span>All required data is available locally</span>
+            </div>
+        `;
+        downloadBtn.classList.add('hidden');
+        continueBtn.textContent = 'Continue';
+        continueBtn.classList.remove('hidden');
+    } else {
+        let html = `
+            <div class="text-dark-300 mb-2">
+                <strong>Ticker:</strong> ${data.ticker} &nbsp;|&nbsp;
+                <strong>Trade Date:</strong> ${data.trade_date}
+            </div>
+            <div class="text-yellow-400 mb-2">Missing data for:</div>
+            <ul class="list-disc list-inside text-dark-400 space-y-1">
+        `;
+        
+        for (const schema of data.missing_schemas || []) {
+            const details = data.missing_details?.[schema] || {};
+            html += `<li><code>${schema}</code>`;
+            if (details.have !== undefined) {
+                html += ` (have ${details.have} days, need ${details.need})`;
+            }
+            html += `</li>`;
+        }
+        
+        html += '</ul>';
+        statusDiv.innerHTML = html;
+        
+        downloadBtn.classList.remove('hidden');
+        continueBtn.textContent = 'Skip (may fail)';
+        continueBtn.classList.remove('hidden');
+    }
+}
+
+async function downloadFuturesData() {
+    const downloadBtn = document.getElementById('download-data-btn');
+    const progressDiv = document.getElementById('data-download-progress');
+    const errorDiv = document.getElementById('data-download-error');
+    const statusText = document.getElementById('download-status-text');
+    
+    downloadBtn.disabled = true;
+    downloadBtn.textContent = 'Downloading...';
+    progressDiv.classList.remove('hidden');
+    errorDiv.classList.add('hidden');
+    
+    try {
+        const response = await fetch(`/api/trades/${TRADE_ID}/download-data`, {
+            method: 'POST'
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            // Show success and update status
+            statusText.textContent = 'Download complete!';
+            
+            // Re-check data status
+            const checkData = await checkFuturesData();
+            updateDataStatus(checkData);
+            
+            progressDiv.classList.add('hidden');
+            downloadBtn.classList.add('hidden');
+            
+            showToast('Data downloaded successfully!', 'success');
+        } else {
+            throw new Error(data.error || 'Download failed');
+        }
+    } catch (e) {
+        console.error('Download error:', e);
+        errorDiv.textContent = e.message;
+        errorDiv.classList.remove('hidden');
+        progressDiv.classList.add('hidden');
+        downloadBtn.disabled = false;
+        downloadBtn.textContent = '📥 Retry Download';
+    }
+}
+
+function continueWithoutData() {
+    skipDataCheck = true;
+    closeDataModal();
+    loadReview(false);
+}
+
 async function loadReview(force = false) {
     // Reset cancel state
     isCancelled = false;
     abortController = new AbortController();
+    
+    // Check for futures data first (unless skipping or force regenerating cached)
+    if (!skipDataCheck && !force) {
+        const dataCheck = await checkFuturesData();
+        
+        if (dataCheck.success && dataCheck.is_futures && !dataCheck.has_data) {
+            // Show data download modal
+            updateDataStatus(dataCheck);
+            openDataModal();
+            return;
+        }
+    }
+    
+    // Reset skip flag for next time
+    skipDataCheck = false;
     
     // Reset and show loading
     resetLoadingSteps();
@@ -1587,6 +1766,48 @@ document.addEventListener('DOMContentLoaded', function() {
                 <button type="submit" class="btn btn-primary">💾 Save Changes</button>
             </div>
         </form>
+    </div>
+</div>
+
+<!-- Data Download Modal (for Futures) -->
+<div id="data-download-modal" class="fixed inset-0 bg-dark-950/80 backdrop-blur-sm flex items-center justify-center z-50 hidden">
+    <div class="bg-dark-800 rounded-2xl p-6 max-w-lg w-full mx-4 border border-dark-600">
+        <div class="flex items-center gap-3 mb-4">
+            <span class="text-3xl">📊</span>
+            <h3 class="text-xl font-bold text-white">Futures Data Required</h3>
+        </div>
+        
+        <p class="text-dark-300 mb-4">
+            This is a futures trade. To generate an AI review, we need OHLCV data from Databento.
+        </p>
+        
+        <div id="data-status" class="bg-dark-900 rounded-lg p-4 mb-4 text-sm">
+            <div class="text-dark-400 mb-2">Checking data availability...</div>
+        </div>
+        
+        <div id="data-download-progress" class="hidden mb-4">
+            <div class="flex items-center gap-2 text-accent-400">
+                <div class="loading-spinner w-5 h-5 border-2 border-accent-500 border-t-transparent"></div>
+                <span id="download-status-text">Downloading data...</span>
+            </div>
+        </div>
+        
+        <div id="data-download-error" class="hidden mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
+        </div>
+        
+        <div class="flex justify-end gap-3">
+            <button onclick="closeDataModal()" class="btn btn-secondary">Cancel</button>
+            <button id="download-data-btn" onclick="downloadFuturesData()" class="btn btn-primary">
+                📥 Download Data
+            </button>
+            <button id="continue-anyway-btn" onclick="continueWithoutData()" class="btn btn-secondary hidden">
+                Continue Anyway
+            </button>
+        </div>
+        
+        <p class="text-dark-500 text-xs mt-4">
+            Data is stored locally in <code>data/databento/</code> and reused for future trades.
+        </p>
     </div>
 </div>
 
