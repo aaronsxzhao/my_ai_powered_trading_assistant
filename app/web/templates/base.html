@@ -571,6 +571,29 @@
                     <a href="/settings" class="nav-link p-2 {% if request.url.path == '/settings' or request.url.path == '/tickers' or request.url.path == '/materials' or request.url.path == '/reports' or request.url.path == '/analysis' %}active{% endif %}" title="Settings">
                         ⚙️
                     </a>
+                    
+                    <!-- User Menu -->
+                    {% if current_user is defined and current_user %}
+                    <div class="relative group">
+                        <button class="nav-link p-2 flex items-center space-x-1" title="{{ current_user.email }}">
+                            <span>👤</span>
+                            <span class="hidden lg:inline text-sm">{{ current_user.name or current_user.email.split('@')[0] }}</span>
+                        </button>
+                        <div class="absolute right-0 mt-2 w-48 bg-dark-800 rounded-lg shadow-lg border border-dark-700 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200">
+                            <div class="p-3 border-b border-dark-700">
+                                <p class="text-sm font-medium text-white">{{ current_user.name or 'User' }}</p>
+                                <p class="text-xs text-dark-400 truncate">{{ current_user.email }}</p>
+                            </div>
+                            <a href="/auth/logout" class="block px-4 py-2 text-sm text-dark-300 hover:bg-dark-700 hover:text-white">
+                                Sign Out
+                            </a>
+                        </div>
+                    </div>
+                    {% else %}
+                    <a href="/auth/login" class="nav-link px-4 py-2 text-sm">
+                        Sign In
+                    </a>
+                    {% endif %}
                 </div>
             </div>
         </div>

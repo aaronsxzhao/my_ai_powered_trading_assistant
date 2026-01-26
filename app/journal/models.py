@@ -67,6 +67,39 @@ trade_tags = Table(
 )
 
 
+class User(Base):
+    """User account for authentication."""
+
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    password_hash = Column(String(255), nullable=False)
+    
+    # Email verification
+    is_verified = Column(Boolean, default=False)
+    verification_token = Column(String(100), index=True)
+    verification_token_expires = Column(DateTime)
+    
+    # Password reset
+    reset_token = Column(String(100), index=True)
+    reset_token_expires = Column(DateTime)
+    
+    # Profile info
+    name = Column(String(100))
+    
+    # Account status
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=utc_now)
+    last_login = Column(DateTime)
+    
+    # Relationships
+    trades = relationship("Trade", back_populates="user")
+    
+    def __repr__(self):
+        return f"<User(email='{self.email}', verified={self.is_verified})>"
+
+
 class Strategy(Base):
     """Strategy taxonomy model."""
 
@@ -108,6 +141,10 @@ class Trade(Base):
     __tablename__ = "trades"
 
     id = Column(Integer, primary_key=True)
+    
+    # User ownership (nullable for backward compatibility with existing trades)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    user = relationship("User", back_populates="trades")
     
     # Display order (chronological: oldest = 1)
     # Separate from id so trades display in time order regardless of when added
@@ -620,6 +657,16 @@ def init_db() -> None:
         except Exception:
             try:
                 conn.execute(text("ALTER TABLE trades ADD COLUMN fees FLOAT"))
+                conn.commit()
+            except Exception:
+                pass
+        
+        # User ID column for multi-user support
+        try:
+            conn.execute(text("SELECT user_id FROM trades LIMIT 1"))
+        except Exception:
+            try:
+                conn.execute(text("ALTER TABLE trades ADD COLUMN user_id INTEGER"))
                 conn.commit()
             except Exception:
                 pass

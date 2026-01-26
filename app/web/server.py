@@ -226,10 +226,11 @@ app = FastAPI(
 )
 
 # Include modular routers
-from app.web.routes import trades_router, strategies_router, materials_router
+from app.web.routes import trades_router, strategies_router, materials_router, auth_router
 app.include_router(trades_router)
 app.include_router(strategies_router)
 app.include_router(materials_router)
+app.include_router(auth_router)
 
 # Mount static files directory
 STATIC_DIR = Path(__file__).parent / "static"
@@ -323,12 +324,34 @@ async def api_status():
     }))
 
 
+# ==================== USER CONTEXT HELPER ====================
+
+async def get_template_context(request: Request) -> dict:
+    """Get common template context including current user."""
+    from app.auth.service import get_current_user_optional
+    
+    context = {
+        "data_provider": settings.data_provider,
+        "llm_available": get_llm_api_key() is not None,
+    }
+    
+    # Try to get current user (non-blocking)
+    try:
+        user = await get_current_user_optional(request, None)
+        context["current_user"] = user
+    except Exception:
+        context["current_user"] = None
+    
+    return context
+
+
 # ==================== PAGES ====================
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
     """Main dashboard page."""
     analytics = TradeAnalytics()
+    base_context = await get_template_context(request)
     
     session = get_session()
     try:
@@ -351,23 +374,18 @@ async def dashboard(request: Request):
         # Get strategy stats
         strategy_stats = analytics.get_all_strategy_stats()[:5]
         
-        # Check LLM status
-        llm_available = get_llm_api_key() is not None
-        
         # Check data provider
-        data_provider = settings.data_provider
         polygon_available = get_polygon_api_key() is not None
         
         return templates.TemplateResponse(request, "dashboard.html", {
+            **base_context,
             "recent_trades": recent_trades,
             "total_trades": total_trades,
             "total_r": total_r,
             "win_rate": win_rate,
             "winners": winners,
             "strategy_stats": strategy_stats,
-            "llm_available": llm_available,
             "tickers": load_tickers_from_file(),
-            "data_provider": data_provider,
             "polygon_available": polygon_available,
         })
     finally:
@@ -392,6 +410,8 @@ async def trades_page(
         outcome: Filter by outcome (win, loss, breakeven)
     """
     from math import ceil
+    
+    base_context = await get_template_context(request)
     
     # Validate pagination params
     page = max(1, page)
@@ -433,10 +453,9 @@ async def trades_page(
         strategies = get_active_strategies_cached(session)
 
         return templates.TemplateResponse(request, "trades.html", {
+            **base_context,
             "trades": trades,
             "strategies": strategies,
-            "data_provider": settings.data_provider,
-            "llm_available": get_llm_api_key() is not None,
             # Pagination info
             "page": page,
             "per_page": per_page,
@@ -457,6 +476,8 @@ async def trade_detail(request: Request, trade_id: int):
     """Trade detail page - loads instantly, review fetched via AJAX."""
     from app.materials_reader import has_materials
     
+    base_context = await get_template_context(request)
+    
     session = get_session()
     try:
         trade = session.query(Trade).filter(Trade.id == trade_id).first()
@@ -465,10 +486,9 @@ async def trade_detail(request: Request, trade_id: int):
 
         # Don't block on LLM - page loads instantly, review fetched async
         return templates.TemplateResponse(request, "trade_detail.html", {
+            **base_context,
             "trade": trade,
             "review": None,  # Will be loaded via AJAX
-            "data_provider": settings.data_provider,
-            "llm_available": get_llm_api_key() is not None,
             "has_materials": has_materials(),
         })
     finally:
@@ -1344,6 +1364,8 @@ def _fetch_chart_data_sync(trade_id: int, timeframe: str, rth_only: bool, show_a
 @app.get("/add-trade", response_class=HTMLResponse)
 async def add_trade_page(request: Request):
     """Add trade form page (includes single trade and bulk import)."""
+    base_context = await get_template_context(request)
+    
     session = get_session()
     try:
         strategies = get_active_strategies_cached(session)
@@ -1354,10 +1376,9 @@ async def add_trade_page(request: Request):
         processed_files = list(processed_dir.glob("*.csv")) if processed_dir.exists() else []
         
         return templates.TemplateResponse(request, "add_trade.html", {
+            **base_context,
             "strategies": strategies,
             "tickers": load_tickers_from_file(),
-            "data_provider": settings.data_provider,
-            "llm_available": get_llm_api_key() is not None,
             "imports_path": str(IMPORTS_DIR),
             "import_files": import_files,
             "processed_files": processed_files,
@@ -1375,17 +1396,19 @@ async def import_page():
 @app.get("/tickers", response_class=HTMLResponse)
 async def tickers_page(request: Request):
     """Ticker management page."""
+    base_context = await get_template_context(request)
     tickers = load_tickers_from_file()
     return templates.TemplateResponse(request, "tickers.html", {
+        **base_context,
         "tickers": tickers,
-        "data_provider": settings.data_provider,
-        "llm_available": get_llm_api_key() is not None,
     })
 
 
 @app.get("/reports", response_class=HTMLResponse)
 async def reports_page(request: Request):
     """Reports page."""
+    base_context = await get_template_context(request)
+    
     # List available reports
     report_dirs = sorted(OUTPUTS_DIR.glob("*"), reverse=True)[:20]
     
@@ -1400,16 +1423,16 @@ async def reports_page(request: Request):
             })
     
     return templates.TemplateResponse(request, "reports.html", {
+        **base_context,
         "reports": reports,
         "tickers": load_tickers_from_file(),
-        "data_provider": settings.data_provider,
-        "llm_available": get_llm_api_key() is not None,
     })
 
 
 @app.get("/stats", response_class=HTMLResponse)
 async def stats_page(request: Request):
     """Statistics page."""
+    base_context = await get_template_context(request)
     analytics = TradeAnalytics()
     
     strategy_stats = analytics.get_all_strategy_stats()
@@ -1425,11 +1448,10 @@ async def stats_page(request: Request):
             equity_data.append({"date": str(t.trade_date), "r": cumulative})
     
     return templates.TemplateResponse(request, "stats.html", {
+        **base_context,
         "strategy_stats": strategy_stats,
         "edge_analysis": edge_analysis,
         "equity_data": equity_data,
-        "data_provider": settings.data_provider,
-        "llm_available": get_llm_api_key() is not None,
     })
 
 
@@ -1958,6 +1980,7 @@ async def settings_page(request: Request):
 
     from app.config_prompts import get_editable_prompt
     
+    base_context = await get_template_context(request)
     current_settings = load_settings()
     
     # Get editable prompts (without protected JSON schemas)
@@ -1971,13 +1994,12 @@ async def settings_page(request: Request):
     }
 
     return templates.TemplateResponse(request, "settings.html", {
+        **base_context,
         "candles": current_settings.get('candles', {}),
         "system_prompts": system_prompts,
         "user_prompts": user_prompts,
         "cache_settings": get_cache_settings(),
         "settings_file": str(SETTINGS_FILE),
-        "data_provider": settings.data_provider,
-        "llm_available": get_llm_api_key() is not None,
     })
 
 
@@ -2061,6 +2083,8 @@ async def strategies_page(request: Request):
     """Strategy management page - edit, merge, categorize strategies."""
     from app.journal.models import Strategy
     
+    base_context = await get_template_context(request)
+    
     session = get_session()
     try:
         strategies = session.query(Strategy).order_by(Strategy.category, Strategy.name).all()
@@ -2072,10 +2096,9 @@ async def strategies_page(request: Request):
             strategy_stats[strategy.id] = trade_count
         
         return templates.TemplateResponse(request, "strategies.html", {
+            **base_context,
             "strategies": strategies,
             "strategy_stats": strategy_stats,
-            "data_provider": settings.data_provider,
-            "llm_available": get_llm_api_key() is not None,
         })
     finally:
         session.close()
@@ -2444,6 +2467,7 @@ async def robinhood_disconnect():
 @app.get("/materials", response_class=HTMLResponse)
 async def materials_page(request: Request):
     """Training materials management page."""
+    base_context = await get_template_context(request)
     materials = []
     
     if MATERIALS_DIR.exists():
@@ -2456,9 +2480,8 @@ async def materials_page(request: Request):
                 })
     
     return templates.TemplateResponse(request, "materials.html", {
+        **base_context,
         "materials": materials,
-        "llm_available": get_llm_api_key() is not None,
-        "data_provider": settings.data_provider,
     })
 
 
@@ -2609,9 +2632,9 @@ async def delete_all_materials():
 @app.get("/analysis", response_class=HTMLResponse)
 async def analysis_page(request: Request):
     """Bulk trade analysis page."""
+    base_context = await get_template_context(request)
     return templates.TemplateResponse(request, "analysis.html", {
-        "llm_available": get_llm_api_key() is not None,
-        "data_provider": settings.data_provider,
+        **base_context,
     })
 
 
