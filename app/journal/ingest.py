@@ -270,6 +270,7 @@ class TradeIngester:
         market_timezone: str = "America/New_York",
         input_timezone: Optional[str] = None,
         skip_duplicates: bool = True,
+        user_id: Optional[int] = None,
     ) -> Optional[Trade]:
         """
         Add a trade manually.
@@ -348,6 +349,7 @@ class TradeIngester:
                 currency_rate=currency_rate,
                 market_timezone=market_timezone,
                 input_timezone=input_timezone,
+                user_id=user_id,
             )
 
             # If no entry_time provided, create one from trade_date (start of trading day)

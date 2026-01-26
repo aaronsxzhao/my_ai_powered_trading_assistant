@@ -13,7 +13,7 @@ from datetime import timedelta
 from typing import Optional
 from pydantic import BaseModel, EmailStr, Field
 
-from fastapi import APIRouter, Request, HTTPException, Depends, Response
+from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
@@ -144,7 +144,7 @@ async def register(request: Request):
 
 
 @router.post("/login")
-async def login(request: Request, response: Response):
+async def login(request: Request):
     """
     Login with email and password.
     
@@ -181,24 +181,27 @@ async def login(request: Request, response: Response):
     ))
     
     # Set HTTP-only cookie for session
+    # secure=True only when running on HTTPS
     response.set_cookie(
         key="access_token",
         value=token,
         httponly=True,
+        secure=request.url.scheme == "https",
         max_age=60 * 60 * 24,  # 24 hours
         samesite="lax",
+        path="/",
     )
     
     return response
 
 
 @router.post("/logout")
-async def logout(response: Response):
+async def logout():
     """
     Logout user by clearing session cookie.
     """
     response = JSONResponse(success_response(message="Logged out"))
-    response.delete_cookie("access_token")
+    response.delete_cookie("access_token", path="/")
     return response
 
 
@@ -208,7 +211,7 @@ async def logout_redirect():
     Logout via GET (for simple links) - redirects to login.
     """
     response = RedirectResponse(url="/auth/login", status_code=303)
-    response.delete_cookie("access_token")
+    response.delete_cookie("access_token", path="/")
     return response
 
 

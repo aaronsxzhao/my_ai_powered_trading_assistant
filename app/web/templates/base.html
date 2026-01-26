@@ -533,6 +533,7 @@
                             Brooks Coach
                         </span>
                     </a>
+                    {% if current_user is defined and current_user %}
                     <div class="hidden md:flex items-center space-x-1">
                         <a href="/" class="nav-link {% if request.url.path == '/' %}active{% endif %}">
                             <span class="mr-1.5">🏠</span> Dashboard
@@ -547,6 +548,7 @@
                             <span class="mr-1.5">📈</span> Stats
                         </a>
                     </div>
+                    {% endif %}
                 </div>
                 
                 <!-- Status & Settings -->
@@ -568,9 +570,11 @@
                     <button onclick="toggleTheme()" class="nav-link p-2" title="Toggle Dark/Light Mode" id="theme-toggle">
                         <span id="theme-icon">🌙</span>
                     </button>
+                    {% if current_user is defined and current_user %}
                     <a href="/settings" class="nav-link p-2 {% if request.url.path == '/settings' or request.url.path == '/tickers' or request.url.path == '/materials' or request.url.path == '/reports' or request.url.path == '/analysis' %}active{% endif %}" title="Settings">
                         ⚙️
                     </a>
+                    {% endif %}
                     
                     <!-- User Menu -->
                     {% if current_user is defined and current_user %}
@@ -599,9 +603,11 @@
         </div>
     </nav>
 
-    <!-- Mobile Navigation -->
+    <!-- Mobile Navigation (hidden on auth pages) -->
+    {% if not request.url.path.startswith('/auth/') %}
     <div class="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-dark-900/95 backdrop-blur-xl border-t border-dark-700/50 px-2 py-2 safe-area-inset-bottom">
         <div class="flex justify-around">
+            {% if current_user is defined and current_user %}
             <a href="/" class="flex flex-col items-center px-3 py-2 text-xs {% if request.url.path == '/' %}text-accent-400{% else %}text-dark-400{% endif %}">
                 <span class="text-lg mb-1">🏠</span>
                 Home
@@ -618,12 +624,23 @@
                 <span class="text-lg mb-1">📈</span>
                 Stats
             </a>
-            <a href="/settings" class="flex flex-col items-center px-3 py-2 text-xs {% if request.url.path == '/settings' %}text-accent-400{% else %}text-dark-400{% endif %}">
-                <span class="text-lg mb-1">⚙️</span>
-                Settings
+            <a href="/auth/logout" class="flex flex-col items-center px-3 py-2 text-xs text-dark-400">
+                <span class="text-lg mb-1">🚪</span>
+                Logout
             </a>
+            {% else %}
+            <a href="/auth/login" class="flex flex-col items-center px-3 py-2 text-xs text-accent-400">
+                <span class="text-lg mb-1">🔑</span>
+                Sign In
+            </a>
+            <a href="/auth/register" class="flex flex-col items-center px-3 py-2 text-xs text-dark-400">
+                <span class="text-lg mb-1">📝</span>
+                Register
+            </a>
+            {% endif %}
         </div>
     </div>
+    {% endif %}
 
     <!-- Main Content -->
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24 md:pb-8 animate-fadeIn">

@@ -73,11 +73,16 @@ class TradeAnalytics:
         self,
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
+        user_id: Optional[int] = None,
     ) -> list[Trade]:
-        """Get all trades within date range."""
+        """Get all trades within date range, optionally filtered by user."""
         session = get_session()
         try:
             query = session.query(Trade)
+
+            # Filter by user if provided
+            if user_id is not None:
+                query = query.filter(Trade.user_id == user_id)
 
             if start_date:
                 query = query.filter(Trade.trade_date >= start_date)
@@ -147,24 +152,30 @@ class TradeAnalytics:
 
         return round(gross_profit / gross_loss, 2)
 
-    def compute_strategy_stats(self, strategy_name: str) -> Optional[StrategyStats]:
+    def compute_strategy_stats(self, strategy_name: str, user_id: Optional[int] = None) -> Optional[StrategyStats]:
         """
         Compute statistics for a specific strategy.
 
         Args:
             strategy_name: Strategy name
+            user_id: Optional user ID to filter trades by
 
         Returns:
             StrategyStats object or None if no trades
         """
         session = get_session()
         try:
-            trades = (
+            query = (
                 session.query(Trade)
                 .join(Strategy)
                 .filter(Strategy.name == strategy_name)
-                .all()
             )
+            
+            # Filter by user if provided
+            if user_id is not None:
+                query = query.filter(Trade.user_id == user_id)
+            
+            trades = query.all()
 
             if not trades:
                 return None
@@ -257,20 +268,20 @@ class TradeAnalytics:
 
         return None
 
-    def get_all_strategy_stats(self) -> list[StrategyStats]:
-        """Get statistics for all strategies with trades."""
+    def get_all_strategy_stats(self, user_id: Optional[int] = None) -> list[StrategyStats]:
+        """Get statistics for all strategies with trades, optionally filtered by user."""
         session = get_session()
         try:
-            strategies = (
-                session.query(Strategy)
-                .join(Trade)
-                .distinct()
-                .all()
-            )
+            # Build query - optionally filter by user_id
+            query = session.query(Strategy).join(Trade)
+            if user_id is not None:
+                query = query.filter(Trade.user_id == user_id)
+            
+            strategies = query.distinct().all()
 
             stats = []
             for strat in strategies:
-                s = self.compute_strategy_stats(strat.name)
+                s = self.compute_strategy_stats(strat.name, user_id=user_id)
                 if s:
                     stats.append(s)
 

@@ -92,8 +92,78 @@ async def verify_api_key(api_key: str = Security(api_key_header)) -> bool:
     return True
 
 
-# Dependency for protected routes
+# Dependency for API key-protected routes (used for DELETE endpoints)
 require_auth = Depends(verify_api_key)
+
+
+async def require_user_or_api_key(request: Request):
+    """
+    Dependency that requires either:
+    1. A logged-in user (via session cookie or Bearer token), OR
+    2. A valid API key
+    
+    Returns the authenticated user if logged in, or True if API key is valid.
+    """
+    from app.auth.service import get_current_user_optional
+    
+    # First, try to get the logged-in user
+    try:
+        user = await get_current_user_optional(request, None)
+        if user:
+            return user
+    except Exception:
+        pass
+    
+    # Fall back to API key authentication
+    api_key = request.headers.get("X-API-Key")
+    expected_key = get_app_api_key()
+    
+    if expected_key and api_key == expected_key:
+        return True
+    
+    # Neither user nor API key - require authentication
+    raise HTTPException(
+        status_code=401,
+        detail="Authentication required. Please log in or provide a valid API key.",
+        headers={"WWW-Authenticate": "Bearer"}
+    )
+
+
+# Dependency for write operations (POST/PATCH)
+require_write_auth = Depends(require_user_or_api_key)
+
+
+async def get_user_from_request(request: Request):
+    """
+    Get the current logged-in user from a request (if any).
+    Returns None if using API key authentication.
+    """
+    from app.auth.service import get_current_user_optional
+    try:
+        return await get_current_user_optional(request, None)
+    except Exception:
+        return None
+
+
+async def verify_trade_ownership(trade_id: int, request: Request, session):
+    """
+    Verify that the trade belongs to the current user.
+    For API key auth, returns the trade without ownership check.
+    Returns the trade if authorized, raises 404 if not found or not authorized.
+    """
+    user = await get_user_from_request(request)
+    
+    if user:
+        # User is logged in - verify ownership
+        trade = session.query(Trade).filter(Trade.id == trade_id, Trade.user_id == user.id).first()
+    else:
+        # API key auth - allow access to any trade
+        trade = session.query(Trade).filter(Trade.id == trade_id).first()
+    
+    if not trade:
+        raise HTTPException(status_code=404, detail="Trade not found")
+    
+    return trade, user
 
 
 # ==================== FILE UPLOAD SECURITY ====================
@@ -345,34 +415,67 @@ async def get_template_context(request: Request) -> dict:
     return context
 
 
+# ==================== AUTHENTICATION DEPENDENCIES ====================
+
+async def require_login(request: Request):
+    """
+    Dependency that requires user to be logged in.
+    Redirects to login page if not authenticated.
+    Returns the authenticated user.
+    """
+    from app.auth.service import get_current_user
+    from fastapi.responses import RedirectResponse
+    
+    try:
+        user = await get_current_user(request, None)
+        return user
+    except HTTPException:
+        # Redirect to login with return URL
+        login_url = f"/auth/login?next={request.url.path}"
+        raise HTTPException(
+            status_code=307,
+            headers={"Location": login_url}
+        )
+
+
+async def get_template_context_with_user(request: Request, user) -> dict:
+    """Get template context for authenticated pages."""
+    return {
+        "data_provider": settings.data_provider,
+        "llm_available": get_llm_api_key() is not None,
+        "current_user": user,
+    }
+
+
 # ==================== PAGES ====================
 
 @app.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request):
+async def dashboard(request: Request, user = Depends(require_login)):
     """Main dashboard page."""
     analytics = TradeAnalytics()
-    base_context = await get_template_context(request)
+    base_context = await get_template_context_with_user(request, user)
     
     session = get_session()
     try:
-        # Get recent trades (limit 10) - newest by trade_number first
+        # Get recent trades for this user (limit 10) - newest by trade_number first
         recent_trades = (
             session.query(Trade)
+            .filter(Trade.user_id == user.id)
             .order_by(Trade.trade_number.desc())
             .limit(10)
             .all()
         )
         
-        # Use efficient COUNT queries instead of loading all trades
+        # Use efficient COUNT queries for this user's trades only
         from sqlalchemy import func
         
-        total_trades = session.query(func.count(Trade.id)).scalar() or 0
-        winners = session.query(func.count(Trade.id)).filter(Trade.outcome == TradeOutcome.WIN).scalar() or 0
-        total_r = session.query(func.sum(Trade.r_multiple)).scalar() or 0
+        total_trades = session.query(func.count(Trade.id)).filter(Trade.user_id == user.id).scalar() or 0
+        winners = session.query(func.count(Trade.id)).filter(Trade.user_id == user.id, Trade.outcome == TradeOutcome.WIN).scalar() or 0
+        total_r = session.query(func.sum(Trade.r_multiple)).filter(Trade.user_id == user.id).scalar() or 0
         win_rate = winners / total_trades if total_trades > 0 else 0
         
-        # Get strategy stats
-        strategy_stats = analytics.get_all_strategy_stats()[:5]
+        # Get strategy stats for this user
+        strategy_stats = analytics.get_all_strategy_stats(user_id=user.id)[:5]
         
         # Check data provider
         polygon_available = get_polygon_api_key() is not None
@@ -399,6 +502,7 @@ async def trades_page(
     per_page: int = 50,
     ticker: Optional[str] = None,
     outcome: Optional[str] = None,
+    user = Depends(require_login),
 ):
     """
     All trades page with pagination and filtering.
@@ -411,7 +515,7 @@ async def trades_page(
     """
     from math import ceil
     
-    base_context = await get_template_context(request)
+    base_context = await get_template_context_with_user(request, user)
     
     # Validate pagination params
     page = max(1, page)
@@ -419,8 +523,8 @@ async def trades_page(
     
     session = get_session()
     try:
-        # Build query with optional filters
-        query = session.query(Trade)
+        # Build query with user filter and optional filters
+        query = session.query(Trade).filter(Trade.user_id == user.id)
         
         if ticker:
             query = query.filter(Trade.ticker.ilike(f"%{ticker}%"))
@@ -472,15 +576,16 @@ async def trades_page(
 
 
 @app.get("/trades/{trade_id}", response_class=HTMLResponse)
-async def trade_detail(request: Request, trade_id: int):
+async def trade_detail(request: Request, trade_id: int, user = Depends(require_login)):
     """Trade detail page - loads instantly, review fetched via AJAX."""
     from app.materials_reader import has_materials
     
-    base_context = await get_template_context(request)
+    base_context = await get_template_context_with_user(request, user)
     
     session = get_session()
     try:
-        trade = session.query(Trade).filter(Trade.id == trade_id).first()
+        # Verify trade exists and belongs to this user
+        trade = session.query(Trade).filter(Trade.id == trade_id, Trade.user_id == user.id).first()
         if not trade:
             raise HTTPException(status_code=404, detail="Trade not found")
 
@@ -495,16 +600,14 @@ async def trade_detail(request: Request, trade_id: int):
         session.close()
 
 
-@app.patch("/api/trades/{trade_id}/notes")
+@app.patch("/api/trades/{trade_id}/notes", dependencies=[require_write_auth])
 async def update_trade_notes(trade_id: int, request: Request):
     """Update trade notes, personal review, and Brooks intent fields."""
     data = await request.json()
 
     session = get_session()
     try:
-        trade = session.query(Trade).filter(Trade.id == trade_id).first()
-        if not trade:
-            raise HTTPException(status_code=404, detail="Trade not found")
+        trade, _ = await verify_trade_ownership(trade_id, request, session)
 
         # Allowed fields that can be updated via this endpoint
         allowed_fields = {
@@ -674,7 +777,7 @@ async def get_trade_review(trade_id: int, force: bool = False, check_only: bool 
         session.close()
 
 
-@app.post("/api/trades/{trade_id}/review/cancel")
+@app.post("/api/trades/{trade_id}/review/cancel", dependencies=[require_write_auth])
 async def cancel_trade_review(trade_id: int):
     """Cancel an in-progress review generation."""
     session = get_session()
@@ -793,7 +896,7 @@ async def check_trade_data_availability(trade_id: int):
         session.close()
 
 
-@app.post("/api/trades/{trade_id}/download-data")
+@app.post("/api/trades/{trade_id}/download-data", dependencies=[require_write_auth])
 async def download_trade_data(trade_id: int):
     """
     Download missing Databento data for a futures trade.
@@ -1362,9 +1465,9 @@ def _fetch_chart_data_sync(trade_id: int, timeframe: str, rth_only: bool, show_a
 
 
 @app.get("/add-trade", response_class=HTMLResponse)
-async def add_trade_page(request: Request):
+async def add_trade_page(request: Request, user = Depends(require_login)):
     """Add trade form page (includes single trade and bulk import)."""
-    base_context = await get_template_context(request)
+    base_context = await get_template_context_with_user(request, user)
     
     session = get_session()
     try:
@@ -1394,9 +1497,9 @@ async def import_page():
 
 
 @app.get("/tickers", response_class=HTMLResponse)
-async def tickers_page(request: Request):
+async def tickers_page(request: Request, user = Depends(require_login)):
     """Ticker management page."""
-    base_context = await get_template_context(request)
+    base_context = await get_template_context_with_user(request, user)
     tickers = load_tickers_from_file()
     return templates.TemplateResponse(request, "tickers.html", {
         **base_context,
@@ -1405,9 +1508,9 @@ async def tickers_page(request: Request):
 
 
 @app.get("/reports", response_class=HTMLResponse)
-async def reports_page(request: Request):
+async def reports_page(request: Request, user = Depends(require_login)):
     """Reports page."""
-    base_context = await get_template_context(request)
+    base_context = await get_template_context_with_user(request, user)
     
     # List available reports
     report_dirs = sorted(OUTPUTS_DIR.glob("*"), reverse=True)[:20]
@@ -1430,9 +1533,9 @@ async def reports_page(request: Request):
 
 
 @app.get("/stats", response_class=HTMLResponse)
-async def stats_page(request: Request):
+async def stats_page(request: Request, user = Depends(require_login)):
     """Statistics page."""
-    base_context = await get_template_context(request)
+    base_context = await get_template_context_with_user(request, user)
     analytics = TradeAnalytics()
     
     strategy_stats = analytics.get_all_strategy_stats()
@@ -1457,8 +1560,9 @@ async def stats_page(request: Request):
 
 # ==================== API ENDPOINTS ====================
 
-@app.post("/api/trades")
+@app.post("/api/trades", dependencies=[require_write_auth])
 async def create_trade(
+    request: Request,
     ticker: str = Form(...),
     direction: str = Form(...),
     entry_price: float = Form(...),
@@ -1474,6 +1578,10 @@ async def create_trade(
     entry_reason: str = Form(None),
 ):
     """Create a new trade."""
+    # Get the current user for ownership
+    user = await get_user_from_request(request)
+    user_id = user.id if user else None
+    
     ingester = TradeIngester()
 
     # Parse entry/exit times if provided
@@ -1527,12 +1635,13 @@ async def create_trade(
         strategy_name=strategy if strategy else None,
         notes=notes,
         entry_reason=entry_reason,
+        user_id=user_id,
     )
 
     return RedirectResponse(url=f"/trades/{trade.id}", status_code=303)
 
 
-@app.post("/api/upload-csv")
+@app.post("/api/upload-csv", dependencies=[require_write_auth])
 async def upload_csv(file: UploadFile = File(...)):
     """Upload a CSV file to imports folder."""
     # Validate file type and size
@@ -1553,7 +1662,7 @@ async def upload_csv(file: UploadFile = File(...)):
     return JSONResponse({"message": f"Uploaded {filename}", "path": str(file_path)})
 
 
-@app.post("/api/import-csv")
+@app.post("/api/import-csv", dependencies=[require_write_auth])
 async def import_csv(
     file: UploadFile = File(...),
     format: str = Form("generic"),
@@ -1624,7 +1733,7 @@ async def import_csv(
         return JSONResponse({"error": str(e), "imported": 0, "errors": 1})
 
 
-@app.post("/api/bulk-import")
+@app.post("/api/bulk-import", dependencies=[require_write_auth])
 async def bulk_import():
     """Import all CSVs from imports folder (non-blocking)."""
     import asyncio
@@ -1642,7 +1751,7 @@ async def bulk_import():
     })
 
 
-@app.post("/api/tickers")
+@app.post("/api/tickers", dependencies=[require_write_auth])
 async def update_tickers(tickers: str = Form(...)):
     """Update tickers list."""
     ticker_list = [t.strip().upper() for t in tickers.split('\n') if t.strip() and not t.strip().startswith('#')]
@@ -1650,7 +1759,7 @@ async def update_tickers(tickers: str = Form(...)):
     return RedirectResponse(url="/tickers", status_code=303)
 
 
-@app.post("/api/tickers/add")
+@app.post("/api/tickers/add", dependencies=[require_write_auth])
 async def add_ticker(ticker: str = Form(...)):
     """Add a ticker."""
     tickers = load_tickers_from_file()
@@ -1661,7 +1770,7 @@ async def add_ticker(ticker: str = Form(...)):
     return RedirectResponse(url="/tickers", status_code=303)
 
 
-@app.post("/api/tickers/remove/{ticker}")
+@app.post("/api/tickers/remove/{ticker}", dependencies=[require_write_auth])
 async def remove_ticker(ticker: str):
     """Remove a ticker."""
     tickers = load_tickers_from_file()
@@ -1672,7 +1781,7 @@ async def remove_ticker(ticker: str):
     return RedirectResponse(url="/tickers", status_code=303)
 
 
-@app.post("/api/generate-premarket")
+@app.post("/api/generate-premarket", dependencies=[require_write_auth])
 async def generate_premarket(ticker: str = Form(None)):
     """Generate premarket report (non-blocking)."""
     import asyncio
@@ -1695,7 +1804,7 @@ async def generate_premarket(ticker: str = Form(None)):
     })
 
 
-@app.post("/api/generate-eod")
+@app.post("/api/generate-eod", dependencies=[require_write_auth])
 async def generate_eod():
     """Generate end-of-day report (non-blocking)."""
     import asyncio
@@ -1715,7 +1824,7 @@ async def generate_eod():
     })
 
 
-@app.post("/api/recalculate-metrics")
+@app.post("/api/recalculate-metrics", dependencies=[require_write_auth])
 async def recalculate_all_metrics():
     """Recalculate R-multiple, P&L, and other metrics for all trades."""
     with get_session() as session:
@@ -1732,7 +1841,7 @@ async def recalculate_all_metrics():
     })
 
 
-@app.post("/api/analyze-all-trades")
+@app.post("/api/analyze-all-trades", dependencies=[require_write_auth])
 async def analyze_all_trades(force: bool = False):
     """Run AI Coaching Review on all unreviewed trades.
 
@@ -1902,14 +2011,15 @@ async def delete_all_trades():
     ))
 
 
-@app.patch("/api/trades/{trade_id}")
+@app.patch("/api/trades/{trade_id}", dependencies=[require_write_auth])
 async def update_trade(trade_id: int, request: Request):
     """Update trade fields (size, prices, times, currency)."""
     from datetime import datetime
     data = await request.json()
     
-    with get_session() as session:
-        trade = session.query(Trade).filter(Trade.id == trade_id).first()
+    session = get_session()
+    try:
+        trade, _ = await verify_trade_ownership(trade_id, request, session)
         if not trade:
             raise HTTPException(status_code=404, detail="Trade not found")
         
@@ -1971,16 +2081,18 @@ async def update_trade(trade_id: int, request: Request):
             },
             message="Trade updated"
         ))
+    finally:
+        session.close()
 
 
 @app.get("/settings")
-async def settings_page(request: Request):
+async def settings_page(request: Request, user = Depends(require_login)):
     """Settings page for prompts and candle counts."""
     from app.config_prompts import load_settings, SETTINGS_FILE, get_cache_settings
 
     from app.config_prompts import get_editable_prompt
     
-    base_context = await get_template_context(request)
+    base_context = await get_template_context_with_user(request, user)
     current_settings = load_settings()
     
     # Get editable prompts (without protected JSON schemas)
@@ -2003,7 +2115,7 @@ async def settings_page(request: Request):
     })
 
 
-@app.post("/api/settings/candles")
+@app.post("/api/settings/candles", dependencies=[require_write_auth])
 async def update_candle_settings(request: Request):
     """Update candle count settings."""
     from app.config_prompts import update_candles
@@ -2020,7 +2132,7 @@ async def update_candle_settings(request: Request):
     raise HTTPException(status_code=500, detail="Failed to save settings")
 
 
-@app.post("/api/settings/prompts")
+@app.post("/api/settings/prompts", dependencies=[require_write_auth])
 async def update_prompt_settings(request: Request):
     """Update a specific prompt (system or user)."""
     from app.config_prompts import update_prompt
@@ -2048,7 +2160,7 @@ async def get_cache_settings_api():
     return JSONResponse(get_cache_settings())
 
 
-@app.post("/api/settings/cache")
+@app.post("/api/settings/cache", dependencies=[require_write_auth])
 async def update_cache_settings_api(request: Request):
     """Update cache settings."""
     from app.config_prompts import update_cache_settings
@@ -2064,7 +2176,7 @@ async def update_cache_settings_api(request: Request):
     raise HTTPException(status_code=500, detail="Failed to save cache settings")
 
 
-@app.post("/api/settings/reset")
+@app.post("/api/settings/reset", dependencies=[require_write_auth])
 async def reset_settings():
     """Reset all settings to defaults."""
     from app.config_prompts import save_settings, DEFAULT_SETTINGS
@@ -2079,11 +2191,11 @@ async def reset_settings():
 # ============== STRATEGIES MANAGEMENT ==============
 
 @app.get("/strategies", response_class=HTMLResponse)
-async def strategies_page(request: Request):
+async def strategies_page(request: Request, user = Depends(require_login)):
     """Strategy management page - edit, merge, categorize strategies."""
     from app.journal.models import Strategy
     
-    base_context = await get_template_context(request)
+    base_context = await get_template_context_with_user(request, user)
     
     session = get_session()
     try:
@@ -2129,7 +2241,7 @@ async def get_strategies():
         session.close()
 
 
-@app.patch("/api/strategies/{strategy_id}")
+@app.patch("/api/strategies/{strategy_id}", dependencies=[require_write_auth])
 async def update_strategy(strategy_id: int, request: Request):
     """Update a strategy's name, category, or description."""
     from app.journal.models import Strategy
@@ -2165,7 +2277,7 @@ async def update_strategy(strategy_id: int, request: Request):
         session.close()
 
 
-@app.post("/api/strategies/merge")
+@app.post("/api/strategies/merge", dependencies=[require_write_auth])
 async def merge_strategies(request: Request):
     """Merge multiple strategies into one (reassign all trades)."""
     from app.journal.models import Strategy
@@ -2210,7 +2322,7 @@ async def merge_strategies(request: Request):
         session.close()
 
 
-@app.post("/api/strategies")
+@app.post("/api/strategies", dependencies=[require_write_auth])
 async def create_strategy(request: Request):
     """Create a new strategy."""
     from app.journal.models import Strategy
@@ -2268,7 +2380,7 @@ async def delete_strategy(strategy_id: int):
         session.close()
 
 
-@app.patch("/api/trades/{trade_id}/strategy")
+@app.patch("/api/trades/{trade_id}/strategy", dependencies=[require_write_auth])
 async def update_trade_strategy(trade_id: int, request: Request):
     """Manually update a trade's strategy (override AI classification)."""
     from app.journal.models import Strategy
@@ -2278,9 +2390,7 @@ async def update_trade_strategy(trade_id: int, request: Request):
 
     session = get_session()
     try:
-        trade = session.query(Trade).get(trade_id)
-        if not trade:
-            raise HTTPException(status_code=404, detail="Trade not found")
+        trade, _ = await verify_trade_ownership(trade_id, request, session)
 
         # Find or create strategy
         strategy = session.query(Strategy).filter(Strategy.name == strategy_name).first()
@@ -2378,7 +2488,7 @@ async def robinhood_status():
     })
 
 
-@app.post("/api/robinhood/import")
+@app.post("/api/robinhood/import", dependencies=[require_write_auth])
 async def robinhood_import(request: Request):
     """Import trades from Robinhood with login."""
     try:
@@ -2417,7 +2527,7 @@ async def robinhood_import(request: Request):
         })
 
 
-@app.post("/api/robinhood/import-session")
+@app.post("/api/robinhood/import-session", dependencies=[require_write_auth])
 async def robinhood_import_session(request: Request):
     """Import trades from Robinhood using stored session."""
     try:
@@ -2454,7 +2564,7 @@ async def robinhood_import_session(request: Request):
         return JSONResponse({"error": str(e), "imported": 0, "errors": 1})
 
 
-@app.post("/api/robinhood/disconnect")
+@app.post("/api/robinhood/disconnect", dependencies=[require_write_auth])
 async def robinhood_disconnect():
     """Disconnect Robinhood (clear stored session)."""
     ingester = TradeIngester()
@@ -2465,9 +2575,9 @@ async def robinhood_disconnect():
 # ==================== MATERIALS ====================
 
 @app.get("/materials", response_class=HTMLResponse)
-async def materials_page(request: Request):
+async def materials_page(request: Request, user = Depends(require_login)):
     """Training materials management page."""
-    base_context = await get_template_context(request)
+    base_context = await get_template_context_with_user(request, user)
     materials = []
     
     if MATERIALS_DIR.exists():
@@ -2485,7 +2595,7 @@ async def materials_page(request: Request):
     })
 
 
-@app.post("/api/materials")
+@app.post("/api/materials", dependencies=[require_write_auth])
 async def upload_materials(files: list[UploadFile] = File(...)):
     """Upload training materials (PDFs, text files)."""
     uploaded = 0
@@ -2577,7 +2687,7 @@ async def get_rag_status():
         })
 
 
-@app.post("/api/materials/index")
+@app.post("/api/materials/index", dependencies=[require_write_auth])
 async def index_materials(force: bool = False):
     """Manually trigger RAG indexing of materials."""
     import asyncio
@@ -2630,15 +2740,15 @@ async def delete_all_materials():
 # ==================== BULK ANALYSIS ====================
 
 @app.get("/analysis", response_class=HTMLResponse)
-async def analysis_page(request: Request):
+async def analysis_page(request: Request, user = Depends(require_login)):
     """Bulk trade analysis page."""
-    base_context = await get_template_context(request)
+    base_context = await get_template_context_with_user(request, user)
     return templates.TemplateResponse(request, "analysis.html", {
         **base_context,
     })
 
 
-@app.post("/api/bulk-analysis")
+@app.post("/api/bulk-analysis", dependencies=[require_write_auth])
 async def bulk_analysis(request: Request):
     """Analyze multiple trades using LLM."""
     from datetime import timedelta

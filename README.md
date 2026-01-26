@@ -22,6 +22,8 @@ cp env.example .env
 python -m app.main web
 
 # 5. Open http://localhost:8000 in your browser
+#    - Register a new account or sign in
+#    - All your trades are private to your account
 
 # 6. To stop the application:
 #    Press Ctrl+C in the terminal, or run:
@@ -41,6 +43,10 @@ LLM_BASE_URL=https://your-llm-proxy.com/v1
 LLM_MODEL=claude-sonnet-4.5
 LLM_WORKERS=20  # Concurrent LLM calls (default: 20)
 
+# Authentication (REQUIRED - generate a secure random string)
+JWT_SECRET=your-super-secret-jwt-key-change-this
+JWT_EXPIRATION_HOURS=24  # Optional, defaults to 24 hours
+
 # Data Provider (optional - defaults to yfinance)
 DATA_PROVIDER=polygon  # or yfinance
 POLYGON_API_KEY=your_polygon_key_here
@@ -48,6 +54,9 @@ POLYGON_API_KEY=your_polygon_key_here
 # Robinhood Integration (optional)
 ROBINHOOD_USERNAME=your_username
 ROBINHOOD_PASSWORD=your_password
+
+# API Key for external scripts (optional)
+APP_API_KEY=your-api-key-for-scripts
 ```
 
 ## Web Interface
@@ -72,6 +81,8 @@ pkill -f "app.main web"
 
 ### Features
 
+- **User Authentication** - Secure email/password login with JWT sessions
+- **Multi-User Support** - Each user's trades are private and isolated
 - **Dashboard** - Stats, recent trades, strategy performance
 - **Trade Journal** - Add/edit trades with automatic P&L calculation
 - **AI Coaching Review** - Brooks-style trade analysis with manual trigger and cancel button
@@ -81,6 +92,22 @@ pkill -f "app.main web"
 - **Dark/Light Mode** - Toggle theme preference
 
 ## Key Features
+
+### User Authentication & Data Privacy
+
+The system provides secure multi-user support:
+
+- **Account Registration** - Create an account with email and password
+- **Secure Sessions** - JWT-based authentication with HTTP-only cookies
+- **Data Isolation** - Each user only sees their own trades and analytics
+- **Protected Routes** - All pages require login; unauthenticated users are redirected to sign in
+- **API Protection** - Write operations require authentication (login or API key)
+
+To get started:
+1. Visit `http://localhost:8000`
+2. Click "Register" to create an account
+3. Sign in with your credentials
+4. All your trades are private to your account
 
 ### AI-Powered Trade Analysis
 
@@ -256,12 +283,15 @@ The web interface Settings page allows you to:
 my_ai_powered_trading_assistant/
 ├── tickers.txt              # Your favorite tickers
 ├── imports/                 # Drop CSVs here for bulk import
-├── .env                     # API keys
+├── .env                     # API keys and secrets
 ├── config.yaml              # Settings
 ├── app/
 │   ├── main.py              # CLI entry point
 │   ├── config.py            # Configuration management
 │   ├── config_prompts.py    # LLM prompt templates
+│   ├── auth/                # Authentication module
+│   │   ├── service.py       # JWT, password hashing, user management
+│   │   └── email.py         # Email service (optional)
 │   ├── data/
 │   │   ├── providers.py     # Market data (yfinance/Polygon)
 │   │   ├── cache.py         # OHLCV caching
@@ -272,7 +302,7 @@ my_ai_powered_trading_assistant/
 │   │   ├── brooks_patterns.py # Pattern detection
 │   │   └── magnets.py       # Key level detection
 │   ├── journal/
-│   │   ├── models.py        # SQLAlchemy models
+│   │   ├── models.py        # SQLAlchemy models (User, Trade, Strategy)
 │   │   ├── ingest.py        # Trade import
 │   │   ├── analytics.py     # Statistics
 │   │   └── coach.py         # AI trade review
@@ -282,6 +312,8 @@ my_ai_powered_trading_assistant/
 │   │   └── weekly.py        # Weekly summary
 │   ├── web/
 │   │   ├── server.py        # FastAPI web server
+│   │   ├── routes/          # API route handlers
+│   │   │   └── auth.py      # Authentication routes
 │   │   └── templates/       # HTML templates
 │   └── llm/
 │       ├── analyzer.py      # LLM analysis engine
@@ -308,6 +340,11 @@ This system implements Al Brooks price action methodology:
 
 ### Common Issues
 
+**"Authentication required" or redirect to login**
+- Ensure you're logged in - all pages require authentication
+- Check that `JWT_SECRET` is set in `.env`
+- Clear cookies and try logging in again
+
 **"LLM analysis unavailable"**
 - Check your `LLM_API_KEY` in `.env`
 - Verify `LLM_BASE_URL` is correct
@@ -323,6 +360,10 @@ This system implements Al Brooks price action methodology:
 
 **Cached review showing old data**
 - Click "Regenerate Review" to force a fresh analysis
+
+**Can't see my trades after login**
+- Trades are scoped per user - you only see trades you created
+- If migrating from single-user mode, run the migration script
 
 ## Disclaimer
 
