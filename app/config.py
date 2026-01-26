@@ -297,3 +297,21 @@ def get_llm_workers() -> int:
         return int(os.getenv("LLM_WORKERS", "20"))
     except ValueError:
         return 20
+
+
+def get_app_api_key() -> str | None:
+    """
+    Get application API key for authentication.
+    
+    When set, destructive API endpoints (DELETE, sensitive POST/PATCH) 
+    require this key in the X-API-Key header.
+    
+    Returns None if no key is configured (auth disabled).
+    """
+    key = os.getenv("APP_API_KEY", "").strip()
+    return key if key else None
+
+
+def is_auth_enabled() -> bool:
+    """Check if API key authentication is enabled."""
+    return get_app_api_key() is not None

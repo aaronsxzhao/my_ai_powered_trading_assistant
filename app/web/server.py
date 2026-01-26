@@ -26,23 +26,145 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException, Depends, Security
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from fastapi.security import APIKeyHeader
 
 from app.config import (
     settings, IMPORTS_DIR, OUTPUTS_DIR, PROJECT_ROOT, MATERIALS_DIR,
     load_tickers_from_file, save_tickers_to_file, get_llm_api_key,
-    get_polygon_api_key
+    get_polygon_api_key, get_app_api_key, is_auth_enabled
 )
 from app.config_prompts import get_cache_settings
 from app.journal.models import init_db, Trade, Strategy, get_session, TradeDirection, TradeOutcome
+from app.web.schemas import (
+    APIResponse, TradeUpdate, TradeNotesUpdate, TradeStrategyUpdate,
+    StrategyCreate, StrategyUpdate, StrategyMerge,
+    CacheSettings, CandleSettings, PromptSettings,
+    RobinhoodCredentials, BulkAnalysisRequest,
+    success_response, error_response
+)
 from app.journal.ingest import TradeIngester
 from app.journal.analytics import TradeAnalytics
 from app.journal.coach import TradeCoach
 
 logger = logging.getLogger(__name__)
+
+# ==================== AUTHENTICATION ====================
+
+# API Key authentication for sensitive endpoints
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+async def verify_api_key(api_key: str = Security(api_key_header)) -> bool:
+    """
+    Verify API key for protected endpoints.
+    
+    If APP_API_KEY is not set in environment, authentication is disabled.
+    If set, the X-API-Key header must match.
+    
+    Returns True if authenticated or auth is disabled.
+    Raises HTTPException 401 if key is required but missing/invalid.
+    """
+    expected_key = get_app_api_key()
+    
+    # If no API key configured, auth is disabled
+    if expected_key is None:
+        return True
+    
+    # API key is required
+    if not api_key:
+        raise HTTPException(
+            status_code=401,
+            detail="API key required. Set X-API-Key header.",
+            headers={"WWW-Authenticate": "ApiKey"}
+        )
+    
+    if api_key != expected_key:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid API key",
+            headers={"WWW-Authenticate": "ApiKey"}
+        )
+    
+    return True
+
+
+# Dependency for protected routes
+require_auth = Depends(verify_api_key)
+
+
+# ==================== FILE UPLOAD SECURITY ====================
+
+# Maximum file sizes (in bytes)
+MAX_CSV_SIZE = 10 * 1024 * 1024       # 10 MB for CSV imports
+MAX_MATERIAL_SIZE = 50 * 1024 * 1024  # 50 MB for training materials (PDFs can be large)
+MAX_TOTAL_UPLOAD_SIZE = 100 * 1024 * 1024  # 100 MB total for batch uploads
+
+# Allowed file extensions
+ALLOWED_CSV_EXTENSIONS = {'.csv'}
+ALLOWED_MATERIAL_EXTENSIONS = {'.pdf', '.txt', '.md'}
+
+
+async def validate_upload_file(
+    file: UploadFile, 
+    allowed_extensions: set[str], 
+    max_size: int,
+    error_prefix: str = "File"
+) -> bytes:
+    """
+    Validate and read an uploaded file.
+    
+    Args:
+        file: The uploaded file
+        allowed_extensions: Set of allowed file extensions (e.g., {'.csv', '.pdf'})
+        max_size: Maximum file size in bytes
+        error_prefix: Prefix for error messages
+        
+    Returns:
+        File content as bytes
+        
+    Raises:
+        HTTPException: If validation fails
+    """
+    if not file.filename:
+        raise HTTPException(status_code=400, detail=f"{error_prefix} name is required")
+    
+    # Sanitize filename
+    filename = Path(file.filename).name  # Strip any path components
+    ext = Path(filename).suffix.lower()
+    
+    # Check extension
+    if ext not in allowed_extensions:
+        allowed = ", ".join(sorted(allowed_extensions))
+        raise HTTPException(
+            status_code=400, 
+            detail=f"{error_prefix} type '{ext}' not allowed. Allowed types: {allowed}"
+        )
+    
+    # Read content and check size
+    content = await file.read()
+    if len(content) > max_size:
+        max_mb = max_size / (1024 * 1024)
+        actual_mb = len(content) / (1024 * 1024)
+        raise HTTPException(
+            status_code=413,
+            detail=f"{error_prefix} too large: {actual_mb:.1f} MB (max: {max_mb:.0f} MB)"
+        )
+    
+    return content
+
+
+def sanitize_filename(filename: str) -> str:
+    """Sanitize a filename to prevent path traversal attacks."""
+    # Get just the filename, strip any directory components
+    name = Path(filename).name
+    # Remove any null bytes or other problematic characters
+    name = name.replace('\x00', '').replace('/', '').replace('\\', '')
+    return name
+
 
 # Track cancelled review generations (trade_id -> True if cancelled)
 _cancelled_reviews: dict[int, bool] = {}
@@ -84,12 +206,35 @@ def get_active_strategies_cached(session) -> list:
     return strategies
 
 
-# Initialize FastAPI app
+# Initialize FastAPI app with OpenAPI tags for better documentation
+tags_metadata = [
+    {"name": "health", "description": "Health check and status endpoints"},
+    {"name": "pages", "description": "HTML page rendering"},
+    {"name": "trades", "description": "Trade management operations"},
+    {"name": "reviews", "description": "AI trade review generation"},
+    {"name": "strategies", "description": "Strategy management"},
+    {"name": "materials", "description": "Training materials and RAG"},
+    {"name": "settings", "description": "Application settings"},
+    {"name": "imports", "description": "Data import operations"},
+]
+
 app = FastAPI(
     title="Brooks Trading Coach",
-    description="Advisory system for discretionary day traders",
+    description="Advisory system for discretionary day traders using Al Brooks methodology",
     version="0.1.0",
+    openapi_tags=tags_metadata,
 )
+
+# Include modular routers
+from app.web.routes import trades_router, strategies_router, materials_router
+app.include_router(trades_router)
+app.include_router(strategies_router)
+app.include_router(materials_router)
+
+# Mount static files directory
+STATIC_DIR = Path(__file__).parent / "static"
+STATIC_DIR.mkdir(exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # Templates directory
 TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -155,6 +300,29 @@ async def favicon():
     return Response(content=svg, media_type="image/svg+xml")
 
 
+# ==================== HEALTH & STATUS ====================
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for monitoring."""
+    return JSONResponse(success_response(
+        data={"status": "healthy"},
+        message="Service is running"
+    ))
+
+
+@app.get("/api/status")
+async def api_status():
+    """Get API status including auth and service availability."""
+    return JSONResponse(success_response(data={
+        "version": "0.1.0",
+        "auth_enabled": is_auth_enabled(),
+        "llm_available": get_llm_api_key() is not None,
+        "polygon_available": get_polygon_api_key() is not None,
+        "data_provider": settings.data_provider,
+    }))
+
+
 # ==================== PAGES ====================
 
 @app.get("/", response_class=HTMLResponse)
@@ -207,13 +375,58 @@ async def dashboard(request: Request):
 
 
 @app.get("/trades", response_class=HTMLResponse)
-async def trades_page(request: Request):
-    """All trades page."""
+async def trades_page(
+    request: Request,
+    page: int = 1,
+    per_page: int = 50,
+    ticker: Optional[str] = None,
+    outcome: Optional[str] = None,
+):
+    """
+    All trades page with pagination and filtering.
+    
+    Args:
+        page: Page number (1-indexed)
+        per_page: Number of trades per page (default 50, max 200)
+        ticker: Filter by ticker symbol
+        outcome: Filter by outcome (win, loss, breakeven)
+    """
+    from math import ceil
+    
+    # Validate pagination params
+    page = max(1, page)
+    per_page = min(max(10, per_page), 200)  # Between 10 and 200
+    
     session = get_session()
     try:
+        # Build query with optional filters
+        query = session.query(Trade)
+        
+        if ticker:
+            query = query.filter(Trade.ticker.ilike(f"%{ticker}%"))
+        if outcome:
+            outcome_lower = outcome.lower()
+            if outcome_lower == "win":
+                query = query.filter(Trade.outcome == TradeOutcome.WIN)
+            elif outcome_lower == "loss":
+                query = query.filter(Trade.outcome == TradeOutcome.LOSS)
+            elif outcome_lower == "breakeven":
+                query = query.filter(Trade.outcome == TradeOutcome.BREAKEVEN)
+        
+        # Get total count for pagination
+        total_trades = query.count()
+        total_pages = ceil(total_trades / per_page) if total_trades > 0 else 1
+        
+        # Ensure page is within bounds
+        page = min(page, total_pages)
+        
+        # Get paginated trades
+        offset = (page - 1) * per_page
         trades = (
-            session.query(Trade)
-            .order_by(Trade.trade_number.desc())  # Newest by exit time first
+            query
+            .order_by(Trade.trade_number.desc())
+            .offset(offset)
+            .limit(per_page)
             .all()
         )
         
@@ -224,6 +437,16 @@ async def trades_page(request: Request):
             "strategies": strategies,
             "data_provider": settings.data_provider,
             "llm_available": get_llm_api_key() is not None,
+            # Pagination info
+            "page": page,
+            "per_page": per_page,
+            "total_trades": total_trades,
+            "total_pages": total_pages,
+            "has_next": page < total_pages,
+            "has_prev": page > 1,
+            # Filters
+            "filter_ticker": ticker or "",
+            "filter_outcome": outcome or "",
         })
     finally:
         session.close()
@@ -1290,16 +1513,22 @@ async def create_trade(
 @app.post("/api/upload-csv")
 async def upload_csv(file: UploadFile = File(...)):
     """Upload a CSV file to imports folder."""
-    if not file.filename.endswith('.csv'):
-        raise HTTPException(status_code=400, detail="Only CSV files allowed")
+    # Validate file type and size
+    content = await validate_upload_file(
+        file, 
+        ALLOWED_CSV_EXTENSIONS, 
+        MAX_CSV_SIZE,
+        "CSV file"
+    )
     
-    file_path = IMPORTS_DIR / file.filename
+    # Sanitize filename and save
+    filename = sanitize_filename(file.filename)
+    file_path = IMPORTS_DIR / filename
     
     with open(file_path, "wb") as f:
-        content = await file.read()
         f.write(content)
     
-    return JSONResponse({"message": f"Uploaded {file.filename}", "path": str(file_path)})
+    return JSONResponse({"message": f"Uploaded {filename}", "path": str(file_path)})
 
 
 @app.post("/api/import-csv")
@@ -1314,17 +1543,24 @@ async def import_csv(
     import tempfile
     import os
 
-    if not file.filename.endswith('.csv'):
-        return JSONResponse({"error": "Only CSV files allowed", "imported": 0, "errors": 1})
+    # Validate main CSV file
+    try:
+        content = await validate_upload_file(
+            file,
+            ALLOWED_CSV_EXTENSIONS,
+            MAX_CSV_SIZE,
+            "CSV file"
+        )
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail, "imported": 0, "errors": 1}, status_code=e.status_code)
 
     try:
         # Save main file
         with tempfile.NamedTemporaryFile(mode='wb', suffix='.csv', delete=False) as tmp:
-            content = await file.read()
             tmp.write(content)
             tmp_path = tmp.name
         
-        # Save balance file if provided
+        # Save balance file if provided (also validate it)
         balance_path = None
         if balance_file and balance_file.filename:
             with tempfile.NamedTemporaryFile(mode='wb', suffix='.csv', delete=False) as bal_tmp:
@@ -1624,21 +1860,24 @@ async def analyze_all_trades(force: bool = False):
         session.close()
 
 
-@app.delete("/api/trades/{trade_id}")
+@app.delete("/api/trades/{trade_id}", dependencies=[require_auth])
 async def delete_trade(trade_id: int):
-    """Delete a trade."""
+    """Delete a trade. Requires API key if APP_API_KEY is set."""
     ingester = TradeIngester()
     if ingester.delete_trade(trade_id):
-        return JSONResponse({"message": "Trade deleted"})
+        return JSONResponse(success_response(message="Trade deleted"))
     raise HTTPException(status_code=404, detail="Trade not found")
 
 
-@app.delete("/api/trades")
+@app.delete("/api/trades", dependencies=[require_auth])
 async def delete_all_trades():
-    """Delete ALL trades. Use with caution!"""
+    """Delete ALL trades. Use with caution! Requires API key if APP_API_KEY is set."""
     ingester = TradeIngester()
     count = ingester.delete_all_trades()
-    return JSONResponse({"message": f"Deleted {count} trades", "count": count})
+    return JSONResponse(success_response(
+        data={"count": count},
+        message=f"Deleted {count} trades"
+    ))
 
 
 @app.patch("/api/trades/{trade_id}")
@@ -1702,12 +1941,14 @@ async def update_trade(trade_id: int, request: Request):
         trade.compute_metrics()
         session.commit()
         
-        return JSONResponse({
-            "message": "Trade updated",
-            "trade_id": trade_id,
-            "r_multiple": trade.r_multiple,
-            "pnl_dollars": trade.pnl_dollars,
-        })
+        return JSONResponse(success_response(
+            data={
+                "trade_id": trade_id,
+                "r_multiple": trade.r_multiple,
+                "pnl_dollars": trade.pnl_dollars,
+            },
+            message="Trade updated"
+        ))
 
 
 @app.get("/settings")
@@ -1979,9 +2220,9 @@ async def create_strategy(request: Request):
         session.close()
 
 
-@app.delete("/api/strategies/{strategy_id}")
+@app.delete("/api/strategies/{strategy_id}", dependencies=[require_auth])
 async def delete_strategy(strategy_id: int):
-    """Delete a strategy (only if no trades are assigned)."""
+    """Delete a strategy (only if no trades are assigned). Requires API key if APP_API_KEY is set."""
     from app.journal.models import Strategy
     
     session = get_session()
@@ -2226,30 +2467,44 @@ async def upload_materials(files: list[UploadFile] = File(...)):
     """Upload training materials (PDFs, text files)."""
     uploaded = 0
     errors = 0
+    error_messages = []
+    total_size = 0
 
     MATERIALS_DIR.mkdir(exist_ok=True)
 
     for file in files:
         try:
-            # Validate file type
-            allowed_extensions = {'.pdf', '.txt', '.md', '.doc', '.docx'}
-            ext = Path(file.filename).suffix.lower()
-
-            if ext not in allowed_extensions:
+            # Validate file type and size using our helper
+            content = await validate_upload_file(
+                file,
+                ALLOWED_MATERIAL_EXTENSIONS,
+                MAX_MATERIAL_SIZE,
+                f"Material '{file.filename}'"
+            )
+            
+            # Track total upload size
+            total_size += len(content)
+            if total_size > MAX_TOTAL_UPLOAD_SIZE:
+                max_mb = MAX_TOTAL_UPLOAD_SIZE / (1024 * 1024)
+                error_messages.append(f"Total upload size exceeds {max_mb:.0f} MB limit")
                 errors += 1
-                continue
+                break
 
-            # Save file
-            file_path = MATERIALS_DIR / file.filename
+            # Sanitize filename and save
+            filename = sanitize_filename(file.filename)
+            file_path = MATERIALS_DIR / filename
 
             with open(file_path, 'wb') as f:
-                content = await file.read()
                 f.write(content)
 
             uploaded += 1
 
+        except HTTPException as e:
+            error_messages.append(e.detail)
+            errors += 1
         except Exception as e:
             logger.error(f"Error uploading {file.filename}: {e}")
+            error_messages.append(f"Error uploading {file.filename}: {str(e)}")
             errors += 1
 
     # Trigger RAG indexing in background
@@ -2267,11 +2522,16 @@ async def upload_materials(files: list[UploadFile] = File(...)):
         except Exception as e:
             logger.warning(f"Could not trigger RAG indexing: {e}")
 
-    return JSONResponse({
+    response_data = {
+        "success": errors == 0,
         "uploaded": uploaded,
         "errors": errors,
-        "message": f"Uploaded {uploaded} files"
-    })
+        "message": f"Uploaded {uploaded} files" + (f" ({errors} errors)" if errors else "")
+    }
+    if error_messages:
+        response_data["error_details"] = error_messages
+    
+    return JSONResponse(response_data)
 
 
 @app.get("/api/materials/rag-status")
@@ -2316,9 +2576,9 @@ async def index_materials(force: bool = False):
         })
 
 
-@app.delete("/api/materials/{filename:path}")
+@app.delete("/api/materials/{filename:path}", dependencies=[require_auth])
 async def delete_material(filename: str):
-    """Delete a training material file."""
+    """Delete a training material file. Requires API key if APP_API_KEY is set."""
     import urllib.parse
     filename = urllib.parse.unquote(filename)
     file_path = MATERIALS_DIR / filename
@@ -2330,9 +2590,9 @@ async def delete_material(filename: str):
     raise HTTPException(status_code=404, detail="File not found")
 
 
-@app.delete("/api/materials")
+@app.delete("/api/materials", dependencies=[require_auth])
 async def delete_all_materials():
-    """Delete all training materials."""
+    """Delete all training materials. Requires API key if APP_API_KEY is set."""
     deleted = 0
     
     if MATERIALS_DIR.exists():

@@ -634,81 +634,8 @@
         </div>
     </footer>
 
-    <script>
-        // Quick toast notification (non-blocking)
-        function showToast(message, type = 'success', duration = 3000) {
-            const toast = document.getElementById('toast');
-            const icon = document.getElementById('toast-icon');
-            const msg = document.getElementById('toast-message');
-            
-            const icons = {
-                'success': '✓',
-                'error': '✕',
-                'info': 'ℹ',
-                'start': '🚀',
-                'finish': '✅',
-                'loading': '⏳'
-            };
-            icon.textContent = icons[type] || '✓';
-            msg.textContent = message;
-            
-            toast.classList.remove('hidden');
-            if (duration > 0) {
-                setTimeout(() => toast.classList.add('hidden'), duration);
-            }
-        }
-        
-        // Quick "start" notification (0.5 second)
-        function showStartToast(action) {
-            showToast(`Starting ${action}...`, 'start', 500);
-        }
-        
-        // Quick "finish" notification (3 seconds)
-        function showFinishToast(action, brief = '') {
-            const msg = brief ? `${action} complete: ${brief}` : `${action} complete!`;
-            showToast(msg, 'finish', 3000);
-        }
-        
-        // Old blocking loading (deprecated - avoid using)
-        function showLoading(show) {
-            document.getElementById('loading').classList.toggle('hidden', !show);
-        }
-        
-        // Theme toggle (dark/light mode)
-        function toggleTheme() {
-            const html = document.documentElement;
-            const isDark = html.classList.contains('dark');
-            
-            if (isDark) {
-                html.classList.remove('dark');
-                localStorage.setItem('theme', 'light');
-                document.getElementById('theme-icon').textContent = '☀️';
-            } else {
-                html.classList.add('dark');
-                localStorage.setItem('theme', 'dark');
-                document.getElementById('theme-icon').textContent = '🌙';
-            }
-        }
-        
-        // Load saved theme preference
-        (function() {
-            const savedTheme = localStorage.getItem('theme');
-            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-            const useDark = savedTheme === 'dark' || (!savedTheme && prefersDark);
-            
-            if (useDark) {
-                document.documentElement.classList.add('dark');
-                if (document.getElementById('theme-icon')) {
-                    document.getElementById('theme-icon').textContent = '🌙';
-                }
-            } else {
-                document.documentElement.classList.remove('dark');
-                if (document.getElementById('theme-icon')) {
-                    document.getElementById('theme-icon').textContent = '☀️';
-                }
-            }
-        })();
-    </script>
+    <!-- Common JavaScript utilities -->
+    <script src="/static/js/common.js"></script>
 
     {% block scripts %}{% endblock %}
 </body>
