@@ -87,11 +87,35 @@ pkill -f "app.main web"
 - **Trade Journal** - Add/edit trades with automatic P&L calculation
 - **AI Coaching Review** - Brooks-style trade analysis with manual trigger and cancel button
 - **Bulk Import** - CSV upload with timezone support (TradingView, Robinhood, generic)
-- **Strategy Management** - Categorize, merge, and track strategies
+- **Strategy Management** - Categorize, merge, and track strategies with multi-select categories
 - **Settings** - Customize prompts, manage tickers, upload training materials
 - **Dark/Light Mode** - Toggle theme preference
+- **Smooth Transitions** - Fast page navigation with prefetching and fade transitions
+- **Keyboard Shortcuts** - Power user navigation (press `?` to see all shortcuts)
+
+### Recent Updates
+
+- **Editable Categories** - Add or delete strategy categories inline in Manage Strategies
+- **Multi-Select Categories** - Strategies can now belong to multiple categories (tag-based UI)
+- **Smooth Page Transitions** - Eliminated flash on navigation with CSS preloading and fade effects
+- **Link Prefetching** - Pages are prefetched on hover for faster perceived load times
+- **Complete Placeholder Reference** - Settings now shows all 45+ available placeholders for prompt customization organized in 8 categories
 
 ## Key Features
+
+### Keyboard Shortcuts
+
+Press `?` or `Ctrl/Cmd + /` anywhere to see all shortcuts:
+
+| Shortcut | Action |
+|----------|--------|
+| `g d` | Go to Dashboard |
+| `g t` | Go to Trades |
+| `g s` | Go to Stats |
+| `g a` | Go to Add Trade |
+| `Ctrl/Cmd + N` | New Trade |
+| `Ctrl/Cmd + E` | Export Trades (on trades page) |
+| `Esc` | Close modal |
 
 ### User Authentication & Data Privacy
 
@@ -272,10 +296,10 @@ data_provider: polygon  # or yfinance
 
 The web interface Settings page allows you to:
 - **Manage Tickers** - Add/remove favorite tickers
-- **AI Prompts** - Customize system and user prompts for trade analysis
+- **AI Prompts** - Customize system and user prompts for trade analysis with 45+ available placeholders
 - **Cache Settings** - Enable/disable review caching
 - **Training Materials (RAG)** - Upload PDFs and documents; smart retrieval finds relevant sections per trade
-- **Strategy Management** - Edit, merge, categorize strategies
+- **Strategy Management** - Edit, merge, and categorize strategies with editable categories and multi-select support
 
 ## Project Structure
 
