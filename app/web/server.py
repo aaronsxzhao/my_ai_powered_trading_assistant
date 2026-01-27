@@ -312,6 +312,8 @@ TEMPLATES_DIR = Path(__file__).parent / "templates"
 TEMPLATES_DIR.mkdir(exist_ok=True)
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+# Enable auto-reload for templates in development (instant frontend changes)
+templates.env.auto_reload = True
 
 # Custom Jinja2 filters
 def ticker_display(ticker: str) -> str:
@@ -3133,13 +3135,51 @@ Provide a comprehensive analysis of this trader's performance with specific patt
 
 # ==================== RUN SERVER ====================
 
-def run_server(host: str = "127.0.0.1", port: int = 8000):
-    """Run the web server."""
+def run_server(host: str = "127.0.0.1", port: int = 8000, reload: bool = True):
+    """Run the web server.
+    
+    Args:
+        host: Host to bind to
+        port: Port to bind to
+        reload: Enable auto-reload on code changes (default True for development)
+    """
     import uvicorn
+    import signal
+    import sys
+    
+    # Handle Ctrl+C properly to kill the process (not just suspend)
+    def signal_handler(sig, frame):
+        print("\n\n👋 Shutting down server...")
+        sys.exit(0)
+    
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
     print(f"\n🚀 Brooks Trading Coach Web UI")
-    print(f"   Open http://{host}:{port} in your browser\n")
-    uvicorn.run(app, host=host, port=port)
+    print(f"   Open http://{host}:{port} in your browser")
+    if reload:
+        print(f"   🔄 Auto-reload enabled - changes will apply automatically")
+    print(f"   Press Ctrl+C to stop\n")
+    
+    if reload:
+        # Use reload mode - requires passing app as string
+        uvicorn.run(
+            "app.web.server:app",
+            host=host,
+            port=port,
+            reload=True,
+            reload_dirs=["app"],
+        )
+    else:
+        uvicorn.run(app, host=host, port=port)
 
 
 if __name__ == "__main__":
-    run_server()
+    import argparse
+    parser = argparse.ArgumentParser(description="Run the trading coach web server")
+    parser.add_argument("--host", default="127.0.0.1", help="Host to bind to")
+    parser.add_argument("--port", type=int, default=8000, help="Port to bind to")
+    parser.add_argument("--no-reload", action="store_true", help="Disable auto-reload")
+    args = parser.parse_args()
+    
+    run_server(host=args.host, port=args.port, reload=not args.no_reload)

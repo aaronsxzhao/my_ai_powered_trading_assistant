@@ -49,33 +49,33 @@
     <!-- Advanced Stats (if portfolio_stats available) -->
     {% if portfolio_stats %}
     <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        <div class="stat-card-sm">
+        <div class="stat-card-sm-colored {% if portfolio_stats.expectancy >= 0 %}bg-positive{% else %}bg-negative{% endif %}">
             <div class="stat-value-sm {% if portfolio_stats.expectancy >= 0 %}positive{% else %}negative{% endif %}">
                 {{ "%.2f"|format(portfolio_stats.expectancy) }}R
             </div>
             <div class="stat-label-sm">Expectancy</div>
         </div>
-        <div class="stat-card-sm">
+        <div class="stat-card-sm-colored {% if portfolio_stats.profit_factor >= 1 %}bg-positive{% else %}bg-negative{% endif %}">
             <div class="stat-value-sm {% if portfolio_stats.profit_factor >= 1 %}positive{% else %}negative{% endif %}">
                 {{ "%.2f"|format(portfolio_stats.profit_factor) }}
             </div>
             <div class="stat-label-sm">Profit Factor</div>
         </div>
-        <div class="stat-card-sm">
+        <div class="stat-card-sm-colored bg-negative">
             <div class="stat-value-sm negative">
                 -{{ "%.2f"|format(portfolio_stats.max_drawdown_r) }}R
             </div>
             <div class="stat-label-sm">Max Drawdown</div>
         </div>
-        <div class="stat-card-sm">
+        <div class="stat-card-sm-colored bg-positive">
             <div class="stat-value-sm positive">{{ "%.2f"|format(portfolio_stats.avg_winner_r) }}R</div>
             <div class="stat-label-sm">Avg Winner</div>
         </div>
-        <div class="stat-card-sm">
+        <div class="stat-card-sm-colored bg-negative">
             <div class="stat-value-sm negative">{{ "%.2f"|format(portfolio_stats.avg_loser_r) }}R</div>
             <div class="stat-label-sm">Avg Loser</div>
         </div>
-        <div class="stat-card-sm">
+        <div class="stat-card-sm-colored {% if portfolio_stats.current_streak >= 0 %}bg-positive{% else %}bg-negative{% endif %}">
             <div class="stat-value-sm {% if portfolio_stats.current_streak >= 0 %}positive{% else %}negative{% endif %}">
                 {% if portfolio_stats.current_streak >= 0 %}+{% endif %}{{ portfolio_stats.current_streak }}
             </div>

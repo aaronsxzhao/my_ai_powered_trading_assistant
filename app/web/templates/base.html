@@ -40,10 +40,12 @@
                         success: {
                             400: '#4ade80',
                             500: '#22c55e',
+                            600: '#16a34a',
                         },
                         danger: {
                             400: '#f87171',
                             500: '#ef4444',
+                            600: '#dc2626',
                         }
                     }
                 }
@@ -137,6 +139,34 @@
             }
             .stat-label-sm {
                 @apply text-xs text-dark-400 mt-0.5;
+            }
+            /* Colored stat cards for advanced metrics */
+            .stat-card-sm-colored {
+                @apply rounded-xl p-3 text-center transition-all duration-300 hover:scale-[1.02]
+                       min-w-0 overflow-hidden border;
+            }
+            .stat-card-sm-colored.bg-positive {
+                @apply bg-success-500/15 border-success-500/30;
+            }
+            .stat-card-sm-colored.bg-negative {
+                @apply bg-danger-500/15 border-danger-500/30;
+            }
+            .stat-card-sm-colored .stat-label-sm {
+                @apply text-xs text-dark-600 mt-0.5;
+            }
+            /* Override transparent gradient text for colored cards */
+            .stat-card-sm-colored .stat-value-sm {
+                @apply text-xl font-bold;
+                background: none !important;
+                -webkit-background-clip: unset !important;
+                background-clip: unset !important;
+                -webkit-text-fill-color: unset !important;
+            }
+            .stat-card-sm-colored .stat-value-sm.positive {
+                color: #16a34a !important;
+            }
+            .stat-card-sm-colored .stat-value-sm.negative {
+                color: #dc2626 !important;
             }
             
             /* Tables */
