@@ -647,14 +647,25 @@ def config_init():
 def run_web(
     host: str = typer.Option("127.0.0.1", "--host", "-h", help="Host to bind to"),
     port: int = typer.Option(8000, "--port", "-p", help="Port to bind to"),
+    open_browser: bool = typer.Option(
+        True,
+        "--open/--no-open",
+        help="Automatically open the web UI in your browser",
+    ),
 ):
     """Start the web interface."""
     init()
     
+    url_host = host
+    if url_host in {"0.0.0.0", "::"}:
+        # Bind-all isn't directly reachable in a local browser URL.
+        url_host = "127.0.0.1"
+    url = f"http://{url_host}:{port}"
+    
     console.print(
         Panel(
             f"[bold]🚀 Brooks Trading Coach Web UI[/bold]\n\n"
-            f"Open your browser to: [cyan]http://{host}:{port}[/cyan]\n\n"
+            f"Open your browser to: [cyan]{url}[/cyan]\n\n"
             f"Press Ctrl+C to stop the server",
             title="Web Server",
             border_style="green",
@@ -662,6 +673,30 @@ def run_web(
     )
     
     from app.web.server import run_server
+    
+    if open_browser:
+        # Uvicorn blocks; open browser from a background thread after the port is ready.
+        import threading
+        import time
+        import socket
+        import webbrowser
+        
+        def _open_when_ready() -> None:
+            deadline = time.time() + 10.0
+            while time.time() < deadline:
+                try:
+                    with socket.create_connection((url_host, port), timeout=0.25):
+                        break
+                except OSError:
+                    time.sleep(0.1)
+            try:
+                webbrowser.open(url, new=2)
+            except Exception:
+                # Non-fatal: server is still usable; user can open manually.
+                pass
+        
+        threading.Thread(target=_open_when_ready, daemon=True).start()
+    
     run_server(host=host, port=port)
 
 
