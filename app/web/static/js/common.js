@@ -201,6 +201,25 @@ async function apiDelete(url) {
 }
 
 
+// ==================== SMOOTH NAVIGATION ====================
+
+/**
+ * Navigate to a URL with smooth transition
+ * @param {string} url - URL to navigate to
+ */
+function navigateTo(url) {
+    const transition = document.getElementById('page-transition');
+    const loadingBar = document.getElementById('nav-loading-bar');
+    
+    if (loadingBar) loadingBar.classList.add('loading');
+    if (transition) transition.classList.add('active');
+    
+    setTimeout(() => {
+        window.location.href = url;
+    }, 100);
+}
+
+
 // ==================== UTILITY FUNCTIONS ====================
 
 /**
@@ -345,7 +364,7 @@ document.addEventListener('keydown', (e) => {
     // Ctrl/Cmd + N: New trade
     if (modKey && e.key === 'n') {
         e.preventDefault();
-        window.location.href = '/add-trade';
+        navigateTo('/add-trade');
         return;
     }
     
@@ -379,16 +398,16 @@ document.addEventListener('keydown', (e) => {
         
         switch (e.key.toLowerCase()) {
             case 'd': // Go to Dashboard
-                window.location.href = '/';
+                navigateTo('/');
                 break;
             case 't': // Go to Trades
-                window.location.href = '/trades';
+                navigateTo('/trades');
                 break;
             case 's': // Go to Stats
-                window.location.href = '/stats';
+                navigateTo('/stats');
                 break;
             case 'a': // Go to Add Trade
-                window.location.href = '/add-trade';
+                navigateTo('/add-trade');
                 break;
         }
         return;

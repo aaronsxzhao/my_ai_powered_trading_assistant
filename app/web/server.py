@@ -2353,6 +2353,29 @@ async def reset_settings():
 
 # ============== STRATEGIES MANAGEMENT ==============
 
+# Default categories
+DEFAULT_CATEGORIES = [
+    {"id": "trend", "name": "Trend"},
+    {"id": "trading_range", "name": "Trading Range"},
+    {"id": "reversal", "name": "Reversal"},
+    {"id": "special", "name": "Special"},
+    {"id": "unknown", "name": "Unknown"},
+]
+
+def get_categories() -> list:
+    """Get categories from settings or return defaults."""
+    from app.config_prompts import load_settings
+    settings = load_settings()
+    return settings.get('categories', DEFAULT_CATEGORIES)
+
+def save_categories(categories: list) -> bool:
+    """Save categories to settings."""
+    from app.config_prompts import load_settings, save_settings
+    settings = load_settings()
+    settings['categories'] = categories
+    return save_settings(settings)
+
+
 @app.get("/strategies", response_class=HTMLResponse)
 async def strategies_page(request: Request, user = Depends(require_login)):
     """Strategy management page - edit, merge, categorize strategies."""
@@ -2370,13 +2393,79 @@ async def strategies_page(request: Request, user = Depends(require_login)):
             trade_count = session.query(Trade).filter(Trade.strategy_id == strategy.id).count()
             strategy_stats[strategy.id] = trade_count
         
+        # Get custom categories
+        categories = get_categories()
+        
         return templates.TemplateResponse(request, "strategies.html", {
             **base_context,
             "strategies": strategies,
             "strategy_stats": strategy_stats,
+            "categories": categories,
         })
     finally:
         session.close()
+
+
+@app.get("/api/categories")
+async def get_categories_api():
+    """Get all categories."""
+    return JSONResponse({"categories": get_categories()})
+
+
+@app.post("/api/categories", dependencies=[require_write_auth])
+async def create_category(request: Request):
+    """Create a new category."""
+    data = await request.json()
+    name = data.get('name', '').strip()
+    
+    if not name:
+        raise HTTPException(status_code=400, detail="Category name required")
+    
+    # Generate ID from name (lowercase, replace spaces with underscores)
+    cat_id = name.lower().replace(' ', '_').replace('-', '_')
+    
+    categories = get_categories()
+    
+    # Check if already exists
+    if any(c['id'] == cat_id for c in categories):
+        raise HTTPException(status_code=400, detail="Category already exists")
+    
+    categories.append({"id": cat_id, "name": name})
+    
+    if save_categories(categories):
+        return JSONResponse({"message": f"Category '{name}' created", "id": cat_id})
+    raise HTTPException(status_code=500, detail="Failed to save category")
+
+
+@app.delete("/api/categories/{category_id}", dependencies=[require_write_auth])
+async def delete_category(category_id: str):
+    """Delete a category. Removes from strategies that use it."""
+    from app.journal.models import Strategy
+    
+    categories = get_categories()
+    
+    # Find and remove the category
+    new_categories = [c for c in categories if c['id'] != category_id]
+    
+    if len(new_categories) == len(categories):
+        raise HTTPException(status_code=404, detail="Category not found")
+    
+    # Remove this category from all strategies that use it
+    session = get_session()
+    try:
+        strategies = session.query(Strategy).all()
+        for strategy in strategies:
+            if strategy.category:
+                cats = [c.strip() for c in strategy.category.split(',') if c.strip() and c.strip() != category_id]
+                strategy.category = ','.join(cats) if cats else None
+        session.commit()
+        clear_cache("active_strategies")
+    finally:
+        session.close()
+    
+    if save_categories(new_categories):
+        return JSONResponse({"message": "Category deleted"})
+    raise HTTPException(status_code=500, detail="Failed to delete category")
 
 
 @app.get("/api/strategies")

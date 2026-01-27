@@ -3,13 +3,45 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="view-transition" content="same-origin">
     <title>{% block title %}Brooks Trading Coach{% endblock %}</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
+    
+    <!-- Preconnect for faster CDN loading -->
+    <link rel="preconnect" href="https://cdn.tailwindcss.com">
+    <link rel="preconnect" href="https://unpkg.com">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    
+    <!-- DNS prefetch for faster resolution -->
+    <link rel="dns-prefetch" href="https://cdn.tailwindcss.com">
+    <link rel="dns-prefetch" href="https://unpkg.com">
+    
+    <!-- Critical: Load Tailwind first for immediate styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Defer non-critical scripts -->
+    <script src="https://unpkg.com/htmx.org@1.9.10" defer></script>
+    <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js" defer></script>
+    
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Prevent flash: hide body until Tailwind styles are fully applied -->
+    <style>
+        /* Critical inline CSS - prevents flash of unstyled content */
+        html:not(.ready) { opacity: 0; }
+        html.ready { opacity: 1; transition: opacity 0.15s ease-out; }
+        
+        /* Critical layout CSS - applied immediately before Tailwind loads */
+        body { 
+            margin: 0; 
+            font-family: 'Inter', system-ui, sans-serif;
+            min-height: 100vh;
+        }
+        .dark body { background: #020617; color: #fff; }
+        :root:not(.dark) body { background: #f8fafc; color: #0f172a; }
+    </style>
+    <noscript><style>html { opacity: 1 !important; }</style></noscript>
+    <!-- DO NOT add ready class here - wait for Tailwind config below -->
     <script>
         tailwind.config = {
             darkMode: 'class',
@@ -51,6 +83,21 @@
                 }
             }
         }
+        // Reveal page now that Tailwind is configured and styles will be applied
+        // Small delay ensures Tailwind has processed the config
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                document.documentElement.classList.add('ready');
+            });
+        });
+        // Fallback: ensure page is visible after fonts load or timeout
+        if (document.fonts && document.fonts.ready) {
+            document.fonts.ready.then(() => {
+                document.documentElement.classList.add('ready');
+            });
+        }
+        // Ultimate fallback after 500ms
+        setTimeout(() => document.documentElement.classList.add('ready'), 500);
     </script>
     <style type="text/tailwindcss">
         @layer components {
@@ -218,7 +265,7 @@
                 to { opacity: 1; transform: translateY(0); }
             }
             .animate-fadeIn {
-                animation: fadeIn 0.3s ease-out;
+                animation: fadeIn 0.2s ease-out;
             }
             
             @keyframes pulse-glow {
@@ -227,6 +274,54 @@
             }
             .glow-pulse {
                 animation: pulse-glow 2s ease-in-out infinite;
+            }
+            
+            /* Page Transition Overlay */
+            .page-transition {
+                position: fixed;
+                inset: 0;
+                z-index: 9999;
+                pointer-events: none;
+                opacity: 0;
+                background: var(--transition-bg, #0f172a);
+                transition: opacity 0.15s ease-out;
+            }
+            .page-transition.active {
+                opacity: 1;
+                pointer-events: auto;
+            }
+            :root:not(.dark) .page-transition {
+                --transition-bg: #f8fafc;
+            }
+            
+            /* View Transitions API for modern browsers */
+            @view-transition {
+                navigation: auto;
+            }
+            
+            ::view-transition-old(root),
+            ::view-transition-new(root) {
+                animation-duration: 0.15s;
+            }
+            
+            /* Navigation loading bar */
+            .nav-loading-bar {
+                position: fixed;
+                top: 0;
+                left: 0;
+                height: 2px;
+                background: linear-gradient(90deg, #3b82f6, #06b6d4);
+                z-index: 10000;
+                transform-origin: left;
+                transform: scaleX(0);
+                transition: transform 0.3s ease-out;
+            }
+            .nav-loading-bar.loading {
+                transform: scaleX(0.7);
+            }
+            .nav-loading-bar.complete {
+                transform: scaleX(1);
+                transition: transform 0.1s ease-out;
             }
         }
         
@@ -719,8 +814,104 @@
         </div>
     </footer>
 
+    <!-- Page Transition Elements -->
+    <div class="page-transition" id="page-transition"></div>
+    <div class="nav-loading-bar" id="nav-loading-bar"></div>
+
     <!-- Common JavaScript utilities -->
     <script src="/static/js/common.js"></script>
+    
+    <!-- Smooth Page Transitions -->
+    <script>
+    (function() {
+        // Show page immediately once ready
+        document.documentElement.classList.add('ready');
+        
+        const transition = document.getElementById('page-transition');
+        const loadingBar = document.getElementById('nav-loading-bar');
+        
+        // Prefetch pages on hover for faster navigation
+        const prefetchedUrls = new Set();
+        
+        function prefetchUrl(url) {
+            if (prefetchedUrls.has(url) || url.startsWith('#') || url.startsWith('javascript:')) return;
+            if (url.includes('/api/') || url.includes('/auth/logout')) return;
+            
+            prefetchedUrls.add(url);
+            const link = document.createElement('link');
+            link.rel = 'prefetch';
+            link.href = url;
+            document.head.appendChild(link);
+        }
+        
+        // Add hover prefetching to all internal links
+        document.addEventListener('mouseover', (e) => {
+            const link = e.target.closest('a[href]');
+            if (link && link.href && link.href.startsWith(window.location.origin)) {
+                prefetchUrl(link.href);
+            }
+        }, { passive: true });
+        
+        // Smooth page transitions
+        document.addEventListener('click', (e) => {
+            const link = e.target.closest('a[href]');
+            if (!link) return;
+            
+            const href = link.getAttribute('href');
+            
+            // Skip for external links, hash links, special links
+            if (!href || href.startsWith('#') || href.startsWith('javascript:') || 
+                href.startsWith('mailto:') || href.startsWith('tel:') ||
+                link.hasAttribute('download') || link.target === '_blank' ||
+                href.includes('/api/') || e.ctrlKey || e.metaKey || e.shiftKey) {
+                return;
+            }
+            
+            // Skip if same page
+            const targetUrl = new URL(href, window.location.origin);
+            if (targetUrl.pathname === window.location.pathname && !targetUrl.hash) {
+                return;
+            }
+            
+            e.preventDefault();
+            
+            // Show loading bar
+            loadingBar.classList.add('loading');
+            
+            // Brief fade transition
+            transition.classList.add('active');
+            
+            // Navigate after short delay
+            setTimeout(() => {
+                window.location.href = href;
+            }, 100);
+        }, { capture: true });
+        
+        // Handle back/forward navigation
+        window.addEventListener('pageshow', (e) => {
+            transition.classList.remove('active');
+            loadingBar.classList.remove('loading');
+            loadingBar.classList.add('complete');
+            setTimeout(() => loadingBar.classList.remove('complete'), 300);
+            
+            // Restore page if from bfcache
+            if (e.persisted) {
+                document.documentElement.classList.add('ready');
+            }
+        });
+        
+        // Handle popstate (back/forward)
+        window.addEventListener('popstate', () => {
+            loadingBar.classList.add('loading');
+        });
+        
+        // Ensure page is visible on load
+        window.addEventListener('DOMContentLoaded', () => {
+            document.documentElement.classList.add('ready');
+            transition.classList.remove('active');
+        });
+    })();
+    </script>
 
     {% block scripts %}{% endblock %}
 </body>

@@ -3,36 +3,42 @@
 {% block title %}Training Materials - Brooks Trading Coach{% endblock %}
 
 {% block content %}
-<div class="space-y-6">
-    <!-- Header -->
-    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-            <div class="flex items-center gap-3">
-                <a href="/settings" class="text-dark-400 hover:text-white transition-colors">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-                    </svg>
-                </a>
-                <h1 class="text-3xl font-bold bg-gradient-to-r from-white to-dark-300 bg-clip-text text-transparent">
-                    📚 Training Materials
-                </h1>
+<div class="max-w-5xl mx-auto space-y-8">
+    <!-- Modern Header -->
+    <div class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-dark-800/80 via-dark-800/60 to-dark-900/80 border border-dark-700/50 p-6">
+        <div class="absolute inset-0 bg-gradient-to-r from-amber-500/5 via-orange-500/5 to-transparent"></div>
+        <div class="relative flex items-center gap-4">
+            <a href="/settings" class="w-10 h-10 rounded-xl bg-dark-700/50 hover:bg-dark-600/50 flex items-center justify-center text-dark-400 hover:text-white transition-all border border-dark-600/50">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                </svg>
+            </a>
+            <div>
+                <h1 class="text-3xl font-bold text-white">Training Materials</h1>
+                <p class="text-dark-400 text-sm mt-1">Upload PDFs and documents to train the AI with your strategies</p>
             </div>
-            <p class="text-dark-400 text-sm mt-1 ml-8">Upload PDFs and documents to train the AI with your preferred strategies</p>
         </div>
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Upload Section -->
-        <div class="card">
-            <h2 class="text-xl font-bold text-white mb-4">📤 Upload Materials</h2>
+        <div class="modern-card">
+            <div class="flex items-center gap-3 mb-6">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-500/20 to-accent-600/10 flex items-center justify-center border border-accent-500/20">
+                    <span class="text-lg">📤</span>
+                </div>
+                <h2 class="font-semibold text-white">Upload Materials</h2>
+            </div>
             
             <form id="upload-form" class="space-y-4">
-                <div class="border-2 border-dashed border-dark-600 rounded-xl p-8 text-center hover:border-accent-500 transition cursor-pointer bg-dark-900/50"
+                <div class="upload-zone border-2 border-dashed border-dark-600 rounded-xl p-8 text-center hover:border-accent-500 transition-all cursor-pointer bg-dark-900/30"
                      onclick="document.getElementById('file-input').click()">
                     <input type="file" id="file-input" accept=".pdf,.txt,.md,.doc,.docx" class="hidden" onchange="handleFileSelect(this)" multiple>
-                    <div class="text-4xl mb-2">📁</div>
-                    <div class="text-dark-300">Click to select files</div>
-                    <div class="text-sm text-dark-500">PDF, TXT, MD supported</div>
+                    <div class="w-16 h-16 rounded-2xl bg-dark-800/50 flex items-center justify-center mx-auto mb-4">
+                        <span class="text-3xl">📁</span>
+                    </div>
+                    <div class="text-dark-300 font-medium">Click to select files</div>
+                    <div class="text-sm text-dark-500 mt-1">PDF, TXT, MD supported</div>
                 </div>
                 
                 <div id="selected-files" class="space-y-2 hidden"></div>
@@ -42,55 +48,76 @@
                 </button>
             </form>
             
-            <div class="mt-6 pt-6 border-t border-dark-700">
-                <h3 class="font-medium text-white mb-2">💡 What to Upload</h3>
+            <div class="mt-6 pt-6 border-t border-dark-700/50">
+                <h3 class="font-medium text-white mb-3 flex items-center gap-2">
+                    <span>💡</span> What to Upload
+                </h3>
                 <ul class="text-sm text-dark-400 space-y-2">
-                    <li>• <strong class="text-dark-300">Al Brooks books</strong> - Trading guides and methodology</li>
-                    <li>• <strong class="text-dark-300">Your trading rules</strong> - Personal strategy notes</li>
-                    <li>• <strong class="text-dark-300">Setup definitions</strong> - Descriptions of patterns you trade</li>
-                    <li>• <strong class="text-dark-300">Market analysis templates</strong> - How you analyze charts</li>
+                    <li class="flex items-start gap-2">
+                        <span class="text-accent-400">•</span>
+                        <span><strong class="text-dark-300">Al Brooks books</strong> - Trading guides and methodology</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                        <span class="text-accent-400">•</span>
+                        <span><strong class="text-dark-300">Your trading rules</strong> - Personal strategy notes</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                        <span class="text-accent-400">•</span>
+                        <span><strong class="text-dark-300">Setup definitions</strong> - Patterns you trade</span>
+                    </li>
                 </ul>
             </div>
         </div>
 
         <!-- Materials List -->
-        <div class="card">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-xl font-bold text-white">📂 Uploaded Materials</h2>
-                <span class="badge bg-dark-700 text-dark-300 border-dark-600">{{ materials|length }} files</span>
+        <div class="modern-card">
+            <div class="flex items-center justify-between mb-6">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500/20 to-purple-600/10 flex items-center justify-center border border-purple-500/20">
+                        <span class="text-lg">📂</span>
+                    </div>
+                    <h2 class="font-semibold text-white">Uploaded Materials</h2>
+                </div>
+                <span class="px-3 py-1 rounded-full text-xs font-medium bg-dark-700 text-dark-300 border border-dark-600">
+                    {{ materials|length }} files
+                </span>
             </div>
             
             {% if materials %}
-            <div class="space-y-2 max-h-96 overflow-y-auto">
+            <div class="space-y-3 max-h-80 overflow-y-auto pr-2">
                 {% for mat in materials %}
-                <div class="flex items-center justify-between p-3 bg-dark-900/50 rounded-xl border border-dark-700 group">
+                <div class="flex items-center justify-between p-4 bg-dark-900/30 rounded-xl border border-dark-700/50 group hover:border-dark-600 transition">
                     <div class="flex items-center gap-3">
-                        <span class="text-2xl">
+                        <div class="w-10 h-10 rounded-lg bg-dark-800/50 flex items-center justify-center text-xl">
                             {% if mat.name.endswith('.pdf') %}📕{% elif mat.name.endswith('.md') %}📝{% else %}📄{% endif %}
-                        </span>
+                        </div>
                         <div>
                             <div class="font-medium text-dark-200">{{ mat.name }}</div>
                             <div class="text-xs text-dark-500">{{ mat.size_kb }} KB</div>
                         </div>
                     </div>
                     <button onclick="deleteMaterial('{{ mat.name }}')" 
-                            class="btn btn-ghost p-2 text-danger-400 opacity-50 group-hover:opacity-100">
-                        🗑️
+                            class="p-2 text-danger-400 opacity-50 group-hover:opacity-100 hover:bg-danger-500/10 rounded-lg transition-all">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                        </svg>
                     </button>
                 </div>
                 {% endfor %}
             </div>
             {% else %}
             <div class="text-center py-12">
-                <div class="text-4xl mb-3">📭</div>
+                <div class="w-16 h-16 rounded-2xl bg-dark-800/50 flex items-center justify-center mx-auto mb-4">
+                    <span class="text-3xl">📭</span>
+                </div>
                 <p class="text-dark-400">No materials uploaded yet</p>
                 <p class="text-sm text-dark-500 mt-1">Upload PDFs or text files to enhance AI analysis</p>
             </div>
             {% endif %}
             
             {% if materials %}
-            <div class="mt-4 pt-4 border-t border-dark-700">
-                <button onclick="deleteAllMaterials()" class="btn btn-ghost text-danger-400 w-full">
+            <div class="mt-4 pt-4 border-t border-dark-700/50">
+                <button onclick="deleteAllMaterials()" class="w-full p-3 text-danger-400 hover:bg-danger-500/10 rounded-lg transition-colors text-sm font-medium">
                     🗑️ Delete All Materials
                 </button>
             </div>
@@ -99,14 +126,14 @@
     </div>
 
     <!-- RAG Index Status Card -->
-    <div id="rag-status-card" class="card bg-dark-900/50 border-dark-700">
+    <div id="rag-status-card" class="modern-card">
         <div class="flex items-start justify-between gap-4">
             <div class="flex items-start gap-4">
-                <div class="text-3xl" id="rag-status-icon">⏳</div>
+                <div class="w-12 h-12 rounded-xl bg-dark-800/50 flex items-center justify-center text-2xl" id="rag-status-icon">⏳</div>
                 <div>
                     <h3 class="font-semibold text-white mb-1" id="rag-status-title">Checking RAG Status...</h3>
                     <p class="text-sm text-dark-400" id="rag-status-text">
-                        Retrieval-Augmented Generation (RAG) allows the AI to search through your entire materials and find relevant sections for each trade.
+                        Retrieval-Augmented Generation (RAG) allows the AI to search through your materials and find relevant sections for each trade.
                     </p>
                     <div id="rag-stats" class="mt-2 text-xs text-dark-500 hidden">
                         <span id="rag-chunks">0 chunks</span> indexed from <span id="rag-files">0 files</span>
@@ -114,46 +141,51 @@
                     </div>
                 </div>
             </div>
-            <div class="flex flex-col gap-2">
-                <button onclick="reindexMaterials()" id="reindex-btn" class="btn btn-secondary text-sm whitespace-nowrap">
-                    🔄 Re-index
-                </button>
-            </div>
+            <button onclick="reindexMaterials()" id="reindex-btn" class="btn btn-secondary whitespace-nowrap">
+                🔄 Re-index
+            </button>
         </div>
     </div>
 
     <!-- How It Works -->
-    <div class="card">
-        <h2 class="text-xl font-bold text-white mb-4">🧠 How Materials Enhance AI Analysis</h2>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div class="p-4 bg-dark-900/50 rounded-xl border border-dark-700">
-                <div class="text-2xl mb-2">📖</div>
+    <div class="modern-card">
+        <div class="flex items-center gap-3 mb-6">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500/20 to-violet-600/10 flex items-center justify-center border border-violet-500/20">
+                <span class="text-lg">🧠</span>
+            </div>
+            <h2 class="font-semibold text-white">How Materials Enhance AI Analysis</h2>
+        </div>
+        
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div class="p-4 bg-dark-900/30 rounded-xl border border-dark-700/50 text-center">
+                <div class="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center mx-auto mb-3 text-2xl">📖</div>
                 <h3 class="font-medium text-white mb-1">Strategy Context</h3>
-                <p class="text-sm text-dark-400">AI reads your materials to understand your specific trading methodology</p>
+                <p class="text-sm text-dark-400">AI reads your materials to understand your methodology</p>
             </div>
-            <div class="p-4 bg-dark-900/50 rounded-xl border border-dark-700">
-                <div class="text-2xl mb-2">🎯</div>
+            <div class="p-4 bg-dark-900/30 rounded-xl border border-dark-700/50 text-center">
+                <div class="w-12 h-12 rounded-xl bg-green-500/10 flex items-center justify-center mx-auto mb-3 text-2xl">🎯</div>
                 <h3 class="font-medium text-white mb-1">Better Classifications</h3>
-                <p class="text-sm text-dark-400">Trade setups are classified using terminology from your uploaded materials</p>
+                <p class="text-sm text-dark-400">Uses your terminology for trade setups</p>
             </div>
-            <div class="p-4 bg-dark-900/50 rounded-xl border border-dark-700">
-                <div class="text-2xl mb-2">💬</div>
+            <div class="p-4 bg-dark-900/30 rounded-xl border border-dark-700/50 text-center">
+                <div class="w-12 h-12 rounded-xl bg-purple-500/10 flex items-center justify-center mx-auto mb-3 text-2xl">💬</div>
                 <h3 class="font-medium text-white mb-1">Personalized Coaching</h3>
-                <p class="text-sm text-dark-400">Reviews use insights from your strategy guides for relevant feedback</p>
+                <p class="text-sm text-dark-400">Reviews use insights from your guides</p>
             </div>
         </div>
         
-        <div class="mt-4 p-4 bg-accent-500/10 rounded-xl border border-accent-500/30">
-            <h4 class="font-medium text-accent-400 mb-2">🚀 Smart Retrieval (RAG)</h4>
+        <div class="p-4 bg-accent-500/10 rounded-xl border border-accent-500/20">
+            <h4 class="font-medium text-accent-400 mb-2 flex items-center gap-2">
+                <span>🚀</span> Smart Retrieval (RAG)
+            </h4>
             <p class="text-sm text-dark-300 mb-3">
                 This system uses <strong>Retrieval-Augmented Generation</strong> - your materials are split into chunks and indexed. 
-                For each trade, the AI automatically finds and uses the <strong>most relevant sections</strong> rather than the whole document.
+                For each trade, the AI finds the <strong>most relevant sections</strong> automatically.
             </p>
             <ul class="text-sm text-dark-300 space-y-1">
-                <li>• <strong>Upload full books</strong> - RAG will find relevant pages per trade</li>
-                <li>• <strong>Add your own rules</strong> - Text files get priority in retrieval</li>
-                <li>• <strong>Automatic indexing</strong> - Materials are processed on upload</li>
-                <li>• <strong>Smart matching</strong> - Long/short, timeframe, setups match to relevant content</li>
+                <li>• <strong>Upload full books</strong> - RAG finds relevant pages per trade</li>
+                <li>• <strong>Add your own rules</strong> - Text files get priority</li>
+                <li>• <strong>Automatic indexing</strong> - Materials processed on upload</li>
             </ul>
         </div>
     </div>
@@ -161,6 +193,52 @@
 {% endblock %}
 
 {% block scripts %}
+<style>
+.modern-card {
+    background: linear-gradient(135deg, rgba(31, 41, 55, 0.6) 0%, rgba(17, 24, 39, 0.4) 100%);
+    border: 1px solid rgba(55, 65, 81, 0.5);
+    border-radius: 1rem;
+    padding: 1.5rem;
+    backdrop-filter: blur(10px);
+}
+
+.upload-zone {
+    transition: all 0.2s ease;
+}
+
+.upload-zone:hover {
+    background: rgba(6, 182, 212, 0.05);
+}
+
+:root:not(.dark) .modern-card {
+    background: #ffffff !important;
+    border-color: #e5e7eb !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+:root:not(.dark) .upload-zone {
+    background: #fafbfc !important;
+    border-color: #d1d5db !important;
+}
+
+:root:not(.dark) .upload-zone:hover {
+    background: #f0fdfa !important;
+    border-color: #0891b2 !important;
+}
+
+/* Light mode header */
+:root:not(.dark) .relative.overflow-hidden.rounded-2xl {
+    background: #ffffff !important;
+    border-color: #e5e7eb !important;
+}
+
+:root:not(.dark) .bg-dark-900\/50,
+:root:not(.dark) .bg-dark-900\/30,
+:root:not(.dark) .bg-dark-800\/50 {
+    background: #fafbfc !important;
+}
+</style>
+
 <script>
 const fileInput = document.getElementById('file-input');
 const selectedFiles = document.getElementById('selected-files');
@@ -174,9 +252,9 @@ function handleFileSelect(input) {
         
         for (const file of input.files) {
             const div = document.createElement('div');
-            div.className = 'flex items-center justify-between p-2 bg-accent-500/10 rounded-lg border border-accent-500/30';
+            div.className = 'flex items-center justify-between p-3 bg-accent-500/10 rounded-lg border border-accent-500/20';
             div.innerHTML = `
-                <span class="text-accent-300">${file.name}</span>
+                <span class="text-accent-300 font-medium">${file.name}</span>
                 <span class="text-xs text-dark-500">${Math.round(file.size / 1024)} KB</span>
             `;
             selectedFiles.appendChild(div);
@@ -259,7 +337,7 @@ async function deleteAllMaterials() {
 }
 
 // Drag and drop
-const dropZone = document.querySelector('.border-dashed');
+const dropZone = document.querySelector('.upload-zone');
 
 dropZone.addEventListener('dragover', (e) => {
     e.preventDefault();
@@ -294,18 +372,16 @@ async function checkRagStatus() {
         const reindexBtn = document.getElementById('reindex-btn');
         
         if (!data.available) {
-            // RAG not available
             icon.textContent = '⚠️';
             title.textContent = 'RAG Not Available';
             text.textContent = data.error || 'Install dependencies: pip install chromadb sentence-transformers';
-            card.className = 'card bg-yellow-500/5 border-yellow-500/30';
+            card.style.borderColor = 'rgba(234, 179, 8, 0.3)';
             reindexBtn.classList.add('hidden');
         } else if (data.total_chunks > 0) {
-            // RAG indexed and ready
             icon.textContent = '✅';
             title.textContent = 'RAG Active - Smart Retrieval Enabled';
             text.textContent = 'Your materials are indexed. The AI will find relevant sections for each trade automatically.';
-            card.className = 'card bg-green-500/5 border-green-500/30';
+            card.style.borderColor = 'rgba(34, 197, 94, 0.3)';
             
             stats.classList.remove('hidden');
             document.getElementById('rag-chunks').textContent = `${data.total_chunks} chunks`;
@@ -321,19 +397,16 @@ async function checkRagStatus() {
                 reindexBtn.classList.remove('hidden');
             }
         } else if (data.needs_reindex) {
-            // Materials exist but not indexed
             icon.textContent = '⏳';
             title.textContent = 'Indexing Needed';
             text.textContent = 'Materials detected but not indexed. Click "Index Now" to enable smart retrieval.';
-            card.className = 'card bg-yellow-500/5 border-yellow-500/30';
+            card.style.borderColor = 'rgba(234, 179, 8, 0.3)';
             reindexBtn.textContent = '📚 Index Now';
             reindexBtn.classList.remove('hidden');
         } else {
-            // No materials
             icon.textContent = '📭';
             title.textContent = 'No Materials Indexed';
             text.textContent = 'Upload materials above to enable smart retrieval.';
-            card.className = 'card bg-dark-900/50 border-dark-700';
             reindexBtn.classList.add('hidden');
         }
     } catch (err) {
@@ -367,7 +440,6 @@ async function reindexMaterials() {
     }
 }
 
-// Check RAG status on page load
 document.addEventListener('DOMContentLoaded', checkRagStatus);
 </script>
 {% endblock %}

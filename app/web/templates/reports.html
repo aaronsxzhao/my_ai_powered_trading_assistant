@@ -3,30 +3,44 @@
 {% block title %}Reports - Brooks Trading Coach{% endblock %}
 
 {% block content %}
-<div class="space-y-8">
-    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-            <div class="flex items-center gap-3">
-                <a href="/settings" class="text-dark-400 hover:text-white transition-colors">
+<div class="max-w-5xl mx-auto space-y-8">
+    <!-- Modern Header -->
+    <div class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-dark-800/80 via-dark-800/60 to-dark-900/80 border border-dark-700/50 p-6">
+        <div class="absolute inset-0 bg-gradient-to-r from-green-500/5 via-transparent to-transparent"></div>
+        <div class="relative flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div class="flex items-center gap-4">
+                <a href="/settings" class="w-10 h-10 rounded-xl bg-dark-700/50 hover:bg-dark-600/50 flex items-center justify-center text-dark-400 hover:text-white transition-all border border-dark-600/50">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
                     </svg>
                 </a>
-                <h1 class="text-3xl font-bold bg-gradient-to-r from-white to-dark-300 bg-clip-text text-transparent">
-                    Reports
-                </h1>
+                <div>
+                    <h1 class="text-3xl font-bold text-white">Reports</h1>
+                    <p class="text-dark-400 text-sm mt-1">Generate premarket and end-of-day reports</p>
+                </div>
             </div>
-            <p class="text-dark-400 text-sm mt-1 ml-8">Generate premarket and end-of-day reports</p>
-        </div>
-        <div class="flex flex-wrap gap-3">
-            <button onclick="generatePremarket()" class="btn btn-primary">📊 Generate Premarket</button>
-            <button onclick="generateEOD()" class="btn btn-secondary">📋 Generate EOD</button>
+            <div class="flex flex-wrap gap-3">
+                <button onclick="generatePremarket()" class="btn btn-primary">
+                    <span class="mr-2">📊</span> Generate Premarket
+                </button>
+                <button onclick="generateEOD()" class="btn btn-secondary">
+                    <span class="mr-2">📋</span> Generate EOD
+                </button>
+            </div>
         </div>
     </div>
 
     <!-- Generate for Ticker -->
-    <div class="card">
-        <h2 class="text-xl font-bold mb-4 text-white">Generate Premarket Report</h2>
+    <div class="modern-card">
+        <div class="flex items-center gap-3 mb-4">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-500/20 to-accent-600/10 flex items-center justify-center border border-accent-500/20">
+                <span class="text-lg">🎯</span>
+            </div>
+            <div>
+                <h2 class="font-semibold text-white">Generate for Specific Ticker</h2>
+                <p class="text-xs text-dark-500">Select a ticker or analyze all watchlist symbols</p>
+            </div>
+        </div>
         <div class="flex flex-col sm:flex-row gap-3">
             <select id="ticker-select" class="select flex-1">
                 <option value="">All watchlist tickers</option>
@@ -34,39 +48,61 @@
                 <option value="{{ ticker }}">{{ ticker }}</option>
                 {% endfor %}
             </select>
-            <button onclick="generatePremarketForTicker()" class="btn btn-primary">Generate</button>
+            <button onclick="generatePremarketForTicker()" class="btn btn-primary">Generate Report</button>
         </div>
     </div>
 
     <!-- Report History -->
-    <div class="card">
-        <h2 class="text-xl font-bold mb-4 text-white">Report History</h2>
+    <div class="modern-card">
+        <div class="flex items-center gap-3 mb-6">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500/20 to-purple-600/10 flex items-center justify-center border border-purple-500/20">
+                <span class="text-lg">📁</span>
+            </div>
+            <div>
+                <h2 class="font-semibold text-white">Report History</h2>
+                <p class="text-xs text-dark-500">Previously generated reports</p>
+            </div>
+        </div>
         
         {% if reports %}
         <div class="space-y-3">
             {% for report in reports %}
-            <div class="flex items-center justify-between p-4 bg-dark-900/50 border border-dark-700 rounded-xl hover:border-dark-600 transition">
-                <div>
-                    <div class="font-bold text-white">{{ report.date }}</div>
-                    <div class="text-sm">
-                        {% if report.has_premarket %}
-                            <span class="text-success-400">✓ Premarket</span>
-                        {% endif %}
-                        {% if report.has_eod %}
-                            <span class="text-accent-400 ml-2">✓ EOD</span>
-                        {% endif %}
+            <div class="flex items-center justify-between p-4 bg-dark-900/30 border border-dark-700/50 rounded-xl hover:border-dark-600 transition group">
+                <div class="flex items-center gap-4">
+                    <div class="w-12 h-12 rounded-xl bg-dark-800/50 flex items-center justify-center text-2xl">
+                        📄
+                    </div>
+                    <div>
+                        <div class="font-bold text-white">{{ report.date }}</div>
+                        <div class="text-sm flex items-center gap-3 mt-1">
+                            {% if report.has_premarket %}
+                            <span class="flex items-center gap-1 text-success-400">
+                                <span class="w-1.5 h-1.5 rounded-full bg-success-400"></span>
+                                Premarket
+                            </span>
+                            {% endif %}
+                            {% if report.has_eod %}
+                            <span class="flex items-center gap-1 text-accent-400">
+                                <span class="w-1.5 h-1.5 rounded-full bg-accent-400"></span>
+                                EOD
+                            </span>
+                            {% endif %}
+                        </div>
                     </div>
                 </div>
-                <div class="text-sm text-dark-500 font-mono">
+                <div class="text-sm text-dark-500 font-mono opacity-0 group-hover:opacity-100 transition-opacity">
                     {{ report.path }}
                 </div>
             </div>
             {% endfor %}
         </div>
         {% else %}
-        <div class="text-center py-12">
-            <div class="text-4xl mb-4">📄</div>
-            <p class="text-xl mb-4 text-dark-400">No reports yet</p>
+        <div class="text-center py-16">
+            <div class="w-16 h-16 rounded-2xl bg-dark-800/50 flex items-center justify-center mx-auto mb-4">
+                <span class="text-3xl">📄</span>
+            </div>
+            <p class="text-xl mb-2 text-dark-400">No reports yet</p>
+            <p class="text-sm text-dark-500 mb-6">Generate your first premarket or EOD report</p>
             <button onclick="generatePremarket()" class="btn btn-primary">
                 Generate First Report
             </button>
@@ -74,18 +110,53 @@
         {% endif %}
     </div>
 
-    <!-- Output Folder -->
-    <div class="card bg-dark-900/50 border border-dark-700">
-        <h3 class="font-medium mb-2 text-white">📁 Output Location</h3>
-        <p class="text-sm text-dark-400">
-            Reports are saved to <code class="bg-dark-800 px-2 py-1 rounded text-accent-400">outputs/YYYY-MM-DD/</code>
-            as Markdown files. You can open them in any text editor or Markdown viewer.
-        </p>
+    <!-- Output Folder Info -->
+    <div class="modern-card bg-dark-900/30">
+        <div class="flex items-start gap-4">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-500/20 to-slate-600/10 flex items-center justify-center border border-slate-500/20 flex-shrink-0">
+                <span class="text-lg">💾</span>
+            </div>
+            <div>
+                <h3 class="font-medium text-white mb-1">Output Location</h3>
+                <p class="text-sm text-dark-400">
+                    Reports are saved to <code class="bg-dark-800 px-2 py-1 rounded text-accent-400 text-xs">outputs/YYYY-MM-DD/</code>
+                    as Markdown files. Open them in any text editor or Markdown viewer.
+                </p>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
+<style>
+.modern-card {
+    background: linear-gradient(135deg, rgba(31, 41, 55, 0.6) 0%, rgba(17, 24, 39, 0.4) 100%);
+    border: 1px solid rgba(55, 65, 81, 0.5);
+    border-radius: 1rem;
+    padding: 1.5rem;
+    backdrop-filter: blur(10px);
+}
+
+:root:not(.dark) .modern-card {
+    background: #ffffff !important;
+    border-color: #e5e7eb !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+/* Light mode header */
+:root:not(.dark) .relative.overflow-hidden.rounded-2xl {
+    background: #ffffff !important;
+    border-color: #e5e7eb !important;
+}
+
+:root:not(.dark) .bg-dark-900\/50,
+:root:not(.dark) .bg-dark-900\/30,
+:root:not(.dark) .bg-dark-800\/50 {
+    background: #fafbfc !important;
+}
+</style>
+
 <script>
 async function generatePremarket() {
     showStartToast('Generating premarket report');

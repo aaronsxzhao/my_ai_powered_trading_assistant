@@ -5,6 +5,19 @@ candles:
   5min: 234
   daily: 30
   hourly: 120
+categories:
+- id: trend
+  name: Trend
+- id: trading_range
+  name: Trading Range
+- id: reversal
+  name: Reversal
+- id: special
+  name: Special
+- id: unknown
+  name: Unknown
+- id: breakout
+  name: Breakout
 system_prompts:
   market_context: "You are Al Brooks providing a comprehensive pre-market briefing\
     \ using price action methodology.\n\n=== PRE-MARKET REPORT STRUCTURE ===\n\n**1.\

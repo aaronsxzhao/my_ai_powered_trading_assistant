@@ -3,390 +3,479 @@
 {% block title %}Settings - Brooks Trading Coach{% endblock %}
 
 {% block content %}
-<div class="max-w-6xl mx-auto">
-    <!-- Header -->
-    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
-        <div>
-            <h1 class="text-3xl font-bold text-white">Settings</h1>
-            <p class="text-dark-400 text-sm mt-1">Configure your trading coach</p>
-        </div>
-        <div class="flex gap-2">
-            <span class="px-3 py-1.5 rounded-full text-xs font-medium {% if llm_available %}bg-green-500/20 text-green-400{% else %}bg-red-500/20 text-red-400{% endif %}">
-                LLM: {% if llm_available %}Connected{% else %}Not Connected{% endif %}
-            </span>
-            <span class="px-3 py-1.5 rounded-full text-xs font-medium bg-accent-500/20 text-accent-400">
-                {{ data_provider|upper }}
-            </span>
+<div class="max-w-6xl mx-auto space-y-8">
+    <!-- Modern Header -->
+    <div class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-dark-800/80 via-dark-800/60 to-dark-900/80 border border-dark-700/50 p-8">
+        <div class="absolute inset-0 bg-gradient-to-r from-accent-500/5 via-purple-500/5 to-pink-500/5"></div>
+        <div class="relative flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+            <div>
+                <h1 class="text-4xl font-bold text-white mb-2">Settings</h1>
+                <p class="text-dark-400">Configure your AI trading coach and preferences</p>
+            </div>
+            <div class="flex flex-wrap gap-3">
+                <div class="flex items-center gap-2 px-4 py-2 rounded-xl bg-dark-900/50 border border-dark-700/50 backdrop-blur-sm">
+                    <span class="w-2 h-2 rounded-full {% if llm_available %}bg-green-400 animate-pulse{% else %}bg-red-400{% endif %}"></span>
+                    <span class="text-sm text-dark-300">AI: {% if llm_available %}Active{% else %}Offline{% endif %}</span>
+                </div>
+                <div class="flex items-center gap-2 px-4 py-2 rounded-xl bg-dark-900/50 border border-dark-700/50 backdrop-blur-sm">
+                    <span class="text-sm text-dark-300">Data: <span class="text-accent-400 font-medium">{{ data_provider|upper }}</span></span>
+                </div>
+            </div>
         </div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        <!-- Sidebar Navigation -->
-        <div class="lg:col-span-1">
-            <nav class="sticky top-4 space-y-1">
-                <div class="text-xs font-semibold text-dark-500 uppercase tracking-wider mb-3 px-3">Navigation</div>
-                <a href="#quick-actions" class="nav-settings-link active">Quick Actions</a>
-                <a href="#data-settings" class="nav-settings-link">Data Settings</a>
-                <a href="#ai-prompts" class="nav-settings-link">AI Prompts</a>
-                <a href="#system-info" class="nav-settings-link">System Info</a>
-                
-                <div class="border-t border-dark-700 my-4 pt-4">
-                    <button onclick="resetToDefaults()" class="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 rounded-lg transition-colors">
-                        Reset All Settings
-                    </button>
+    <!-- Quick Actions Grid -->
+    <section>
+        <h2 class="text-lg font-semibold text-white mb-4 flex items-center gap-3">
+            <span class="w-8 h-8 rounded-lg bg-gradient-to-br from-accent-500/20 to-accent-600/10 flex items-center justify-center text-accent-400 text-sm border border-accent-500/20">⚡</span>
+            Quick Actions
+        </h2>
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+            <a href="/tickers" class="settings-card-link group">
+                <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500/20 to-cyan-600/10 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                    <span class="text-2xl">🎯</span>
                 </div>
-            </nav>
+                <span class="font-medium text-white group-hover:text-accent-400 transition-colors">Watchlist</span>
+                <span class="text-xs text-dark-500 mt-1">Manage tickers</span>
+            </a>
+            <a href="/strategies" class="settings-card-link group">
+                <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500/20 to-purple-600/10 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                    <span class="text-2xl">🏷️</span>
+                </div>
+                <span class="font-medium text-white group-hover:text-accent-400 transition-colors">Strategies</span>
+                <span class="text-xs text-dark-500 mt-1">Edit & merge</span>
+            </a>
+            <a href="/materials" class="settings-card-link group">
+                <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500/20 to-amber-600/10 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                    <span class="text-2xl">📚</span>
+                </div>
+                <span class="font-medium text-white group-hover:text-accent-400 transition-colors">Materials</span>
+                <span class="text-xs text-dark-500 mt-1">Train AI</span>
+            </a>
+            <a href="/reports" class="settings-card-link group">
+                <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-green-500/20 to-green-600/10 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                    <span class="text-2xl">📋</span>
+                </div>
+                <span class="font-medium text-white group-hover:text-accent-400 transition-colors">Reports</span>
+                <span class="text-xs text-dark-500 mt-1">Generate reports</span>
+            </a>
+            <a href="/analysis" class="settings-card-link group">
+                <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-pink-500/20 to-pink-600/10 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                    <span class="text-2xl">🔍</span>
+                </div>
+                <span class="font-medium text-white group-hover:text-accent-400 transition-colors">Analysis</span>
+                <span class="text-xs text-dark-500 mt-1">Bulk insights</span>
+            </a>
+        </div>
+    </section>
+
+    <!-- Configuration Cards -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- OHLCV Settings -->
+        <section class="settings-panel">
+            <div class="flex items-center gap-3 mb-6">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-600/10 flex items-center justify-center border border-blue-500/20">
+                    <span class="text-xl">📊</span>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-white">OHLCV Bar Counts</h3>
+                    <p class="text-xs text-dark-500">Historical data for AI context</p>
+                </div>
+            </div>
+            <form id="candle-form" class="space-y-4">
+                <div class="grid grid-cols-3 gap-4">
+                    <div class="space-y-2">
+                        <label class="text-xs font-medium text-dark-400 uppercase tracking-wider">Daily</label>
+                        <input type="number" id="candles-daily" min="1" max="365" value="{{ candles.daily }}" 
+                            class="input text-center py-3 text-lg font-mono">
+                    </div>
+                    <div class="space-y-2">
+                        <label class="text-xs font-medium text-dark-400 uppercase tracking-wider">2-Hour</label>
+                        <input type="number" id="candles-hourly" min="1" max="500" value="{{ candles.hourly }}" 
+                            class="input text-center py-3 text-lg font-mono">
+                    </div>
+                    <div class="space-y-2">
+                        <label class="text-xs font-medium text-dark-400 uppercase tracking-wider">5-Min</label>
+                        <input type="number" id="candles-5min" min="1" max="1000" value="{{ candles['5min'] }}" 
+                            class="input text-center py-3 text-lg font-mono">
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary w-full">Save Settings</button>
+            </form>
+        </section>
+
+        <!-- Cache Settings -->
+        <section class="settings-panel">
+            <div class="flex items-center gap-3 mb-6">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500/20 to-emerald-600/10 flex items-center justify-center border border-emerald-500/20">
+                    <span class="text-xl">🧠</span>
+                </div>
+                <div class="flex-1">
+                    <h3 class="font-semibold text-white">AI Review Cache</h3>
+                    <p class="text-xs text-dark-500">Control caching behavior</p>
+                </div>
+                <span class="px-3 py-1 rounded-full text-xs font-medium {% if cache_settings.enable_review_cache %}bg-green-500/20 text-green-400 border border-green-500/30{% else %}bg-dark-700 text-dark-400 border border-dark-600{% endif %}">
+                    {% if cache_settings.enable_review_cache %}Active{% else %}Off{% endif %}
+                </span>
+            </div>
+            <form id="cache-form" class="space-y-3">
+                <label class="settings-toggle-row">
+                    <div class="flex-1">
+                        <span class="text-sm font-medium text-white">Enable Cache</span>
+                        <p class="text-xs text-dark-500">Reuse AI reviews for faster loading</p>
+                    </div>
+                    <input type="checkbox" id="enable-review-cache" class="toggle-checkbox"
+                        {{ 'checked' if cache_settings.enable_review_cache else '' }}>
+                </label>
+                <label class="settings-toggle-row">
+                    <div class="flex-1">
+                        <span class="text-sm font-medium text-white">Force Regenerate</span>
+                        <p class="text-xs text-dark-500">Always get fresh reviews (testing)</p>
+                    </div>
+                    <input type="checkbox" id="auto-regenerate" class="toggle-checkbox"
+                        {{ 'checked' if cache_settings.auto_regenerate else '' }}>
+                </label>
+                <button type="submit" class="btn btn-primary w-full mt-4">Save Settings</button>
+            </form>
+        </section>
+    </div>
+
+    <!-- AI Prompts Section -->
+    <section class="settings-panel">
+        <div class="flex items-center gap-3 mb-6">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500/20 to-violet-600/10 flex items-center justify-center border border-violet-500/20">
+                <span class="text-xl">✨</span>
+            </div>
+            <div>
+                <h3 class="font-semibold text-white">AI Prompts</h3>
+                <p class="text-xs text-dark-500">Customize how the AI analyzes your trades</p>
+            </div>
         </div>
 
-        <!-- Main Content -->
-        <div class="lg:col-span-3 space-y-6">
-            <!-- Quick Actions -->
-            <section id="quick-actions" class="scroll-mt-4">
-                <h2 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                    <span class="w-8 h-8 rounded-lg bg-accent-500/20 flex items-center justify-center text-accent-400">1</span>
-                    Quick Actions
-                </h2>
-                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                    <a href="/tickers" class="settings-action-card">
-                        <span class="text-2xl">🎯</span>
-                        <span class="text-sm font-medium">Tickers</span>
-                    </a>
-                    <a href="/strategies" class="settings-action-card">
-                        <span class="text-2xl">🏷️</span>
-                        <span class="text-sm font-medium">Strategies</span>
-                    </a>
-                    <a href="/materials" class="settings-action-card">
-                        <span class="text-2xl">📚</span>
-                        <span class="text-sm font-medium">Materials</span>
-                    </a>
-                    <a href="/reports" class="settings-action-card">
-                        <span class="text-2xl">📋</span>
-                        <span class="text-sm font-medium">Reports</span>
-                    </a>
-                    <a href="/analysis" class="settings-action-card">
-                        <span class="text-2xl">🔍</span>
-                        <span class="text-sm font-medium">Bulk Analysis</span>
-                    </a>
-                </div>
-            </section>
-
-            <!-- Data Settings -->
-            <section id="data-settings" class="scroll-mt-4">
-                <h2 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                    <span class="w-8 h-8 rounded-lg bg-accent-500/20 flex items-center justify-center text-accent-400">2</span>
-                    Data Settings
-                </h2>
-                
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <!-- Candle Settings -->
-                    <div class="settings-card">
-                        <div class="flex items-center justify-between mb-4">
-                            <h3 class="font-medium text-white">OHLCV Bar Counts</h3>
-                            <span class="text-xs text-dark-500">For AI context</span>
-                        </div>
-                        <form id="candle-form" class="space-y-3">
-                            <div class="grid grid-cols-3 gap-3">
-                                <div>
-                                    <label class="text-xs text-dark-400 block mb-1">Daily</label>
-                                    <input type="number" id="candles-daily" min="1" max="365" value="{{ candles.daily }}" class="input text-center py-2">
-                                </div>
-                                <div>
-                                    <label class="text-xs text-dark-400 block mb-1">2-Hour</label>
-                                    <input type="number" id="candles-hourly" min="1" max="500" value="{{ candles.hourly }}" class="input text-center py-2">
-                                </div>
-                                <div>
-                                    <label class="text-xs text-dark-400 block mb-1">5-Min</label>
-                                    <input type="number" id="candles-5min" min="1" max="1000" value="{{ candles['5min'] }}" class="input text-center py-2">
-                                </div>
-                            </div>
-                            <button type="submit" class="btn btn-primary w-full py-2 text-sm">Save</button>
-                        </form>
-                    </div>
-
-                    <!-- Cache Settings -->
-                    <div class="settings-card">
-                        <div class="flex items-center justify-between mb-4">
-                            <h3 class="font-medium text-white">AI Cache</h3>
-                            <span class="text-xs px-2 py-0.5 rounded-full {% if cache_settings.enable_review_cache %}bg-green-500/20 text-green-400{% else %}bg-dark-600 text-dark-400{% endif %}">
-                                {% if cache_settings.enable_review_cache %}Enabled{% else %}Disabled{% endif %}
-                            </span>
-                        </div>
-                        <form id="cache-form" class="space-y-3">
-                            <label class="flex items-center gap-3 p-2 rounded-lg hover:bg-dark-700/50 cursor-pointer transition-colors">
-                                <input type="checkbox" id="enable-review-cache" class="w-4 h-4 rounded bg-dark-700 border-dark-600 text-accent-500 focus:ring-accent-500"
-                                    {{ 'checked' if cache_settings.enable_review_cache else '' }}>
-                                <div class="flex-1">
-                                    <span class="text-sm text-white">Enable Cache</span>
-                                    <p class="text-xs text-dark-500">Reuse AI reviews</p>
-                                </div>
-                            </label>
-                            <label class="flex items-center gap-3 p-2 rounded-lg hover:bg-dark-700/50 cursor-pointer transition-colors">
-                                <input type="checkbox" id="auto-regenerate" class="w-4 h-4 rounded bg-dark-700 border-dark-600 text-accent-500 focus:ring-accent-500"
-                                    {{ 'checked' if cache_settings.auto_regenerate else '' }}>
-                                <div class="flex-1">
-                                    <span class="text-sm text-white">Force Regenerate</span>
-                                    <p class="text-xs text-dark-500">Always fresh (testing)</p>
-                                </div>
-                            </label>
-                            <button type="submit" class="btn btn-primary w-full py-2 text-sm">Save</button>
-                        </form>
-                    </div>
-                </div>
-            </section>
-
-            <!-- AI Prompts -->
-            <section id="ai-prompts" class="scroll-mt-4">
-                <h2 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                    <span class="w-8 h-8 rounded-lg bg-accent-500/20 flex items-center justify-center text-accent-400">3</span>
-                    AI Prompts
-                </h2>
-
-                <!-- Prompt Type Selector -->
-                <div class="settings-card">
-                    <div class="flex flex-wrap gap-2 mb-4">
-                        <button onclick="selectPromptType('trade_analysis')" id="prompt-btn-trade_analysis" class="prompt-type-btn active">
-                            Trade Review
-                        </button>
-                        <button onclick="selectPromptType('market_context')" id="prompt-btn-market_context" class="prompt-type-btn">
-                            Market Context
-                        </button>
-                    </div>
-
-                    <!-- Trade Analysis Prompts -->
-                    <div id="prompt-section-trade_analysis" class="prompt-section space-y-4">
-                        <!-- Placeholders Reference -->
-                        <details class="bg-dark-800/50 rounded-lg border border-dark-700">
-                            <summary class="px-4 py-3 cursor-pointer text-sm font-medium text-dark-300 hover:text-white transition-colors">
-                                📋 Available Placeholders
-                            </summary>
-                            <div class="px-4 pb-4 pt-2 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs border-t border-dark-700">
-                                <div>
-                                    <div class="text-dark-500 mb-1 font-medium">Trade Identity</div>
-                                    <code class="text-accent-400 text-xs">{ticker} {market} {timezone} {trade_date} {timeframe} {tf_traded} {direction}</code>
-                                </div>
-                                <div>
-                                    <div class="text-dark-500 mb-1 font-medium">Execution</div>
-                                    <code class="text-accent-400 text-xs">{entry_time} {entry_price} {exit_time} {exit_price} {size} {order_type} {stop_loss} {take_profit} {target_price} {fees} {slippage}</code>
-                                </div>
-                                <div>
-                                    <div class="text-dark-500 mb-1 font-medium">Performance</div>
-                                    <code class="text-accent-400 text-xs">{r_multiple} {outcome} {mae} {mfe}</code>
-                                </div>
-                                <div>
-                                    <div class="text-dark-500 mb-1 font-medium">Intent</div>
-                                    <code class="text-accent-400 text-xs">{intended_setup} {trade_type} {entry_reason} {invalidation} {management_plan}</code>
-                                </div>
-                                <div>
-                                    <div class="text-dark-500 mb-1 font-medium">Session</div>
-                                    <code class="text-accent-400 text-xs">{today_open} {pd_high} {pd_low} {pd_close}</code>
-                                </div>
-                                <div>
-                                    <div class="text-dark-500 mb-1 font-medium">OHLCV Data</div>
-                                    <code class="text-accent-400 text-xs">{daily_bars} {twohour_bars} {fivemin_bars} {ohlcv_context}</code>
-                                </div>
-                                <div>
-                                    <div class="text-dark-500 mb-1 font-medium">Extended Analysis</div>
-                                    <code class="text-accent-400 text-xs">{trend_assessment} {signal_reason} {was_signal_present} {strategy_alignment} {entry_exit_emotions} {entry_tp_distance}</code>
-                                </div>
-                                <div>
-                                    <div class="text-dark-500 mb-1 font-medium">Notes & Review</div>
-                                    <code class="text-accent-400 text-xs">{notes} {mistakes} {lessons} {mistakes_and_lessons} {stop_reason} {target_reason} {confidence} {emotional_state} {followed_plan}</code>
-                                </div>
-                            </div>
-                        </details>
-
-                        <!-- System Prompt -->
-                        <div>
-                            <div class="flex items-center justify-between mb-2">
-                                <label class="text-sm font-medium text-accent-400">System Prompt</label>
-                                <span class="text-xs text-dark-500">AI persona & instructions</span>
-                            </div>
-                            <textarea id="system-trade_analysis" rows="10" class="input font-mono text-xs leading-relaxed">{{ system_prompts.trade_analysis }}</textarea>
-                            <button onclick="savePrompt('trade_analysis', false)" class="btn btn-primary mt-2 text-sm">Save System Prompt</button>
-                        </div>
-
-                        <!-- User Prompt -->
-                        <div>
-                            <div class="flex items-center justify-between mb-2">
-                                <label class="text-sm font-medium text-purple-400">User Prompt</label>
-                                <span class="text-xs text-dark-500">Data template with placeholders</span>
-                            </div>
-                            <textarea id="user-trade_analysis" rows="10" class="input font-mono text-xs leading-relaxed">{{ user_prompts.trade_analysis }}</textarea>
-                            <button onclick="savePrompt('trade_analysis', true)" class="btn bg-purple-600 hover:bg-purple-700 text-white mt-2 text-sm">Save User Prompt</button>
-                        </div>
-                    </div>
-
-                    <!-- Market Context Prompts -->
-                    <div id="prompt-section-market_context" class="prompt-section hidden space-y-4">
-                        <!-- Placeholders Reference -->
-                        <details class="bg-dark-800/50 rounded-lg border border-dark-700">
-                            <summary class="px-4 py-3 cursor-pointer text-sm font-medium text-dark-300 hover:text-white transition-colors">
-                                📋 Available Placeholders
-                            </summary>
-                            <div class="px-4 pb-4 pt-2 text-xs border-t border-dark-700">
-                                <code class="text-accent-400">{ticker} {date} {timeframe} {ohlcv_context}</code>
-                            </div>
-                        </details>
-
-                        <!-- System Prompt -->
-                        <div>
-                            <div class="flex items-center justify-between mb-2">
-                                <label class="text-sm font-medium text-accent-400">System Prompt</label>
-                                <span class="text-xs text-dark-500">AI persona & instructions</span>
-                            </div>
-                            <textarea id="system-market_context" rows="10" class="input font-mono text-xs leading-relaxed">{{ system_prompts.market_context }}</textarea>
-                            <button onclick="savePrompt('market_context', false)" class="btn btn-primary mt-2 text-sm">Save System Prompt</button>
-                        </div>
-
-                        <!-- User Prompt -->
-                        <div>
-                            <div class="flex items-center justify-between mb-2">
-                                <label class="text-sm font-medium text-purple-400">User Prompt</label>
-                                <span class="text-xs text-dark-500">Data template with placeholders</span>
-                            </div>
-                            <textarea id="user-market_context" rows="10" class="input font-mono text-xs leading-relaxed">{{ user_prompts.market_context }}</textarea>
-                            <button onclick="savePrompt('market_context', true)" class="btn bg-purple-600 hover:bg-purple-700 text-white mt-2 text-sm">Save User Prompt</button>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- System Info -->
-            <section id="system-info" class="scroll-mt-4">
-                <h2 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                    <span class="w-8 h-8 rounded-lg bg-accent-500/20 flex items-center justify-center text-accent-400">4</span>
-                    System Info
-                </h2>
-                <div class="settings-card">
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                        <div>
-                            <span class="text-dark-500">Settings File:</span>
-                            <code class="text-accent-400 ml-2 text-xs break-all">{{ settings_file }}</code>
-                        </div>
-                        <div>
-                            <span class="text-dark-500">Data Provider:</span>
-                            <span class="text-white ml-2">{{ data_provider }}</span>
-                        </div>
-                        <div>
-                            <span class="text-dark-500">LLM Status:</span>
-                            <span class="ml-2 {% if llm_available %}text-green-400{% else %}text-red-400{% endif %}">
-                                {% if llm_available %}Connected{% else %}Not Connected{% endif %}
-                            </span>
-                        </div>
-                        <div>
-                            <span class="text-dark-500">Cache Status:</span>
-                            <span class="ml-2 {% if cache_settings.enable_review_cache %}text-green-400{% else %}text-dark-400{% endif %}">
-                                {% if cache_settings.enable_review_cache %}Enabled{% else %}Disabled{% endif %}
-                            </span>
-                        </div>
-                    </div>
-                </div>
-            </section>
+        <!-- Prompt Type Tabs -->
+        <div class="flex gap-2 mb-6 p-1 bg-dark-900/50 rounded-xl w-fit">
+            <button onclick="selectPromptType('trade_analysis')" id="prompt-btn-trade_analysis" class="prompt-tab active">
+                Trade Review
+            </button>
+            <button onclick="selectPromptType('market_context')" id="prompt-btn-market_context" class="prompt-tab">
+                Market Context
+            </button>
         </div>
+
+        <!-- Trade Analysis Prompts -->
+        <div id="prompt-section-trade_analysis" class="prompt-section space-y-6">
+            <details class="bg-dark-900/30 rounded-xl border border-dark-700/50 overflow-hidden">
+                <summary class="px-4 py-3 cursor-pointer text-sm font-medium text-dark-300 hover:text-white transition-colors flex items-center gap-2">
+                    <svg class="w-4 h-4 transition-transform details-arrow" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                    </svg>
+                    Available Placeholders (45+)
+                </summary>
+                <div class="px-4 pb-4 pt-2 border-t border-dark-700/50 max-h-80 overflow-y-auto">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+                        <div class="space-y-1">
+                            <div class="text-dark-500 font-medium">Trade Identity</div>
+                            <code class="text-accent-400 text-[10px] break-all block">{ticker} {market} {timezone} {trade_date} {timeframe} {tf_traded} {direction}</code>
+                        </div>
+                        <div class="space-y-1">
+                            <div class="text-dark-500 font-medium">Execution</div>
+                            <code class="text-accent-400 text-[10px] break-all block">{entry_time} {entry_price} {exit_time} {exit_price} {size} {position_size} {order_type} {stop_price} {stop_loss} {target_price} {take_profit} {fees} {slippage}</code>
+                        </div>
+                        <div class="space-y-1">
+                            <div class="text-dark-500 font-medium">Performance</div>
+                            <code class="text-accent-400 text-[10px] break-all block">{r_multiple} {outcome} {mae} {mfe} {mae_line} {mfe_line} {pnl_dollars} {hold_time}</code>
+                        </div>
+                        <div class="space-y-1">
+                            <div class="text-dark-500 font-medium">Trader Intent</div>
+                            <code class="text-accent-400 text-[10px] break-all block">{intended_setup} {trade_type} {intended_trade_type} {entry_reason} {exit_reason} {invalidation} {management_plan}</code>
+                        </div>
+                        <div class="space-y-1">
+                            <div class="text-dark-500 font-medium">Trader Analysis</div>
+                            <code class="text-accent-400 text-[10px] break-all block">{trend_assessment} {signal_reason} {was_signal_present} {strategy_alignment} {entry_exit_emotions} {entry_tp_distance} {confidence} {emotional_state} {followed_plan} {stop_reason} {target_reason} {mistakes_and_lessons} {mistakes} {lessons} {notes}</code>
+                        </div>
+                        <div class="space-y-1">
+                            <div class="text-dark-500 font-medium">Session Context</div>
+                            <code class="text-accent-400 text-[10px] break-all block">{today_open} {pd_high} {pd_low} {pd_close}</code>
+                        </div>
+                        <div class="space-y-1">
+                            <div class="text-dark-500 font-medium">OHLCV Data</div>
+                            <code class="text-accent-400 text-[10px] break-all block">{daily_bars} {twohour_bars} {fivemin_bars} {daily_60} {twohour_120} {fivemin_234} {ohlcv_context}</code>
+                        </div>
+                        <div class="space-y-1">
+                            <div class="text-dark-500 font-medium">Other</div>
+                            <code class="text-accent-400 text-[10px] break-all block">{account_type}</code>
+                        </div>
+                    </div>
+                </div>
+            </details>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="space-y-3">
+                    <div class="flex items-center justify-between">
+                        <label class="text-sm font-medium text-accent-400">System Prompt</label>
+                        <span class="text-xs text-dark-500">AI persona</span>
+                    </div>
+                    <textarea id="system-trade_analysis" rows="12" class="input font-mono text-xs leading-relaxed">{{ system_prompts.trade_analysis }}</textarea>
+                    <button onclick="savePrompt('trade_analysis', false)" class="btn btn-primary w-full">Save System Prompt</button>
+                </div>
+                <div class="space-y-3">
+                    <div class="flex items-center justify-between">
+                        <label class="text-sm font-medium text-purple-400">User Prompt</label>
+                        <span class="text-xs text-dark-500">Data template</span>
+                    </div>
+                    <textarea id="user-trade_analysis" rows="12" class="input font-mono text-xs leading-relaxed">{{ user_prompts.trade_analysis }}</textarea>
+                    <button onclick="savePrompt('trade_analysis', true)" class="btn bg-purple-600 hover:bg-purple-500 text-white w-full">Save User Prompt</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Market Context Prompts -->
+        <div id="prompt-section-market_context" class="prompt-section hidden space-y-6">
+            <details class="bg-dark-900/30 rounded-xl border border-dark-700/50 overflow-hidden">
+                <summary class="px-4 py-3 cursor-pointer text-sm font-medium text-dark-300 hover:text-white transition-colors flex items-center gap-2">
+                    <svg class="w-4 h-4 transition-transform details-arrow" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                    </svg>
+                    Available Placeholders
+                </summary>
+                <div class="px-4 pb-4 pt-2 text-xs border-t border-dark-700/50">
+                    <code class="text-accent-400">{ticker} {date} {timeframe} {ohlcv_context}</code>
+                </div>
+            </details>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="space-y-3">
+                    <div class="flex items-center justify-between">
+                        <label class="text-sm font-medium text-accent-400">System Prompt</label>
+                        <span class="text-xs text-dark-500">AI persona</span>
+                    </div>
+                    <textarea id="system-market_context" rows="12" class="input font-mono text-xs leading-relaxed">{{ system_prompts.market_context }}</textarea>
+                    <button onclick="savePrompt('market_context', false)" class="btn btn-primary w-full">Save System Prompt</button>
+                </div>
+                <div class="space-y-3">
+                    <div class="flex items-center justify-between">
+                        <label class="text-sm font-medium text-purple-400">User Prompt</label>
+                        <span class="text-xs text-dark-500">Data template</span>
+                    </div>
+                    <textarea id="user-market_context" rows="12" class="input font-mono text-xs leading-relaxed">{{ user_prompts.market_context }}</textarea>
+                    <button onclick="savePrompt('market_context', true)" class="btn bg-purple-600 hover:bg-purple-500 text-white w-full">Save User Prompt</button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- System Info & Danger Zone -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <section class="lg:col-span-2 settings-panel">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-500/20 to-slate-600/10 flex items-center justify-center border border-slate-500/20">
+                    <span class="text-xl">ℹ️</span>
+                </div>
+                <h3 class="font-semibold text-white">System Information</h3>
+            </div>
+            <div class="grid grid-cols-2 gap-4 text-sm">
+                <div class="p-3 bg-dark-900/30 rounded-lg">
+                    <span class="text-dark-500 text-xs uppercase tracking-wider">Settings File</span>
+                    <code class="text-accent-400 text-xs block mt-1 truncate">{{ settings_file }}</code>
+                </div>
+                <div class="p-3 bg-dark-900/30 rounded-lg">
+                    <span class="text-dark-500 text-xs uppercase tracking-wider">Data Provider</span>
+                    <span class="text-white block mt-1">{{ data_provider }}</span>
+                </div>
+                <div class="p-3 bg-dark-900/30 rounded-lg">
+                    <span class="text-dark-500 text-xs uppercase tracking-wider">LLM Status</span>
+                    <span class="block mt-1 {% if llm_available %}text-green-400{% else %}text-red-400{% endif %}">
+                        {% if llm_available %}Connected{% else %}Not Connected{% endif %}
+                    </span>
+                </div>
+                <div class="p-3 bg-dark-900/30 rounded-lg">
+                    <span class="text-dark-500 text-xs uppercase tracking-wider">Cache Status</span>
+                    <span class="block mt-1 {% if cache_settings.enable_review_cache %}text-green-400{% else %}text-dark-400{% endif %}">
+                        {% if cache_settings.enable_review_cache %}Enabled{% else %}Disabled{% endif %}
+                    </span>
+                </div>
+            </div>
+        </section>
+
+        <section class="settings-panel border-red-500/20">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500/20 to-red-600/10 flex items-center justify-center border border-red-500/20">
+                    <span class="text-xl">⚠️</span>
+                </div>
+                <h3 class="font-semibold text-white">Danger Zone</h3>
+            </div>
+            <p class="text-sm text-dark-400 mb-4">Reset all settings to their default values. This cannot be undone.</p>
+            <button onclick="resetToDefaults()" class="btn bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 w-full">
+                Reset All Settings
+            </button>
+        </section>
     </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <style>
-.nav-settings-link {
-    display: block;
-    padding: 0.5rem 0.75rem;
-    font-size: 0.875rem;
-    color: #9ca3af;
-    border-radius: 0.5rem;
-    transition: all 0.15s ease;
+.settings-panel {
+    background: linear-gradient(135deg, rgba(31, 41, 55, 0.6) 0%, rgba(17, 24, 39, 0.4) 100%);
+    border: 1px solid rgba(55, 65, 81, 0.5);
+    border-radius: 1rem;
+    padding: 1.5rem;
+    backdrop-filter: blur(10px);
 }
-.nav-settings-link:hover {
-    color: #fff;
-    background: rgba(55, 65, 81, 0.5);
-}
-.nav-settings-link.active {
-    color: #06b6d4;
-    background: rgba(6, 182, 212, 0.1);
-}
-.settings-card {
-    background: rgba(31, 41, 55, 0.5);
-    border: 1px solid #374151;
-    border-radius: 0.75rem;
-    padding: 1rem;
-}
-.settings-action-card {
+
+.settings-card-link {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
-    padding: 1rem;
-    background: rgba(31, 41, 55, 0.5);
-    border: 1px solid #374151;
-    border-radius: 0.75rem;
-    transition: all 0.15s ease;
-    cursor: pointer;
+    padding: 1.5rem 1rem;
+    background: linear-gradient(135deg, rgba(31, 41, 55, 0.5) 0%, rgba(17, 24, 39, 0.3) 100%);
+    border: 1px solid rgba(55, 65, 81, 0.5);
+    border-radius: 1rem;
+    transition: all 0.2s ease;
     text-align: center;
-    color: #d1d5db;
 }
-.settings-action-card:hover {
-    border-color: rgba(6, 182, 212, 0.5);
-    background: rgba(55, 65, 81, 0.5);
+
+.settings-card-link:hover {
+    border-color: rgba(6, 182, 212, 0.4);
+    background: linear-gradient(135deg, rgba(31, 41, 55, 0.7) 0%, rgba(17, 24, 39, 0.5) 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px -5px rgba(6, 182, 212, 0.1);
 }
-.prompt-type-btn {
+
+.settings-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    background: rgba(17, 24, 39, 0.3);
+    border-radius: 0.75rem;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.settings-toggle-row:hover {
+    background: rgba(31, 41, 55, 0.5);
+}
+
+.toggle-checkbox {
+    width: 2.5rem;
+    height: 1.25rem;
+    appearance: none;
+    background: #374151;
+    border-radius: 9999px;
+    position: relative;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.toggle-checkbox::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 1rem;
+    height: 1rem;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.2s ease;
+}
+
+.toggle-checkbox:checked {
+    background: #06b6d4;
+}
+
+.toggle-checkbox:checked::after {
+    transform: translateX(1.25rem);
+}
+
+.prompt-tab {
     padding: 0.5rem 1rem;
     font-size: 0.875rem;
     font-weight: 500;
     border-radius: 0.5rem;
-    border: 1px solid #4b5563;
     color: #9ca3af;
     background: transparent;
     transition: all 0.15s ease;
     cursor: pointer;
+    border: none;
 }
-.prompt-type-btn:hover {
+
+.prompt-tab:hover {
     color: #fff;
-    border-color: #6b7280;
 }
-.prompt-type-btn.active {
+
+.prompt-tab.active {
     background: rgba(6, 182, 212, 0.2);
-    border-color: rgba(6, 182, 212, 0.5);
     color: #06b6d4;
 }
 
-/* Light mode support */
-:root:not(.dark) .nav-settings-link { color: #6b7280; background: transparent; }
-:root:not(.dark) .nav-settings-link:hover { color: #111827; background: #f8fafc; }
-:root:not(.dark) .nav-settings-link.active { color: #0891b2; background: rgba(6, 182, 212, 0.06); }
-:root:not(.dark) .settings-card { background: #ffffff !important; border-color: #e5e7eb !important; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }
-:root:not(.dark) .settings-action-card { background: #ffffff !important; border-color: #e5e7eb !important; color: #374151; box-shadow: 0 1px 2px rgba(0,0,0,0.02); }
-:root:not(.dark) .settings-action-card:hover { border-color: #0891b2 !important; background: #fafbfc !important; }
-:root:not(.dark) .prompt-type-btn { border-color: #e5e7eb; color: #6b7280; background: #ffffff; }
-:root:not(.dark) .prompt-type-btn:hover { color: #111827; border-color: #d1d5db; background: #fafbfc; }
-:root:not(.dark) .prompt-type-btn.active { background: rgba(6, 182, 212, 0.06) !important; border-color: #0891b2 !important; color: #0891b2; }
+details[open] .details-arrow {
+    transform: rotate(90deg);
+}
 
-/* Additional light mode fixes for settings */
-:root:not(.dark) details { background: #ffffff !important; border-color: #e5e7eb !important; }
-:root:not(.dark) details summary { color: #4b5563 !important; }
-:root:not(.dark) details[open] > div { background: #fafbfc !important; }
+/* Light mode */
+:root:not(.dark) .settings-panel {
+    background: #ffffff !important;
+    border-color: #e5e7eb !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+:root:not(.dark) .settings-card-link {
+    background: #ffffff !important;
+    border-color: #e5e7eb !important;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+:root:not(.dark) .settings-card-link:hover {
+    background: #fafbfc !important;
+    border-color: #0891b2 !important;
+}
+
+:root:not(.dark) .settings-toggle-row {
+    background: #fafbfc !important;
+}
+
+:root:not(.dark) .toggle-checkbox {
+    background: #d1d5db;
+}
+
+:root:not(.dark) .prompt-tab {
+    color: #6b7280;
+}
+
+:root:not(.dark) .prompt-tab.active {
+    background: rgba(6, 182, 212, 0.1);
+    color: #0891b2;
+}
+
+:root:not(.dark) details {
+    background: #fafbfc !important;
+    border-color: #e5e7eb !important;
+}
+
+/* Light mode header */
+:root:not(.dark) .relative.overflow-hidden.rounded-2xl {
+    background: #ffffff !important;
+    border-color: #e5e7eb !important;
+}
+
+:root:not(.dark) .bg-dark-900\/50,
+:root:not(.dark) .bg-dark-900\/30,
+:root:not(.dark) .bg-dark-800\/50 {
+    background: #fafbfc !important;
+}
 </style>
 
 <script>
-// Prompt type selection
 function selectPromptType(type) {
-    document.querySelectorAll('.prompt-type-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.prompt-tab').forEach(btn => btn.classList.remove('active'));
     document.querySelectorAll('.prompt-section').forEach(sec => sec.classList.add('hidden'));
     
     document.getElementById('prompt-btn-' + type).classList.add('active');
     document.getElementById('prompt-section-' + type).classList.remove('hidden');
 }
 
-// Sidebar navigation highlighting
-document.querySelectorAll('.nav-settings-link').forEach(link => {
-    link.addEventListener('click', function() {
-        document.querySelectorAll('.nav-settings-link').forEach(l => l.classList.remove('active'));
-        this.classList.add('active');
-    });
-});
-
-// Save candle settings
 document.getElementById('candle-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const data = {
@@ -411,7 +500,6 @@ document.getElementById('candle-form').addEventListener('submit', async (e) => {
     }
 });
 
-// Save cache settings
 document.getElementById('cache-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const data = {
@@ -436,7 +524,6 @@ document.getElementById('cache-form').addEventListener('submit', async (e) => {
     }
 });
 
-// Save prompt
 async function savePrompt(promptType, isUserPrompt) {
     const prefix = isUserPrompt ? 'user-' : 'system-';
     const textarea = document.getElementById(prefix + promptType);
@@ -463,7 +550,6 @@ async function savePrompt(promptType, isUserPrompt) {
     }
 }
 
-// Reset to defaults
 async function resetToDefaults() {
     if (!confirm('Reset all settings to defaults? This cannot be undone.')) return;
     

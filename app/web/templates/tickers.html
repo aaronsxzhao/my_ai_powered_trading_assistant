@@ -1,64 +1,69 @@
 {% extends "base.html" %}
 
-{% block title %}Manage Tickers - Brooks Trading Coach{% endblock %}
+{% block title %}Watchlist - Brooks Trading Coach{% endblock %}
 
 {% block content %}
-<div class="max-w-5xl mx-auto">
-    <!-- Header -->
-    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-        <div>
-            <div class="flex items-center gap-3">
-                <a href="/settings" class="text-dark-400 hover:text-white transition-colors">
+<div class="max-w-6xl mx-auto space-y-8">
+    <!-- Modern Header -->
+    <div class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-dark-800/80 via-dark-800/60 to-dark-900/80 border border-dark-700/50 p-6">
+        <div class="absolute inset-0 bg-gradient-to-r from-cyan-500/5 via-transparent to-transparent"></div>
+        <div class="relative flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div class="flex items-center gap-4">
+                <a href="/settings" class="w-10 h-10 rounded-xl bg-dark-700/50 hover:bg-dark-600/50 flex items-center justify-center text-dark-400 hover:text-white transition-all border border-dark-600/50">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
                     </svg>
                 </a>
-                <h1 class="text-3xl font-bold text-white">Watchlist</h1>
+                <div>
+                    <h1 class="text-3xl font-bold text-white">Watchlist</h1>
+                    <p class="text-dark-400 text-sm mt-1">Manage tickers for premarket analysis and reports</p>
+                </div>
             </div>
-            <p class="text-dark-400 text-sm mt-1 ml-8">Manage your tickers for premarket analysis and reports</p>
-        </div>
-        <div class="flex items-center gap-3">
-            <div class="ticker-stat-badge">
-                <span class="text-2xl font-bold text-white">{{ tickers|length }}</span>
-                <span class="text-xs text-dark-400">Tickers</span>
+            <div class="flex items-center gap-3 px-5 py-3 rounded-xl bg-gradient-to-br from-cyan-500/10 to-cyan-600/5 border border-cyan-500/20">
+                <span class="text-3xl font-bold text-white">{{ tickers|length }}</span>
+                <span class="text-sm text-dark-400">Tickers</span>
             </div>
         </div>
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Left Column: Add & Quick Add -->
-        <div class="lg:col-span-1 space-y-6">
+        <div class="space-y-6">
             <!-- Add Ticker Card -->
-            <div class="ticker-card">
-                <h2 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                    <span class="w-8 h-8 rounded-lg bg-accent-500/20 flex items-center justify-center text-accent-400 text-sm">+</span>
-                    Add Ticker
-                </h2>
+            <div class="modern-card">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-500/20 to-accent-600/10 flex items-center justify-center border border-accent-500/20">
+                        <span class="text-lg">➕</span>
+                    </div>
+                    <h2 class="font-semibold text-white">Add Ticker</h2>
+                </div>
                 <form id="add-ticker-form" class="space-y-3">
                     <div class="relative">
                         <input type="text" id="new-ticker" required 
-                            class="input w-full pr-20 uppercase font-mono text-lg tracking-wider" 
+                            class="input w-full pr-20 uppercase font-mono text-lg tracking-wider py-3" 
                             placeholder="AAPL"
                             maxlength="10"
                             autocomplete="off">
-                        <button type="submit" class="absolute right-2 top-1/2 -translate-y-1/2 btn btn-primary py-1.5 px-4 text-sm">
+                        <button type="submit" class="absolute right-2 top-1/2 -translate-y-1/2 btn btn-primary py-2 px-4">
                             Add
                         </button>
                     </div>
-                    <p class="text-xs text-dark-500">Enter symbol and press Enter or click Add</p>
+                    <p class="text-xs text-dark-500">Enter symbol and press Enter</p>
                 </form>
             </div>
 
             <!-- Quick Add Popular -->
-            <div class="ticker-card">
-                <h2 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                    <span class="w-8 h-8 rounded-lg bg-orange-500/20 flex items-center justify-center text-orange-400 text-sm">🔥</span>
-                    Quick Add
-                </h2>
-                <div class="space-y-3">
+            <div class="modern-card">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500/20 to-orange-600/10 flex items-center justify-center border border-orange-500/20">
+                        <span class="text-lg">🔥</span>
+                    </div>
+                    <h2 class="font-semibold text-white">Quick Add</h2>
+                </div>
+                <div class="space-y-4">
                     <div>
-                        <div class="text-xs text-dark-500 mb-2 font-medium">US Indices & ETFs</div>
-                        <div class="flex flex-wrap gap-1.5">
+                        <div class="text-xs text-dark-500 mb-2 font-medium uppercase tracking-wider">Indices & ETFs</div>
+                        <div class="flex flex-wrap gap-2">
                             {% set indices = ['SPY', 'QQQ', 'IWM', 'DIA', 'VIX'] %}
                             {% for t in indices %}
                             <button onclick="quickAddTicker('{{ t }}')" 
@@ -70,8 +75,8 @@
                         </div>
                     </div>
                     <div>
-                        <div class="text-xs text-dark-500 mb-2 font-medium">Tech Giants</div>
-                        <div class="flex flex-wrap gap-1.5">
+                        <div class="text-xs text-dark-500 mb-2 font-medium uppercase tracking-wider">Tech Giants</div>
+                        <div class="flex flex-wrap gap-2">
                             {% set tech = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NVDA', 'TSLA'] %}
                             {% for t in tech %}
                             <button onclick="quickAddTicker('{{ t }}')" 
@@ -83,8 +88,8 @@
                         </div>
                     </div>
                     <div>
-                        <div class="text-xs text-dark-500 mb-2 font-medium">Finance & Others</div>
-                        <div class="flex flex-wrap gap-1.5">
+                        <div class="text-xs text-dark-500 mb-2 font-medium uppercase tracking-wider">Finance</div>
+                        <div class="flex flex-wrap gap-2">
                             {% set others = ['JPM', 'V', 'MA', 'BAC', 'GS', 'AMD', 'NFLX'] %}
                             {% for t in others %}
                             <button onclick="quickAddTicker('{{ t }}')" 
@@ -99,13 +104,15 @@
             </div>
 
             <!-- Bulk Edit -->
-            <div class="ticker-card">
+            <div class="modern-card">
                 <div class="flex items-center justify-between mb-4">
-                    <h2 class="text-lg font-semibold text-white flex items-center gap-2">
-                        <span class="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center text-purple-400 text-sm">📝</span>
-                        Bulk Edit
-                    </h2>
-                    <button onclick="toggleBulkEdit()" class="text-xs text-dark-400 hover:text-accent-400 transition-colors">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500/20 to-purple-600/10 flex items-center justify-center border border-purple-500/20">
+                            <span class="text-lg">📝</span>
+                        </div>
+                        <h2 class="font-semibold text-white">Bulk Edit</h2>
+                    </div>
+                    <button onclick="toggleBulkEdit()" class="text-xs text-accent-400 hover:text-accent-300 transition-colors">
                         <span id="bulk-toggle-text">Expand</span>
                     </button>
                 </div>
@@ -115,9 +122,7 @@
                         <textarea id="bulk-tickers" class="input font-mono text-sm" rows="8" 
                             placeholder="SPY&#10;QQQ&#10;AAPL">{% for ticker in tickers %}{{ ticker }}
 {% endfor %}</textarea>
-                        <button type="submit" class="btn btn-primary w-full py-2">
-                            Save All Tickers
-                        </button>
+                        <button type="submit" class="btn btn-primary w-full">Save All Tickers</button>
                     </form>
                 </div>
             </div>
@@ -125,18 +130,25 @@
 
         <!-- Right Column: Watchlist -->
         <div class="lg:col-span-2">
-            <div class="ticker-card">
-                <div class="flex items-center justify-between mb-4">
-                    <h2 class="text-lg font-semibold text-white flex items-center gap-2">
-                        <span class="w-8 h-8 rounded-lg bg-green-500/20 flex items-center justify-center text-green-400 text-sm">📈</span>
-                        Your Watchlist
-                    </h2>
-                    <div class="flex items-center gap-2">
-                        <input type="text" id="ticker-search" placeholder="Search..." 
-                            class="input py-1.5 px-3 text-sm w-32" 
-                            oninput="filterTickers(this.value)">
+            <div class="modern-card">
+                <div class="flex items-center justify-between mb-6">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500/20 to-green-600/10 flex items-center justify-center border border-green-500/20">
+                            <span class="text-lg">📈</span>
+                        </div>
+                        <h2 class="font-semibold text-white">Your Watchlist</h2>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <div class="relative">
+                            <svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-dark-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                            </svg>
+                            <input type="text" id="ticker-search" placeholder="Search..." 
+                                class="input py-2 pl-9 pr-3 text-sm w-36" 
+                                oninput="filterTickers(this.value)">
+                        </div>
                         {% if tickers|length > 0 %}
-                        <button onclick="clearAllTickers()" class="text-xs text-red-400 hover:text-red-300 transition-colors px-2 py-1">
+                        <button onclick="clearAllTickers()" class="text-xs text-red-400 hover:text-red-300 transition-colors px-3 py-2 rounded-lg hover:bg-red-500/10">
                             Clear All
                         </button>
                         {% endif %}
@@ -144,31 +156,31 @@
                 </div>
 
                 {% if tickers %}
-                <div id="tickers-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                <div id="tickers-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                     {% for ticker in tickers %}
                     <div class="ticker-item group" data-ticker="{{ ticker|lower }}">
-                        <div class="flex items-center justify-between">
-                            <span class="font-bold font-mono text-white tracking-wider">{{ ticker }}</span>
-                            <button onclick="removeTicker('{{ ticker }}')" 
-                                class="opacity-0 group-hover:opacity-100 transition-opacity text-red-400 hover:text-red-300 p-1">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                                </svg>
-                            </button>
-                        </div>
+                        <span class="font-bold font-mono text-white tracking-wider">{{ ticker }}</span>
+                        <button onclick="removeTicker('{{ ticker }}')" 
+                            class="opacity-0 group-hover:opacity-100 transition-all text-red-400 hover:text-red-300 hover:bg-red-500/10 p-1.5 rounded-lg">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                            </svg>
+                        </button>
                     </div>
                     {% endfor %}
                 </div>
                 {% else %}
-                <div class="text-center py-12">
-                    <div class="text-4xl mb-3">📊</div>
-                    <p class="text-dark-400 mb-4">Your watchlist is empty</p>
+                <div class="text-center py-16">
+                    <div class="w-16 h-16 rounded-2xl bg-dark-800/50 flex items-center justify-center mx-auto mb-4">
+                        <span class="text-3xl">📊</span>
+                    </div>
+                    <p class="text-dark-400 mb-2">Your watchlist is empty</p>
                     <p class="text-sm text-dark-500">Add tickers using the form or quick add buttons</p>
                 </div>
                 {% endif %}
 
                 {% if tickers|length > 0 %}
-                <div class="mt-4 pt-4 border-t border-dark-700 flex items-center justify-between text-xs text-dark-500">
+                <div class="mt-6 pt-4 border-t border-dark-700/50 flex items-center justify-between text-xs text-dark-500">
                     <span id="ticker-count">Showing {{ tickers|length }} tickers</span>
                     <span>Tip: Edit <code class="bg-dark-800 px-1.5 py-0.5 rounded text-accent-400">tickers.txt</code> directly</span>
                 </div>
@@ -177,46 +189,42 @@
         </div>
     </div>
 </div>
+{% endblock %}
 
+{% block scripts %}
 <style>
-.ticker-card {
-    background: rgba(31, 41, 55, 0.5);
-    border: 1px solid #374151;
+.modern-card {
+    background: linear-gradient(135deg, rgba(31, 41, 55, 0.6) 0%, rgba(17, 24, 39, 0.4) 100%);
+    border: 1px solid rgba(55, 65, 81, 0.5);
     border-radius: 1rem;
-    padding: 1.25rem;
-}
-
-.ticker-stat-badge {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 0.75rem 1.25rem;
-    background: rgba(31, 41, 55, 0.5);
-    border: 1px solid #374151;
-    border-radius: 0.75rem;
+    padding: 1.5rem;
+    backdrop-filter: blur(10px);
 }
 
 .ticker-item {
-    padding: 0.75rem 1rem;
-    background: rgba(17, 24, 39, 0.5);
-    border: 1px solid #374151;
-    border-radius: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.875rem 1rem;
+    background: rgba(17, 24, 39, 0.4);
+    border: 1px solid rgba(55, 65, 81, 0.5);
+    border-radius: 0.75rem;
     transition: all 0.15s ease;
 }
 
 .ticker-item:hover {
-    border-color: rgba(6, 182, 212, 0.5);
+    border-color: rgba(6, 182, 212, 0.4);
     background: rgba(31, 41, 55, 0.5);
 }
 
 .quick-ticker-btn {
-    padding: 0.375rem 0.75rem;
+    padding: 0.5rem 0.875rem;
     font-size: 0.75rem;
-    font-weight: 500;
+    font-weight: 600;
     border-radius: 9999px;
-    border: 1px solid #4b5563;
+    border: 1px solid rgba(75, 85, 99, 0.5);
     color: #9ca3af;
-    background: transparent;
+    background: rgba(17, 24, 39, 0.3);
     transition: all 0.15s ease;
     cursor: pointer;
 }
@@ -225,34 +233,30 @@
     color: #06b6d4;
     border-color: rgba(6, 182, 212, 0.5);
     background: rgba(6, 182, 212, 0.1);
+    transform: scale(1.05);
 }
 
 .quick-ticker-btn.added {
-    color: #4b5563;
-    border-color: #374151;
-    background: rgba(55, 65, 81, 0.3);
+    color: #22c55e;
+    border-color: rgba(34, 197, 94, 0.3);
+    background: rgba(34, 197, 94, 0.1);
     cursor: default;
 }
 
 /* Light mode */
-:root:not(.dark) .ticker-card {
+:root:not(.dark) .modern-card {
     background: #ffffff !important;
     border-color: #e5e7eb !important;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-}
-
-:root:not(.dark) .ticker-stat-badge {
-    background: #ffffff !important;
-    border-color: #e5e7eb !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 :root:not(.dark) .ticker-item {
-    background: #f9fafb !important;
+    background: #fafbfc !important;
     border-color: #e5e7eb !important;
 }
 
 :root:not(.dark) .ticker-item:hover {
-    background: #f3f4f6 !important;
+    background: #f5f5f5 !important;
     border-color: #0891b2 !important;
 }
 
@@ -267,22 +271,32 @@
 }
 
 :root:not(.dark) .quick-ticker-btn:hover:not(.added):not(:disabled) {
-    background: rgba(6, 182, 212, 0.05);
+    background: #f0fdfa;
     border-color: #0891b2;
     color: #0891b2;
 }
 
 :root:not(.dark) .quick-ticker-btn.added {
-    background: #f3f4f6;
-    border-color: #e5e7eb;
-    color: #9ca3af;
+    background: #f0fdf4;
+    border-color: rgba(34, 197, 94, 0.3);
+    color: #16a34a;
+}
+
+/* Light mode header */
+:root:not(.dark) .relative.overflow-hidden.rounded-2xl {
+    background: #ffffff !important;
+    border-color: #e5e7eb !important;
+}
+
+:root:not(.dark) .bg-dark-900\/50,
+:root:not(.dark) .bg-dark-900\/30,
+:root:not(.dark) .bg-dark-800\/50,
+:root:not(.dark) .bg-dark-900\/40 {
+    background: #fafbfc !important;
 }
 </style>
-{% endblock %}
 
-{% block scripts %}
 <script>
-// Add ticker
 document.getElementById('add-ticker-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const input = document.getElementById('new-ticker');
@@ -359,7 +373,6 @@ async function clearAllTickers() {
     }
 }
 
-// Bulk edit
 document.getElementById('bulk-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const tickers = document.getElementById('bulk-tickers').value;
@@ -391,7 +404,6 @@ function toggleBulkEdit() {
     text.textContent = section.classList.contains('hidden') ? 'Expand' : 'Collapse';
 }
 
-// Search/filter tickers
 function filterTickers(query) {
     const items = document.querySelectorAll('.ticker-item');
     const q = query.toLowerCase().trim();

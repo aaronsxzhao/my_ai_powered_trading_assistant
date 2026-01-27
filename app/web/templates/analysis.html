@@ -3,32 +3,46 @@
 {% block title %}Bulk Analysis - Brooks Trading Coach{% endblock %}
 
 {% block content %}
-<div class="space-y-6">
-    <!-- Header -->
-    <div>
-        <div class="flex items-center gap-3">
-            <a href="/settings" class="text-dark-400 hover:text-white transition-colors">
+<div class="max-w-5xl mx-auto space-y-8">
+    <!-- Modern Header -->
+    <div class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-dark-800/80 via-dark-800/60 to-dark-900/80 border border-dark-700/50 p-6">
+        <div class="absolute inset-0 bg-gradient-to-r from-pink-500/5 via-purple-500/5 to-transparent"></div>
+        <div class="relative flex items-center gap-4">
+            <a href="/settings" class="w-10 h-10 rounded-xl bg-dark-700/50 hover:bg-dark-600/50 flex items-center justify-center text-dark-400 hover:text-white transition-all border border-dark-600/50">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
                 </svg>
             </a>
-            <h1 class="text-3xl font-bold bg-gradient-to-r from-white to-dark-300 bg-clip-text text-transparent">
-                📊 Bulk Trade Analysis
-            </h1>
+            <div>
+                <h1 class="text-3xl font-bold text-white">Bulk Trade Analysis</h1>
+                <p class="text-dark-400 text-sm mt-1">Analyze multiple trades at once to find patterns and insights</p>
+            </div>
         </div>
-        <p class="text-dark-400 text-sm mt-1 ml-8">Analyze multiple trades at once to find patterns and insights</p>
     </div>
 
     <!-- Analysis Options -->
-    <div class="card">
-        <h2 class="text-xl font-bold text-white mb-4">🎯 Select Trades to Analyze</h2>
+    <div class="modern-card">
+        <div class="flex items-center gap-3 mb-6">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-500/20 to-accent-600/10 flex items-center justify-center border border-accent-500/20">
+                <span class="text-lg">🎯</span>
+            </div>
+            <div>
+                <h2 class="font-semibold text-white">Select Trades to Analyze</h2>
+                <p class="text-xs text-dark-500">Choose by count or time period</p>
+            </div>
+        </div>
         
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <!-- Option 1: Latest X trades -->
-            <div class="p-4 bg-dark-900/50 rounded-xl border border-dark-700">
-                <h3 class="font-medium text-white mb-3">📈 Latest Trades</h3>
-                <div class="flex items-center gap-3">
-                    <label class="text-dark-300 text-sm">Analyze last</label>
+            <div class="p-5 bg-dark-900/30 rounded-xl border border-dark-700/50">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                        <span>📈</span>
+                    </div>
+                    <h3 class="font-medium text-white">Latest Trades</h3>
+                </div>
+                <div class="flex items-center gap-3 mb-4">
+                    <span class="text-dark-300 text-sm">Analyze last</span>
                     <select id="trade-count" class="select w-24">
                         <option value="5">5</option>
                         <option value="10" selected>10</option>
@@ -36,18 +50,23 @@
                         <option value="50">50</option>
                         <option value="100">100</option>
                     </select>
-                    <label class="text-dark-300 text-sm">trades</label>
+                    <span class="text-dark-300 text-sm">trades</span>
                 </div>
-                <button onclick="analyzeByCount()" class="btn btn-primary w-full mt-4">
+                <button onclick="analyzeByCount()" class="btn btn-primary w-full">
                     🧠 Analyze Trades
                 </button>
             </div>
 
             <!-- Option 2: Latest X days -->
-            <div class="p-4 bg-dark-900/50 rounded-xl border border-dark-700">
-                <h3 class="font-medium text-white mb-3">📅 By Time Period</h3>
-                <div class="flex items-center gap-3">
-                    <label class="text-dark-300 text-sm">Analyze last</label>
+            <div class="p-5 bg-dark-900/30 rounded-xl border border-dark-700/50">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center">
+                        <span>📅</span>
+                    </div>
+                    <h3 class="font-medium text-white">By Time Period</h3>
+                </div>
+                <div class="flex items-center gap-3 mb-4">
+                    <span class="text-dark-300 text-sm">Analyze last</span>
                     <select id="day-count" class="select w-24">
                         <option value="1">1</option>
                         <option value="3">3</option>
@@ -56,9 +75,9 @@
                         <option value="30">30</option>
                         <option value="90">90</option>
                     </select>
-                    <label class="text-dark-300 text-sm">days</label>
+                    <span class="text-dark-300 text-sm">days</span>
                 </div>
-                <button onclick="analyzeByDays()" class="btn btn-primary w-full mt-4">
+                <button onclick="analyzeByDays()" class="btn btn-primary w-full">
                     🧠 Analyze Period
                 </button>
             </div>
@@ -66,82 +85,104 @@
     </div>
 
     <!-- Analysis Results -->
-    <div id="analysis-section" class="hidden">
+    <div id="analysis-section" class="hidden space-y-6">
         <!-- Loading State -->
-        <div id="analysis-loading" class="card text-center py-12">
-            <div class="loading-spinner w-10 h-10 border-4 border-accent-500 border-t-transparent mx-auto mb-4"></div>
-            <p class="text-dark-300">Analyzing <span id="loading-count">0</span> trades with AI...</p>
-            <p class="text-sm text-dark-500 mt-1">This may take 30-60 seconds for comprehensive analysis</p>
+        <div id="analysis-loading" class="modern-card text-center py-16">
+            <div class="w-16 h-16 border-4 border-accent-500 border-t-transparent rounded-full animate-spin mx-auto mb-6"></div>
+            <p class="text-lg text-dark-300">Analyzing <span id="loading-count" class="text-white font-bold">0</span> trades with AI...</p>
+            <p class="text-sm text-dark-500 mt-2">This may take 30-60 seconds for comprehensive analysis</p>
         </div>
 
         <!-- Results -->
         <div id="analysis-results" class="hidden space-y-6">
             <!-- Summary Stats -->
-            <div class="card">
-                <h2 class="text-xl font-bold text-white mb-4">📈 Analysis Summary</h2>
+            <div class="modern-card">
+                <div class="flex items-center gap-3 mb-6">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500/20 to-green-600/10 flex items-center justify-center border border-green-500/20">
+                        <span class="text-lg">📊</span>
+                    </div>
+                    <h2 class="font-semibold text-white">Analysis Summary</h2>
+                </div>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="summary-stats">
-                    <!-- Filled by JS -->
                 </div>
             </div>
 
             <!-- AI Insights -->
-            <div class="card">
-                <h2 class="text-xl font-bold text-white mb-4">🧠 AI Insights</h2>
+            <div class="modern-card">
+                <div class="flex items-center gap-3 mb-6">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500/20 to-violet-600/10 flex items-center justify-center border border-violet-500/20">
+                        <span class="text-lg">🧠</span>
+                    </div>
+                    <h2 class="font-semibold text-white">AI Insights</h2>
+                </div>
                 
-                <!-- Patterns -->
-                <div class="mb-6">
-                    <h3 class="font-medium text-accent-400 mb-2">🔍 Patterns Identified</h3>
-                    <div id="patterns-list" class="space-y-2">
-                        <!-- Filled by JS -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Patterns -->
+                    <div class="space-y-3">
+                        <h3 class="font-medium text-accent-400 flex items-center gap-2">
+                            <span>🔍</span> Patterns Identified
+                        </h3>
+                        <div id="patterns-list" class="space-y-2">
+                        </div>
+                    </div>
+
+                    <!-- Strengths -->
+                    <div class="space-y-3">
+                        <h3 class="font-medium text-success-400 flex items-center gap-2">
+                            <span>✅</span> Strengths
+                        </h3>
+                        <div id="strengths-list" class="bg-success-500/10 border border-success-500/20 rounded-xl p-4">
+                        </div>
+                    </div>
+
+                    <!-- Weaknesses -->
+                    <div class="space-y-3">
+                        <h3 class="font-medium text-danger-400 flex items-center gap-2">
+                            <span>⚠️</span> Areas to Improve
+                        </h3>
+                        <div id="weaknesses-list" class="bg-danger-500/10 border border-danger-500/20 rounded-xl p-4">
+                        </div>
+                    </div>
+
+                    <!-- Recommendations -->
+                    <div class="space-y-3">
+                        <h3 class="font-medium text-amber-400 flex items-center gap-2">
+                            <span>💡</span> Recommendations
+                        </h3>
+                        <div id="recommendations-list" class="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4">
+                        </div>
                     </div>
                 </div>
 
-                <!-- Strengths -->
-                <div class="mb-6">
-                    <h3 class="font-medium text-success-400 mb-2">✅ Strengths</h3>
-                    <div id="strengths-list" class="bg-success-500/10 border border-success-500/30 rounded-xl p-4">
-                        <!-- Filled by JS -->
-                    </div>
-                </div>
-
-                <!-- Weaknesses -->
-                <div class="mb-6">
-                    <h3 class="font-medium text-danger-400 mb-2">⚠️ Areas to Improve</h3>
-                    <div id="weaknesses-list" class="bg-danger-500/10 border border-danger-500/30 rounded-xl p-4">
-                        <!-- Filled by JS -->
-                    </div>
-                </div>
-
-                <!-- Recommendations -->
-                <div class="mb-6">
-                    <h3 class="font-medium text-amber-400 mb-2">💡 Recommendations</h3>
-                    <div id="recommendations-list" class="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
-                        <!-- Filled by JS -->
-                    </div>
-                </div>
-
-                <!-- Strategy Analysis -->
-                <div>
-                    <h3 class="font-medium text-purple-400 mb-2">📊 Strategy Breakdown</h3>
-                    <div id="strategy-breakdown" class="bg-purple-500/10 border border-purple-500/30 rounded-xl p-4">
-                        <!-- Filled by JS -->
+                <!-- Strategy Breakdown -->
+                <div class="mt-6 pt-6 border-t border-dark-700/50">
+                    <h3 class="font-medium text-purple-400 mb-4 flex items-center gap-2">
+                        <span>📊</span> Strategy Breakdown
+                    </h3>
+                    <div id="strategy-breakdown" class="bg-purple-500/10 border border-purple-500/20 rounded-xl p-4">
                     </div>
                 </div>
             </div>
 
             <!-- Full Analysis Text -->
-            <div class="card">
-                <h2 class="text-xl font-bold text-white mb-4">📝 Full Analysis</h2>
-                <div id="full-analysis" class="prose prose-invert max-w-none text-dark-200 whitespace-pre-wrap">
-                    <!-- Filled by JS -->
+            <div class="modern-card">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-500/20 to-slate-600/10 flex items-center justify-center border border-slate-500/20">
+                        <span class="text-lg">📝</span>
+                    </div>
+                    <h2 class="font-semibold text-white">Full Analysis</h2>
+                </div>
+                <div id="full-analysis" class="prose prose-invert max-w-none text-dark-200 whitespace-pre-wrap text-sm leading-relaxed">
                 </div>
             </div>
         </div>
 
         <!-- Error State -->
-        <div id="analysis-error" class="hidden card text-center py-12">
-            <div class="text-4xl mb-3">⚠️</div>
-            <p class="text-dark-300 mb-2" id="error-message">Analysis failed</p>
+        <div id="analysis-error" class="hidden modern-card text-center py-16">
+            <div class="w-16 h-16 rounded-2xl bg-red-500/10 flex items-center justify-center mx-auto mb-4">
+                <span class="text-3xl">⚠️</span>
+            </div>
+            <p class="text-lg text-dark-300 mb-2" id="error-message">Analysis failed</p>
             <button onclick="hideAnalysis()" class="btn btn-secondary mt-4">Try Again</button>
         </div>
     </div>
@@ -149,6 +190,34 @@
 {% endblock %}
 
 {% block scripts %}
+<style>
+.modern-card {
+    background: linear-gradient(135deg, rgba(31, 41, 55, 0.6) 0%, rgba(17, 24, 39, 0.4) 100%);
+    border: 1px solid rgba(55, 65, 81, 0.5);
+    border-radius: 1rem;
+    padding: 1.5rem;
+    backdrop-filter: blur(10px);
+}
+
+:root:not(.dark) .modern-card {
+    background: #ffffff !important;
+    border-color: #e5e7eb !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+/* Light mode header */
+:root:not(.dark) .relative.overflow-hidden.rounded-2xl {
+    background: #ffffff !important;
+    border-color: #e5e7eb !important;
+}
+
+:root:not(.dark) .bg-dark-900\/50,
+:root:not(.dark) .bg-dark-900\/30,
+:root:not(.dark) .bg-dark-800\/50 {
+    background: #fafbfc !important;
+}
+</style>
+
 <script>
 function analyzeByCount() {
     const count = document.getElementById('trade-count').value;
@@ -161,7 +230,6 @@ function analyzeByDays() {
 }
 
 async function runAnalysis(type, value) {
-    // Show loading
     document.getElementById('analysis-section').classList.remove('hidden');
     document.getElementById('analysis-loading').classList.remove('hidden');
     document.getElementById('analysis-results').classList.add('hidden');
@@ -200,7 +268,6 @@ function displayResults(data) {
     document.getElementById('analysis-results').classList.remove('hidden');
     document.getElementById('loading-count').textContent = data.trade_count;
     
-    // Summary stats
     const statsHtml = `
         <div class="stat-card">
             <div class="stat-value">${data.trade_count}</div>
@@ -221,50 +288,45 @@ function displayResults(data) {
     `;
     document.getElementById('summary-stats').innerHTML = statsHtml;
     
-    // Patterns
     if (data.analysis.patterns && data.analysis.patterns.length) {
         document.getElementById('patterns-list').innerHTML = data.analysis.patterns
-            .map(p => `<div class="p-2 bg-accent-500/10 rounded-lg text-accent-300 text-sm">• ${p}</div>`)
+            .map(p => `<div class="p-3 bg-accent-500/10 rounded-lg text-accent-300 text-sm">• ${p}</div>`)
             .join('');
     } else {
-        document.getElementById('patterns-list').innerHTML = '<p class="text-dark-500">No significant patterns identified</p>';
+        document.getElementById('patterns-list').innerHTML = '<p class="text-dark-500 text-sm">No significant patterns identified</p>';
     }
     
-    // Strengths
     if (data.analysis.strengths && data.analysis.strengths.length) {
         document.getElementById('strengths-list').innerHTML = data.analysis.strengths
-            .map(s => `<div class="text-success-300 text-sm mb-1">• ${s}</div>`)
+            .map(s => `<div class="text-success-300 text-sm mb-2">• ${s}</div>`)
             .join('');
     } else {
-        document.getElementById('strengths-list').innerHTML = '<p class="text-dark-500">No specific strengths identified</p>';
+        document.getElementById('strengths-list').innerHTML = '<p class="text-dark-500 text-sm">No specific strengths identified</p>';
     }
     
-    // Weaknesses
     if (data.analysis.weaknesses && data.analysis.weaknesses.length) {
         document.getElementById('weaknesses-list').innerHTML = data.analysis.weaknesses
-            .map(w => `<div class="text-danger-300 text-sm mb-1">• ${w}</div>`)
+            .map(w => `<div class="text-danger-300 text-sm mb-2">• ${w}</div>`)
             .join('');
     } else {
-        document.getElementById('weaknesses-list').innerHTML = '<p class="text-dark-500">No specific weaknesses identified</p>';
+        document.getElementById('weaknesses-list').innerHTML = '<p class="text-dark-500 text-sm">No specific weaknesses identified</p>';
     }
     
-    // Recommendations
     if (data.analysis.recommendations && data.analysis.recommendations.length) {
         document.getElementById('recommendations-list').innerHTML = data.analysis.recommendations
             .map((r, i) => `<div class="text-amber-300 text-sm mb-2"><strong>${i+1}.</strong> ${r}</div>`)
             .join('');
     } else {
-        document.getElementById('recommendations-list').innerHTML = '<p class="text-dark-500">No recommendations at this time</p>';
+        document.getElementById('recommendations-list').innerHTML = '<p class="text-dark-500 text-sm">No recommendations at this time</p>';
     }
     
-    // Strategy breakdown
     if (data.analysis.strategy_breakdown) {
         let breakdownHtml = '';
         for (const [strategy, stats] of Object.entries(data.analysis.strategy_breakdown)) {
             breakdownHtml += `
-                <div class="flex justify-between items-center py-2 border-b border-purple-500/20 last:border-0">
-                    <span class="text-purple-300">${strategy}</span>
-                    <span class="font-mono text-sm">
+                <div class="flex justify-between items-center py-3 border-b border-purple-500/20 last:border-0">
+                    <span class="text-purple-300 font-medium">${strategy}</span>
+                    <span class="font-mono text-sm text-dark-300">
                         ${stats.count} trades, 
                         <span class="${stats.win_rate >= 50 ? 'text-success-400' : 'text-danger-400'}">${stats.win_rate.toFixed(0)}% win</span>,
                         <span class="${stats.total_r >= 0 ? 'text-success-400' : 'text-danger-400'}">${stats.total_r >= 0 ? '+' : ''}${stats.total_r.toFixed(2)}R</span>
@@ -272,10 +334,9 @@ function displayResults(data) {
                 </div>
             `;
         }
-        document.getElementById('strategy-breakdown').innerHTML = breakdownHtml || '<p class="text-dark-500">No strategy data</p>';
+        document.getElementById('strategy-breakdown').innerHTML = breakdownHtml || '<p class="text-dark-500 text-sm">No strategy data</p>';
     }
     
-    // Full analysis
     document.getElementById('full-analysis').textContent = data.analysis.full_analysis || 'No detailed analysis available.';
 }
 
