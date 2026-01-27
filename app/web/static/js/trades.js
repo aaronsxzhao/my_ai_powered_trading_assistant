@@ -189,6 +189,62 @@ async function deleteAllTrades() {
     }
 }
 
+/**
+ * Export trades to CSV
+ */
+async function exportTrades() {
+    // Get current filter values from URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const ticker = urlParams.get('ticker') || '';
+    const outcome = urlParams.get('outcome') || '';
+    
+    // Ask if user wants to include AI reviews
+    const includeReviews = confirm('Include AI review summaries in export?\n\n(Click OK to include, Cancel for basic export)');
+    
+    // Build export URL with filters
+    let exportUrl = '/api/trades/export?';
+    const params = new URLSearchParams();
+    if (ticker) params.append('ticker', ticker);
+    if (outcome) params.append('outcome', outcome);
+    if (includeReviews) params.append('include_reviews', 'true');
+    exportUrl += params.toString();
+    
+    showToast('Preparing export...', 'info');
+    
+    try {
+        const response = await fetch(exportUrl);
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Export failed');
+        }
+        
+        // Get filename from Content-Disposition header or generate one
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = 'trades_export.csv';
+        if (contentDisposition) {
+            const match = contentDisposition.match(/filename=([^;]+)/);
+            if (match) filename = match[1];
+        }
+        
+        // Download the file
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+        showToast('Export downloaded!', 'success');
+    } catch (err) {
+        console.error('Export error:', err);
+        showToast('Export failed: ' + err.message, 'error');
+    }
+}
+
 
 // ==================== INITIALIZATION ====================
 

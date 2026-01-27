@@ -284,5 +284,193 @@ document.addEventListener('keydown', (e) => {
         document.querySelectorAll('[id$="-modal"]:not(.hidden)').forEach(modal => {
             modal.classList.add('hidden');
         });
+        // Also close user menu
+        const userMenu = document.getElementById('user-menu-dropdown');
+        if (userMenu) userMenu.classList.add('hidden');
     }
 });
+
+// ==================== USER MENU ====================
+
+/**
+ * Toggle the user menu dropdown
+ */
+function toggleUserMenu(event) {
+    event.stopPropagation();
+    const dropdown = document.getElementById('user-menu-dropdown');
+    if (dropdown) {
+        dropdown.classList.toggle('hidden');
+    }
+}
+
+// Close user menu when clicking outside
+document.addEventListener('click', (e) => {
+    const container = document.getElementById('user-menu-container');
+    const dropdown = document.getElementById('user-menu-dropdown');
+    if (container && dropdown && !container.contains(e.target)) {
+        dropdown.classList.add('hidden');
+    }
+});
+
+
+// ==================== KEYBOARD SHORTCUTS ====================
+
+/**
+ * Global keyboard shortcuts for power users
+ * 
+ * Shortcuts:
+ * - Ctrl/Cmd + N: New trade (go to /add-trade)
+ * - Ctrl/Cmd + E: Export trades (on trades page)
+ * - Ctrl/Cmd + /: Show shortcuts help
+ * - G then T: Go to Trades
+ * - G then D: Go to Dashboard
+ * - G then S: Go to Stats
+ * - G then A: Go to Add Trade
+ * - J/K: Navigate trades (on trades page)
+ */
+
+let pendingGoKey = false;
+let goKeyTimeout = null;
+
+document.addEventListener('keydown', (e) => {
+    // Skip if user is typing in an input/textarea
+    const tag = e.target.tagName.toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable) {
+        return;
+    }
+    
+    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+    const modKey = isMac ? e.metaKey : e.ctrlKey;
+    
+    // Ctrl/Cmd + N: New trade
+    if (modKey && e.key === 'n') {
+        e.preventDefault();
+        window.location.href = '/add-trade';
+        return;
+    }
+    
+    // Ctrl/Cmd + E: Export (on trades page)
+    if (modKey && e.key === 'e') {
+        if (typeof exportTrades === 'function') {
+            e.preventDefault();
+            exportTrades();
+            return;
+        }
+    }
+    
+    // Ctrl/Cmd + /: Show shortcuts help
+    if (modKey && e.key === '/') {
+        e.preventDefault();
+        showShortcutsHelp();
+        return;
+    }
+    
+    // G-prefix shortcuts (Gmail-style)
+    if (e.key === 'g' && !modKey) {
+        pendingGoKey = true;
+        clearTimeout(goKeyTimeout);
+        goKeyTimeout = setTimeout(() => { pendingGoKey = false; }, 1000);
+        return;
+    }
+    
+    if (pendingGoKey) {
+        pendingGoKey = false;
+        clearTimeout(goKeyTimeout);
+        
+        switch (e.key.toLowerCase()) {
+            case 'd': // Go to Dashboard
+                window.location.href = '/';
+                break;
+            case 't': // Go to Trades
+                window.location.href = '/trades';
+                break;
+            case 's': // Go to Stats
+                window.location.href = '/stats';
+                break;
+            case 'a': // Go to Add Trade
+                window.location.href = '/add-trade';
+                break;
+        }
+        return;
+    }
+    
+    // ? key: Show shortcuts help
+    if (e.key === '?' && e.shiftKey) {
+        e.preventDefault();
+        showShortcutsHelp();
+        return;
+    }
+});
+
+/**
+ * Show keyboard shortcuts help modal
+ */
+function showShortcutsHelp() {
+    // Remove existing help if present
+    const existing = document.getElementById('shortcuts-help-modal');
+    if (existing) {
+        existing.remove();
+        return;
+    }
+    
+    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+    const modKeyName = isMac ? 'Cmd' : 'Ctrl';
+    
+    const modal = document.createElement('div');
+    modal.id = 'shortcuts-help-modal';
+    modal.className = 'fixed inset-0 bg-dark-950/80 backdrop-blur-sm flex items-center justify-center z-50';
+    modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+    
+    modal.innerHTML = `
+        <div class="bg-dark-800 rounded-2xl p-6 max-w-md w-full mx-4 border border-dark-600 shadow-2xl">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-white">Keyboard Shortcuts</h2>
+                <button onclick="this.closest('#shortcuts-help-modal').remove()" class="text-dark-400 hover:text-white">&times;</button>
+            </div>
+            <div class="space-y-4 text-sm">
+                <div>
+                    <h3 class="font-semibold text-accent-400 mb-2">Navigation</h3>
+                    <div class="space-y-1 text-dark-300">
+                        <div class="flex justify-between"><span>Go to Dashboard</span><kbd class="kbd">g d</kbd></div>
+                        <div class="flex justify-between"><span>Go to Trades</span><kbd class="kbd">g t</kbd></div>
+                        <div class="flex justify-between"><span>Go to Stats</span><kbd class="kbd">g s</kbd></div>
+                        <div class="flex justify-between"><span>Go to Add Trade</span><kbd class="kbd">g a</kbd></div>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-accent-400 mb-2">Actions</h3>
+                    <div class="space-y-1 text-dark-300">
+                        <div class="flex justify-between"><span>New Trade</span><kbd class="kbd">${modKeyName}+N</kbd></div>
+                        <div class="flex justify-between"><span>Export Trades</span><kbd class="kbd">${modKeyName}+E</kbd></div>
+                        <div class="flex justify-between"><span>Show Shortcuts</span><kbd class="kbd">${modKeyName}+/</kbd></div>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-accent-400 mb-2">General</h3>
+                    <div class="space-y-1 text-dark-300">
+                        <div class="flex justify-between"><span>Close Modal</span><kbd class="kbd">Esc</kbd></div>
+                    </div>
+                </div>
+            </div>
+            <p class="text-dark-500 text-xs mt-4">Press <kbd class="kbd text-xs">?</kbd> anytime to show this help</p>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+}
+
+// Add kbd styling
+const style = document.createElement('style');
+style.textContent = `
+    .kbd {
+        display: inline-block;
+        padding: 2px 6px;
+        font-family: monospace;
+        font-size: 11px;
+        background: rgba(255,255,255,0.1);
+        border: 1px solid rgba(255,255,255,0.2);
+        border-radius: 4px;
+        color: #94a3b8;
+    }
+`;
+document.head.appendChild(style);

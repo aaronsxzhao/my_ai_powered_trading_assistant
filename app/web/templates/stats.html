@@ -11,6 +11,94 @@
         <p class="text-dark-400 text-sm mt-1">Analyze your trading performance and edge</p>
     </div>
 
+    <!-- Portfolio Overview -->
+    {% if portfolio_stats %}
+    <div class="card bg-gradient-to-r from-dark-800 to-dark-700">
+        <h2 class="text-xl font-bold mb-4 text-white">Portfolio Overview</h2>
+        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            <div class="text-center">
+                <div class="text-2xl font-bold {% if portfolio_stats.total_pnl_dollars >= 0 %}positive{% else %}negative{% endif %}">
+                    ${{ "%.0f"|format(portfolio_stats.total_pnl_dollars) }}
+                </div>
+                <div class="text-xs text-dark-400">Total P&L</div>
+            </div>
+            <div class="text-center">
+                <div class="text-2xl font-bold {% if portfolio_stats.expectancy >= 0 %}positive{% else %}negative{% endif %}">
+                    {{ "%.2f"|format(portfolio_stats.expectancy) }}R
+                </div>
+                <div class="text-xs text-dark-400">Expectancy</div>
+            </div>
+            <div class="text-center">
+                <div class="text-2xl font-bold {% if portfolio_stats.profit_factor >= 1 %}positive{% else %}negative{% endif %}">
+                    {{ "%.2f"|format(portfolio_stats.profit_factor) }}
+                </div>
+                <div class="text-xs text-dark-400">Profit Factor</div>
+            </div>
+            <div class="text-center">
+                <div class="text-2xl font-bold negative">
+                    -{{ "%.2f"|format(portfolio_stats.max_drawdown_r) }}R
+                </div>
+                <div class="text-xs text-dark-400">Max Drawdown</div>
+            </div>
+            <div class="text-center">
+                <div class="text-2xl font-bold text-white">
+                    {{ "%.0f"|format(portfolio_stats.avg_trade_duration_minutes) }}m
+                </div>
+                <div class="text-xs text-dark-400">Avg Duration</div>
+            </div>
+            <div class="text-center">
+                <div class="text-2xl font-bold {% if portfolio_stats.recent_20_avg_r >= 0 %}positive{% else %}negative{% endif %}">
+                    {{ "%.2f"|format(portfolio_stats.recent_20_avg_r) }}R
+                </div>
+                <div class="text-xs text-dark-400">Last 20 Avg</div>
+            </div>
+        </div>
+        
+        <!-- Second row of metrics -->
+        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mt-4 pt-4 border-t border-dark-600/50">
+            <div class="text-center">
+                <div class="text-lg font-semibold positive">{{ "%.2f"|format(portfolio_stats.avg_winner_r) }}R</div>
+                <div class="text-xs text-dark-400">Avg Winner</div>
+            </div>
+            <div class="text-center">
+                <div class="text-lg font-semibold negative">{{ "%.2f"|format(portfolio_stats.avg_loser_r) }}R</div>
+                <div class="text-xs text-dark-400">Avg Loser</div>
+            </div>
+            <div class="text-center">
+                <div class="text-lg font-semibold positive">+{{ "%.2f"|format(portfolio_stats.largest_winner_r) }}R</div>
+                <div class="text-xs text-dark-400">Best Trade</div>
+            </div>
+            <div class="text-center">
+                <div class="text-lg font-semibold negative">{{ "%.2f"|format(portfolio_stats.largest_loser_r) }}R</div>
+                <div class="text-xs text-dark-400">Worst Trade</div>
+            </div>
+            <div class="text-center">
+                <div class="text-lg font-semibold text-white">{{ portfolio_stats.max_win_streak }}</div>
+                <div class="text-xs text-dark-400">Max Win Streak</div>
+            </div>
+            <div class="text-center">
+                <div class="text-lg font-semibold text-white">{{ portfolio_stats.max_loss_streak }}</div>
+                <div class="text-xs text-dark-400">Max Loss Streak</div>
+            </div>
+        </div>
+        
+        {% if portfolio_stats.best_time_of_day or portfolio_stats.best_day_of_week %}
+        <div class="mt-4 pt-4 border-t border-dark-600/50 flex flex-wrap gap-4">
+            {% if portfolio_stats.best_time_of_day %}
+            <div class="text-sm text-dark-300">
+                Best time: <span class="text-accent-400 font-medium">{{ portfolio_stats.best_time_of_day }}</span>
+            </div>
+            {% endif %}
+            {% if portfolio_stats.best_day_of_week %}
+            <div class="text-sm text-dark-300">
+                Best day: <span class="text-accent-400 font-medium">{{ portfolio_stats.best_day_of_week }}</span>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
     <!-- Edge Analysis -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Strengths -->
@@ -100,8 +188,11 @@
                         <th class="text-right">Trades</th>
                         <th class="text-right">Win Rate</th>
                         <th class="text-right">Avg R</th>
+                        <th class="text-right">Avg W</th>
+                        <th class="text-right">Avg L</th>
                         <th class="text-right">Expectancy</th>
                         <th class="text-right">PF</th>
+                        <th class="text-right">Last 20</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -123,10 +214,15 @@
                         <td class="text-right font-mono {% if stat.avg_r >= 0 %}positive{% else %}negative{% endif %}">
                             {{ "%.2f"|format(stat.avg_r) }}
                         </td>
+                        <td class="text-right font-mono positive">+{{ "%.2f"|format(stat.avg_winner_r) }}</td>
+                        <td class="text-right font-mono negative">{{ "%.2f"|format(stat.avg_loser_r) }}</td>
                         <td class="text-right font-mono font-bold {% if stat.expectancy >= 0 %}positive{% else %}negative{% endif %}">
                             {{ "%.3f"|format(stat.expectancy) }}R
                         </td>
                         <td class="text-right text-dark-200">{{ "%.1f"|format(stat.profit_factor) }}</td>
+                        <td class="text-right font-mono {% if stat.recent_20_performance >= 0 %}positive{% else %}negative{% endif %}">
+                            {{ "%.2f"|format(stat.recent_20_performance) }}
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>

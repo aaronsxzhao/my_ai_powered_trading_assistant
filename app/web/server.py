@@ -474,8 +474,15 @@ async def dashboard(request: Request, user = Depends(require_login)):
         total_r = session.query(func.sum(Trade.r_multiple)).filter(Trade.user_id == user.id).scalar() or 0
         win_rate = winners / total_trades if total_trades > 0 else 0
         
+        # Calculate total P&L in USD (converting from original currency if needed)
+        all_trades = session.query(Trade).filter(Trade.user_id == user.id).all()
+        total_pnl = sum(t.pnl_usd for t in all_trades if t.pnl_usd is not None)
+        
         # Get strategy stats for this user
         strategy_stats = analytics.get_all_strategy_stats(user_id=user.id)[:5]
+        
+        # Get portfolio stats with drawdown and advanced metrics
+        portfolio_stats = analytics.get_portfolio_stats(user_id=user.id)
         
         # Check data provider
         polygon_available = get_polygon_api_key() is not None
@@ -485,9 +492,11 @@ async def dashboard(request: Request, user = Depends(require_login)):
             "recent_trades": recent_trades,
             "total_trades": total_trades,
             "total_r": total_r,
+            "total_pnl": total_pnl,
             "win_rate": win_rate,
             "winners": winners,
             "strategy_stats": strategy_stats,
+            "portfolio_stats": portfolio_stats,
             "tickers": load_tickers_from_file(),
             "polygon_available": polygon_available,
         })
@@ -1538,27 +1547,177 @@ async def stats_page(request: Request, user = Depends(require_login)):
     base_context = await get_template_context_with_user(request, user)
     analytics = TradeAnalytics()
     
-    strategy_stats = analytics.get_all_strategy_stats()
+    # Get stats for this user
+    strategy_stats = analytics.get_all_strategy_stats(user_id=user.id)
     edge_analysis = analytics.analyze_edge()
+    portfolio_stats = analytics.get_portfolio_stats(user_id=user.id)
     
-    # Get all trades for equity curve
-    trades = analytics.get_all_trades()
+    # Get all trades for equity curve (filtered by user)
+    trades = analytics.get_all_trades(user_id=user.id)
+    
+    # Build equity curve with drawdown data
     equity_data = []
+    drawdown_data = []
     cumulative = 0
-    for t in sorted(trades, key=lambda x: x.trade_date):
+    peak = 0
+    for t in sorted(trades, key=lambda x: (x.trade_date, x.exit_time or x.entry_time or x.trade_date)):
         if t.r_multiple:
             cumulative += t.r_multiple
-            equity_data.append({"date": str(t.trade_date), "r": cumulative})
+            if cumulative > peak:
+                peak = cumulative
+            drawdown = peak - cumulative
+            equity_data.append({
+                "date": str(t.trade_date),
+                "r": round(cumulative, 2),
+                "pnl": round(t.pnl_dollars, 2) if t.pnl_dollars else 0
+            })
+            drawdown_data.append({
+                "date": str(t.trade_date),
+                "dd": round(drawdown, 2)
+            })
     
     return templates.TemplateResponse(request, "stats.html", {
         **base_context,
         "strategy_stats": strategy_stats,
         "edge_analysis": edge_analysis,
+        "portfolio_stats": portfolio_stats,
         "equity_data": equity_data,
+        "drawdown_data": drawdown_data,
     })
 
 
 # ==================== API ENDPOINTS ====================
+
+@app.get("/api/trades/export")
+async def export_trades(
+    request: Request,
+    ticker: Optional[str] = None,
+    outcome: Optional[str] = None,
+    include_reviews: bool = False,
+):
+    """
+    Export trades to CSV format.
+    
+    Args:
+        ticker: Filter by ticker symbol
+        outcome: Filter by outcome (win, loss, breakeven)
+        include_reviews: Include AI review summaries in export
+    
+    Returns:
+        CSV file download
+    """
+    from fastapi.responses import StreamingResponse
+    import csv
+    import io
+    
+    # Get current user
+    user = await get_user_from_request(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
+    session = get_session()
+    try:
+        # Build query with user filter
+        query = session.query(Trade).filter(Trade.user_id == user.id)
+        
+        if ticker:
+            query = query.filter(Trade.ticker.ilike(f"%{ticker}%"))
+        if outcome:
+            outcome_lower = outcome.lower()
+            if outcome_lower == "win":
+                query = query.filter(Trade.outcome == TradeOutcome.WIN)
+            elif outcome_lower == "loss":
+                query = query.filter(Trade.outcome == TradeOutcome.LOSS)
+            elif outcome_lower == "breakeven":
+                query = query.filter(Trade.outcome == TradeOutcome.BREAKEVEN)
+        
+        trades = query.order_by(Trade.trade_date.desc(), Trade.exit_time.desc()).all()
+        
+        # Create CSV in memory
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Header row
+        headers = [
+            "Trade #", "Date", "Ticker", "Direction", "Size",
+            "Entry Price", "Exit Price", "Stop Loss", "Take Profit",
+            "Entry Time", "Exit Time", "Duration",
+            "P&L ($)", "R-Multiple", "Outcome",
+            "Strategy", "Setup Type", "Notes", "Entry Reason", "Exit Reason"
+        ]
+        if include_reviews:
+            headers.extend(["AI Grade", "AI Summary"])
+        writer.writerow(headers)
+        
+        # Data rows
+        for trade in trades:
+            # Format duration
+            duration_str = ""
+            if trade.entry_time and trade.exit_time:
+                duration = trade.exit_time - trade.entry_time
+                hours, remainder = divmod(int(duration.total_seconds()), 3600)
+                minutes, seconds = divmod(remainder, 60)
+                if hours > 0:
+                    duration_str = f"{hours}h {minutes}m"
+                else:
+                    duration_str = f"{minutes}m {seconds}s"
+            
+            row = [
+                trade.trade_number or trade.id,
+                trade.trade_date.strftime("%Y-%m-%d") if trade.trade_date else "",
+                trade.ticker,
+                trade.direction.value if trade.direction else "",
+                trade.size,
+                trade.entry_price,
+                trade.exit_price,
+                trade.stop_loss or "",
+                trade.take_profit or "",
+                trade.entry_time.strftime("%Y-%m-%d %H:%M:%S") if trade.entry_time else "",
+                trade.exit_time.strftime("%Y-%m-%d %H:%M:%S") if trade.exit_time else "",
+                duration_str,
+                round(trade.pnl_dollars, 2) if trade.pnl_dollars else "",
+                round(trade.r_multiple, 2) if trade.r_multiple else "",
+                trade.outcome.value if trade.outcome else "",
+                trade.strategy.name if trade.strategy else "",
+                trade.setup_type or "",
+                trade.notes or "",
+                trade.entry_reason or "",
+                trade.exit_reason or "",
+            ]
+            
+            if include_reviews:
+                grade = ""
+                summary = ""
+                if trade.cached_review:
+                    try:
+                        import json
+                        review = json.loads(trade.cached_review)
+                        grade = review.get("grade", "")
+                        # Get first sentence of summary
+                        summary_text = review.get("summary", "")
+                        if summary_text:
+                            summary = summary_text[:200] + "..." if len(summary_text) > 200 else summary_text
+                    except:
+                        pass
+                row.extend([grade, summary])
+            
+            writer.writerow(row)
+        
+        # Prepare response
+        output.seek(0)
+        
+        # Generate filename with date
+        from datetime import datetime
+        filename = f"trades_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    finally:
+        session.close()
+
 
 @app.post("/api/trades", dependencies=[require_write_auth])
 async def create_trade(
@@ -1723,7 +1882,8 @@ async def import_csv(
         return JSONResponse({
             "imported": imported,
             "errors": errors,
-            "messages": messages[:10],
+            "total_messages": len(messages),
+            "messages": messages[:50],  # Show up to 50 errors
             "format": format,
             "cross_validated": balance_path is not None,
         })
@@ -1747,7 +1907,8 @@ async def bulk_import():
     return JSONResponse({
         "imported": imported,
         "errors": errors,
-        "messages": messages[:10],
+        "total_messages": len(messages),
+        "messages": messages[:50],  # Show up to 50 errors
     })
 
 
@@ -2530,6 +2691,12 @@ async def robinhood_import(request: Request):
 @app.post("/api/robinhood/import-session", dependencies=[require_write_auth])
 async def robinhood_import_session(request: Request):
     """Import trades from Robinhood using stored session."""
+    import asyncio
+    
+    # Get current user for ownership
+    user = await get_user_from_request(request)
+    user_id = user.id if user else None
+    
     try:
         data = await request.json()
         days_back = data.get('days_back', 30)
@@ -2553,11 +2720,41 @@ async def robinhood_import_session(request: Request):
                 "messages": [f"No filled orders found in the last {days_back} days."],
             })
         
-        # Process orders (simplified - just count for now)
+        messages = [f"Found {len(orders)} filled orders from Robinhood"]
+        imported = 0
+        errors = 0
+        
+        # Process orders using session
+        for order in orders:
+            try:
+                parsed = client.parse_stock_order_to_trade(order)
+                if parsed:
+                    trade = ingester.add_trade_manual(
+                        ticker=parsed['ticker'],
+                        trade_date=parsed['trade_date'],
+                        direction=parsed['direction'],
+                        entry_price=parsed['entry_price'],
+                        exit_price=parsed['exit_price'],
+                        size=parsed.get('size', 1),
+                        entry_time=parsed.get('entry_time'),
+                        exit_time=parsed.get('exit_time'),
+                        user_id=user_id,
+                        skip_duplicates=True,
+                    )
+                    if trade:
+                        imported += 1
+                    else:
+                        messages.append(f"Skipped duplicate: {parsed['ticker']}")
+            except Exception as e:
+                errors += 1
+                messages.append(f"Error processing order: {str(e)}")
+        
+        messages.append(f"Imported {imported} trades, {errors} errors")
+        
         return JSONResponse({
-            "imported": len(orders),
-            "errors": 0,
-            "messages": [f"Found {len(orders)} orders to process."],
+            "imported": imported,
+            "errors": errors,
+            "messages": messages[:20],
         })
         
     except Exception as e:

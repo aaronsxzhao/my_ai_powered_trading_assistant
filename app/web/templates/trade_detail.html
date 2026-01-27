@@ -1014,7 +1014,7 @@ async function checkExistingReview() {
             document.getElementById('review-initial').classList.add('hidden');
             document.getElementById('review-loading').classList.remove('hidden');
             updateStep(7, 'active', 'AI analysis in progress...');
-            pollingInterval = setInterval(() => pollForReview(), 3000);
+            pollingInterval = setInterval(() => pollForReview(), 1500);  // Poll every 1.5s for faster feedback
         } else if (data.success && data.review) {
             // There's a cached review, display it
             document.getElementById('review-initial').classList.add('hidden');
@@ -1217,7 +1217,7 @@ async function loadReview(force = false) {
             
             // Start polling every 3 seconds
             if (!pollingInterval) {
-                pollingInterval = setInterval(() => pollForReview(), 3000);
+                pollingInterval = setInterval(() => pollForReview(), 1500);  // Poll every 1.5s for faster feedback
             }
             return;
         }
@@ -1305,14 +1305,34 @@ async function cancelGeneration() {
     showToast('Generation cancelled', 'info');
 }
 
+let pollCount = 0;
+const MAX_POLL_COUNT = 60;  // 60 * 1.5s = 90 seconds max wait
+
 async function pollForReview() {
+    pollCount++;
+    
+    // Timeout after 90 seconds
+    if (pollCount > MAX_POLL_COUNT) {
+        if (pollingInterval) {
+            clearInterval(pollingInterval);
+            pollingInterval = null;
+        }
+        pollCount = 0;
+        document.getElementById('review-loading').classList.add('hidden');
+        document.getElementById('review-initial').classList.remove('hidden');
+        updateStep(7, 'error', 'Timed out waiting for AI response');
+        showToast('Review generation timed out. Please try again.', 'error');
+        return;
+    }
+    
     try {
         const response = await fetch(`/api/trades/${TRADE_ID}/review`);
         const data = await response.json();
 
-        // Still in progress - keep polling
+        // Still in progress - keep polling with time estimate
         if (data.success && data.in_progress) {
-            updateStep(7, 'active', 'Still generating... please wait');
+            const elapsed = Math.round(pollCount * 1.5);
+            updateStep(7, 'active', `Still generating... (${elapsed}s)`);
             return;
         }
 
@@ -1321,6 +1341,7 @@ async function pollForReview() {
             clearInterval(pollingInterval);
             pollingInterval = null;
         }
+        pollCount = 0;
 
         document.getElementById('review-loading').classList.add('hidden');
 

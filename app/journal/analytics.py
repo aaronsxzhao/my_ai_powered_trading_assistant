@@ -60,6 +60,59 @@ class EdgeAnalysis:
     double_down: list[str]
 
 
+@dataclass
+class PortfolioStats:
+    """Overall portfolio statistics."""
+
+    # Basic counts
+    total_trades: int
+    win_count: int
+    loss_count: int
+    breakeven_count: int
+    win_rate: float
+    
+    # P&L metrics
+    total_r: float
+    total_pnl_dollars: float
+    avg_r: float
+    avg_pnl_dollars: float
+    
+    # Winner/Loser analysis
+    avg_winner_r: float
+    avg_loser_r: float
+    avg_winner_dollars: float
+    avg_loser_dollars: float
+    largest_winner_r: float
+    largest_loser_r: float
+    largest_winner_dollars: float
+    largest_loser_dollars: float
+    
+    # Risk metrics
+    expectancy: float
+    profit_factor: float
+    max_drawdown_r: float
+    max_drawdown_dollars: float
+    max_drawdown_pct: float
+    current_drawdown_r: float
+    
+    # Streak analysis
+    current_streak: int  # Positive for wins, negative for losses
+    max_win_streak: int
+    max_loss_streak: int
+    
+    # Time analysis
+    avg_trade_duration_minutes: float
+    best_time_of_day: Optional[str]
+    best_day_of_week: Optional[str]
+    
+    # Recent performance
+    recent_20_avg_r: float
+    
+    # MAE/MFE
+    avg_mae: float
+    avg_mfe: float
+
+
 class TradeAnalytics:
     """
     Compute analytics and statistics from trade journal.
@@ -289,6 +342,195 @@ class TradeAnalytics:
 
         finally:
             session.close()
+
+    def get_portfolio_stats(self, user_id: Optional[int] = None) -> Optional[PortfolioStats]:
+        """
+        Calculate overall portfolio statistics including drawdown.
+        
+        Args:
+            user_id: Optional user ID to filter trades by
+            
+        Returns:
+            PortfolioStats object or None if no trades
+        """
+        trades = self.get_all_trades(user_id=user_id)
+        
+        if not trades:
+            return None
+        
+        # Sort trades by date for sequential analysis
+        trades_sorted = sorted(trades, key=lambda t: (t.trade_date, t.exit_time or t.entry_time or t.trade_date))
+        
+        # Basic counts
+        total_trades = len(trades)
+        winners = [t for t in trades if t.outcome == TradeOutcome.WIN]
+        losers = [t for t in trades if t.outcome == TradeOutcome.LOSS]
+        breakevens = [t for t in trades if t.outcome == TradeOutcome.BREAKEVEN]
+        
+        win_count = len(winners)
+        loss_count = len(losers)
+        breakeven_count = len(breakevens)
+        win_rate = win_count / total_trades if total_trades > 0 else 0
+        
+        # R-multiple metrics
+        r_values = [t.r_multiple for t in trades if t.r_multiple is not None]
+        total_r = sum(r_values) if r_values else 0
+        avg_r = np.mean(r_values) if r_values else 0
+        
+        winner_r = [t.r_multiple for t in winners if t.r_multiple]
+        loser_r = [t.r_multiple for t in losers if t.r_multiple]
+        avg_winner_r = np.mean(winner_r) if winner_r else 0
+        avg_loser_r = np.mean(loser_r) if loser_r else 0
+        largest_winner_r = max(winner_r) if winner_r else 0
+        largest_loser_r = min(loser_r) if loser_r else 0
+        
+        # Dollar metrics
+        pnl_values = [t.pnl_dollars for t in trades if t.pnl_dollars is not None]
+        total_pnl = sum(pnl_values) if pnl_values else 0
+        avg_pnl = np.mean(pnl_values) if pnl_values else 0
+        
+        winner_pnl = [t.pnl_dollars for t in winners if t.pnl_dollars]
+        loser_pnl = [t.pnl_dollars for t in losers if t.pnl_dollars]
+        avg_winner_dollars = np.mean(winner_pnl) if winner_pnl else 0
+        avg_loser_dollars = np.mean(loser_pnl) if loser_pnl else 0
+        largest_winner_dollars = max(winner_pnl) if winner_pnl else 0
+        largest_loser_dollars = min(loser_pnl) if loser_pnl else 0
+        
+        # Calculate drawdown (both R and dollars)
+        cumulative_r = 0
+        peak_r = 0
+        max_dd_r = 0
+        
+        cumulative_pnl = 0
+        peak_pnl = 0
+        max_dd_pnl = 0
+        
+        for trade in trades_sorted:
+            if trade.r_multiple:
+                cumulative_r += trade.r_multiple
+                if cumulative_r > peak_r:
+                    peak_r = cumulative_r
+                dd_r = peak_r - cumulative_r
+                if dd_r > max_dd_r:
+                    max_dd_r = dd_r
+            
+            if trade.pnl_dollars:
+                cumulative_pnl += trade.pnl_dollars
+                if cumulative_pnl > peak_pnl:
+                    peak_pnl = cumulative_pnl
+                dd_pnl = peak_pnl - cumulative_pnl
+                if dd_pnl > max_dd_pnl:
+                    max_dd_pnl = dd_pnl
+        
+        current_dd_r = peak_r - cumulative_r
+        max_dd_pct = (max_dd_pnl / peak_pnl * 100) if peak_pnl > 0 else 0
+        
+        # Streak analysis
+        current_streak = 0
+        max_win_streak = 0
+        max_loss_streak = 0
+        win_streak = 0
+        loss_streak = 0
+        
+        for trade in trades_sorted:
+            if trade.outcome == TradeOutcome.WIN:
+                win_streak += 1
+                loss_streak = 0
+                max_win_streak = max(max_win_streak, win_streak)
+            elif trade.outcome == TradeOutcome.LOSS:
+                loss_streak += 1
+                win_streak = 0
+                max_loss_streak = max(max_loss_streak, loss_streak)
+            else:  # Breakeven doesn't break streak
+                pass
+        
+        # Current streak
+        for trade in reversed(trades_sorted):
+            if trade.outcome == TradeOutcome.WIN:
+                if current_streak >= 0:
+                    current_streak += 1
+                else:
+                    break
+            elif trade.outcome == TradeOutcome.LOSS:
+                if current_streak <= 0:
+                    current_streak -= 1
+                else:
+                    break
+            else:
+                break
+        
+        # Duration analysis
+        durations = []
+        for trade in trades:
+            if trade.entry_time and trade.exit_time:
+                duration = (trade.exit_time - trade.entry_time).total_seconds() / 60
+                if duration > 0:
+                    durations.append(duration)
+        avg_duration = np.mean(durations) if durations else 0
+        
+        # Time of day analysis
+        best_time = self._find_best_time_of_day(trades)
+        
+        # Day of week analysis
+        day_performance = {}
+        for trade in trades:
+            if trade.trade_date and trade.r_multiple:
+                day = trade.trade_date.strftime("%A")
+                if day not in day_performance:
+                    day_performance[day] = []
+                day_performance[day].append(trade.r_multiple)
+        
+        best_day = None
+        if day_performance:
+            day_avg = {day: np.mean(rs) for day, rs in day_performance.items() if len(rs) >= 3}
+            if day_avg:
+                best_day = max(day_avg.keys(), key=lambda d: day_avg[d])
+        
+        # Recent 20 performance
+        recent_trades = trades_sorted[-20:] if len(trades_sorted) >= 20 else trades_sorted
+        recent_r = [t.r_multiple for t in recent_trades if t.r_multiple]
+        recent_20_avg = np.mean(recent_r) if recent_r else 0
+        
+        # MAE/MFE
+        maes = [t.mae for t in trades if t.mae is not None]
+        mfes = [t.mfe for t in trades if t.mfe is not None]
+        avg_mae = np.mean(maes) if maes else 0
+        avg_mfe = np.mean(mfes) if mfes else 0
+        
+        return PortfolioStats(
+            total_trades=total_trades,
+            win_count=win_count,
+            loss_count=loss_count,
+            breakeven_count=breakeven_count,
+            win_rate=round(win_rate, 3),
+            total_r=round(total_r, 2),
+            total_pnl_dollars=round(total_pnl, 2),
+            avg_r=round(avg_r, 3),
+            avg_pnl_dollars=round(avg_pnl, 2),
+            avg_winner_r=round(avg_winner_r, 3),
+            avg_loser_r=round(avg_loser_r, 3),
+            avg_winner_dollars=round(avg_winner_dollars, 2),
+            avg_loser_dollars=round(avg_loser_dollars, 2),
+            largest_winner_r=round(largest_winner_r, 2),
+            largest_loser_r=round(largest_loser_r, 2),
+            largest_winner_dollars=round(largest_winner_dollars, 2),
+            largest_loser_dollars=round(largest_loser_dollars, 2),
+            expectancy=self.compute_expectancy(trades),
+            profit_factor=self.compute_profit_factor(trades),
+            max_drawdown_r=round(max_dd_r, 2),
+            max_drawdown_dollars=round(max_dd_pnl, 2),
+            max_drawdown_pct=round(max_dd_pct, 1),
+            current_drawdown_r=round(current_dd_r, 2),
+            current_streak=current_streak,
+            max_win_streak=max_win_streak,
+            max_loss_streak=max_loss_streak,
+            avg_trade_duration_minutes=round(avg_duration, 1),
+            best_time_of_day=best_time,
+            best_day_of_week=best_day,
+            recent_20_avg_r=round(recent_20_avg, 3),
+            avg_mae=round(avg_mae, 3),
+            avg_mfe=round(avg_mfe, 3),
+        )
 
     def analyze_edge(self) -> EdgeAnalysis:
         """

@@ -22,7 +22,7 @@
         </div>
     </div>
 
-    <!-- Stats Cards -->
+    <!-- Primary Stats Cards -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div class="stat-card glow-pulse" style="animation-delay: 0s;">
             <div class="stat-value">{{ total_trades }}</div>
@@ -35,24 +35,54 @@
             <div class="stat-label">Total R-Multiple</div>
         </div>
         <div class="stat-card" style="animation-delay: 0.2s;">
+            <div class="stat-value {% if total_pnl >= 0 %}positive{% else %}negative{% endif %}">
+                {{ "+" if total_pnl > 0 else "" }}${{ "%.0f"|format(total_pnl) }}
+            </div>
+            <div class="stat-label">Total P&L (USD)</div>
+        </div>
+        <div class="stat-card" style="animation-delay: 0.3s;">
             <div class="stat-value">{{ "%.1f"|format(win_rate * 100) }}%</div>
             <div class="stat-label">Win Rate</div>
         </div>
-        <div class="stat-card" style="animation-delay: 0.3s;">
-            <div class="flex justify-center gap-4">
-                <div>
-                    <div class="text-2xl font-bold positive">{{ winners }}</div>
-                    <div class="text-xs text-dark-500">Wins</div>
-                </div>
-                <div class="text-dark-600">|</div>
-                <div>
-                    <div class="text-2xl font-bold negative">{{ total_trades - winners }}</div>
-                    <div class="text-xs text-dark-500">Losses</div>
-                </div>
+    </div>
+
+    <!-- Advanced Stats (if portfolio_stats available) -->
+    {% if portfolio_stats %}
+    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+        <div class="stat-card-sm">
+            <div class="stat-value-sm {% if portfolio_stats.expectancy >= 0 %}positive{% else %}negative{% endif %}">
+                {{ "%.2f"|format(portfolio_stats.expectancy) }}R
             </div>
-            <div class="stat-label mt-1">W/L</div>
+            <div class="stat-label-sm">Expectancy</div>
+        </div>
+        <div class="stat-card-sm">
+            <div class="stat-value-sm {% if portfolio_stats.profit_factor >= 1 %}positive{% else %}negative{% endif %}">
+                {{ "%.2f"|format(portfolio_stats.profit_factor) }}
+            </div>
+            <div class="stat-label-sm">Profit Factor</div>
+        </div>
+        <div class="stat-card-sm">
+            <div class="stat-value-sm negative">
+                -{{ "%.2f"|format(portfolio_stats.max_drawdown_r) }}R
+            </div>
+            <div class="stat-label-sm">Max Drawdown</div>
+        </div>
+        <div class="stat-card-sm">
+            <div class="stat-value-sm positive">{{ "%.2f"|format(portfolio_stats.avg_winner_r) }}R</div>
+            <div class="stat-label-sm">Avg Winner</div>
+        </div>
+        <div class="stat-card-sm">
+            <div class="stat-value-sm negative">{{ "%.2f"|format(portfolio_stats.avg_loser_r) }}R</div>
+            <div class="stat-label-sm">Avg Loser</div>
+        </div>
+        <div class="stat-card-sm">
+            <div class="stat-value-sm {% if portfolio_stats.current_streak >= 0 %}positive{% else %}negative{% endif %}">
+                {% if portfolio_stats.current_streak >= 0 %}+{% endif %}{{ portfolio_stats.current_streak }}
+            </div>
+            <div class="stat-label-sm">Current Streak</div>
         </div>
     </div>
+    {% endif %}
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Recent Trades -->

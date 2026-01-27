@@ -126,6 +126,18 @@
             .stat-label {
                 @apply text-sm text-dark-400 mt-1;
             }
+            /* Smaller stat cards for advanced metrics */
+            .stat-card-sm {
+                @apply bg-gradient-to-br from-dark-700/30 to-dark-800/30 rounded-xl p-3
+                       border border-dark-600/20 text-center transition-all duration-300 hover:scale-[1.02]
+                       min-w-0 overflow-hidden;
+            }
+            .stat-value-sm {
+                @apply text-xl font-bold bg-gradient-to-r from-white to-dark-200 bg-clip-text text-transparent;
+            }
+            .stat-label-sm {
+                @apply text-xs text-dark-400 mt-0.5;
+            }
             
             /* Tables */
             .table-modern {
@@ -576,19 +588,22 @@
                     </a>
                     {% endif %}
                     
-                    <!-- User Menu -->
+                    <!-- User Menu (click-based for mobile compatibility) -->
                     {% if current_user is defined and current_user %}
-                    <div class="relative group">
-                        <button class="nav-link p-2 flex items-center space-x-1" title="{{ current_user.email }}">
+                    <div class="relative" id="user-menu-container">
+                        <button class="nav-link p-2 flex items-center space-x-1" 
+                                title="{{ current_user.email }}"
+                                onclick="toggleUserMenu(event)">
                             <span>👤</span>
                             <span class="hidden lg:inline text-sm">{{ current_user.name or current_user.email.split('@')[0] }}</span>
                         </button>
-                        <div class="absolute right-0 mt-2 w-48 bg-dark-800 rounded-lg shadow-lg border border-dark-700 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200">
+                        <div id="user-menu-dropdown" 
+                             class="absolute right-0 mt-2 w-48 bg-dark-800 rounded-lg shadow-lg border border-dark-700 hidden z-50">
                             <div class="p-3 border-b border-dark-700">
                                 <p class="text-sm font-medium text-white">{{ current_user.name or 'User' }}</p>
                                 <p class="text-xs text-dark-400 truncate">{{ current_user.email }}</p>
                             </div>
-                            <a href="/auth/logout" class="block px-4 py-2 text-sm text-dark-300 hover:bg-dark-700 hover:text-white">
+                            <a href="/auth/logout" class="block px-4 py-3 text-sm text-dark-300 hover:bg-dark-700 hover:text-white">
                                 Sign Out
                             </a>
                         </div>
@@ -605,37 +620,37 @@
 
     <!-- Mobile Navigation (hidden on auth pages) -->
     {% if not request.url.path.startswith('/auth/') %}
-    <div class="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-dark-900/95 backdrop-blur-xl border-t border-dark-700/50 px-2 py-2 safe-area-inset-bottom">
+    <div class="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-dark-900/95 backdrop-blur-xl border-t border-dark-700/50 px-1 py-1 safe-area-inset-bottom">
         <div class="flex justify-around">
             {% if current_user is defined and current_user %}
-            <a href="/" class="flex flex-col items-center px-3 py-2 text-xs {% if request.url.path == '/' %}text-accent-400{% else %}text-dark-400{% endif %}">
-                <span class="text-lg mb-1">🏠</span>
-                Home
+            <a href="/" class="flex flex-col items-center min-w-[60px] min-h-[48px] justify-center text-xs {% if request.url.path == '/' %}text-accent-400{% else %}text-dark-400{% endif %}">
+                <span class="text-xl mb-0.5">🏠</span>
+                <span class="text-[10px]">Home</span>
             </a>
-            <a href="/trades" class="flex flex-col items-center px-3 py-2 text-xs {% if '/trades' in request.url.path %}text-accent-400{% else %}text-dark-400{% endif %}">
-                <span class="text-lg mb-1">📊</span>
-                Trades
+            <a href="/trades" class="flex flex-col items-center min-w-[60px] min-h-[48px] justify-center text-xs {% if '/trades' in request.url.path %}text-accent-400{% else %}text-dark-400{% endif %}">
+                <span class="text-xl mb-0.5">📊</span>
+                <span class="text-[10px]">Trades</span>
             </a>
-            <a href="/add-trade" class="flex flex-col items-center px-3 py-2 text-xs {% if request.url.path == '/add-trade' or request.url.path == '/import' %}text-accent-400{% else %}text-dark-400{% endif %}">
-                <span class="text-lg mb-1">➕</span>
-                Add
+            <a href="/add-trade" class="flex flex-col items-center min-w-[60px] min-h-[48px] justify-center text-xs {% if request.url.path == '/add-trade' %}text-accent-400{% else %}text-dark-400{% endif %}">
+                <span class="text-xl mb-0.5">➕</span>
+                <span class="text-[10px]">Add</span>
             </a>
-            <a href="/stats" class="flex flex-col items-center px-3 py-2 text-xs {% if request.url.path == '/stats' %}text-accent-400{% else %}text-dark-400{% endif %}">
-                <span class="text-lg mb-1">📈</span>
-                Stats
+            <a href="/stats" class="flex flex-col items-center min-w-[60px] min-h-[48px] justify-center text-xs {% if request.url.path == '/stats' %}text-accent-400{% else %}text-dark-400{% endif %}">
+                <span class="text-xl mb-0.5">📈</span>
+                <span class="text-[10px]">Stats</span>
             </a>
-            <a href="/auth/logout" class="flex flex-col items-center px-3 py-2 text-xs text-dark-400">
-                <span class="text-lg mb-1">🚪</span>
-                Logout
+            <a href="/settings" class="flex flex-col items-center min-w-[60px] min-h-[48px] justify-center text-xs {% if request.url.path == '/settings' %}text-accent-400{% else %}text-dark-400{% endif %}">
+                <span class="text-xl mb-0.5">⚙️</span>
+                <span class="text-[10px]">Settings</span>
             </a>
             {% else %}
-            <a href="/auth/login" class="flex flex-col items-center px-3 py-2 text-xs text-accent-400">
-                <span class="text-lg mb-1">🔑</span>
-                Sign In
+            <a href="/auth/login" class="flex flex-col items-center min-w-[80px] min-h-[48px] justify-center text-accent-400">
+                <span class="text-xl mb-0.5">🔑</span>
+                <span class="text-[10px]">Sign In</span>
             </a>
-            <a href="/auth/register" class="flex flex-col items-center px-3 py-2 text-xs text-dark-400">
-                <span class="text-lg mb-1">📝</span>
-                Register
+            <a href="/auth/register" class="flex flex-col items-center min-w-[80px] min-h-[48px] justify-center text-dark-400">
+                <span class="text-xl mb-0.5">📝</span>
+                <span class="text-[10px]">Register</span>
             </a>
             {% endif %}
         </div>

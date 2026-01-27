@@ -14,6 +14,7 @@
         </div>
         <div class="flex flex-wrap gap-2">
             <a href="/add-trade" class="btn btn-primary">➕ Add Trade</a>
+            <button onclick="exportTrades()" class="btn btn-secondary">📥 Export CSV</button>
             <button onclick="recalculateMetrics()" class="btn btn-secondary">🔄 Recalculate</button>
             <button onclick="analyzeAllTrades()" class="btn btn-secondary">🧠 Analyze All</button>
             <button onclick="deleteAllTrades()" class="btn btn-ghost text-danger-400 hover:bg-danger-500/10">🗑️ Delete All</button>
@@ -54,7 +55,7 @@
     </div>
     {% endif %}
 
-    <!-- Trades Table -->
+    <!-- Trades -->
     <div class="card overflow-hidden">
         {% if trades %}
         <!-- Legend -->
@@ -71,7 +72,49 @@
                 {{ trades|selectattr('cached_review')|list|length }}/{{ trades|length }} reviewed
             </span>
         </div>
-        <div class="overflow-x-auto">
+
+        <!-- Mobile Card View (visible on small screens) -->
+        <div class="md:hidden space-y-3 p-4">
+            {% for trade in trades %}
+            <a href="/trades/{{ trade.id }}" 
+               class="block bg-dark-700/30 rounded-xl p-4 hover:bg-dark-700/50 transition-all border border-dark-600/30">
+                <div class="flex justify-between items-start mb-2">
+                    <div class="flex items-center gap-2">
+                        <span class="text-lg font-bold {% if trade.direction.value == 'long' %}text-success-400{% else %}text-danger-400{% endif %}">
+                            {% if trade.direction.value == 'long' %}▲{% else %}▼{% endif %}
+                            {{ trade.ticker | ticker_display }}
+                        </span>
+                        {% if trade.cached_review %}
+                        <span class="text-accent-400 text-sm">🤖</span>
+                        {% endif %}
+                    </div>
+                    <div class="text-right">
+                        <div class="text-lg font-bold {% if trade.r_multiple and trade.r_multiple >= 0 %}positive{% else %}negative{% endif %}">
+                            {% if trade.r_multiple %}{{ "%.2f"|format(trade.r_multiple) }}R{% else %}--{% endif %}
+                        </div>
+                        <div class="text-xs text-dark-500">
+                            {% if trade.pnl_usd %}${{ "%.0f"|format(trade.pnl_usd) }}{% endif %}
+                        </div>
+                    </div>
+                </div>
+                <div class="flex justify-between text-sm text-dark-400">
+                    <span>{{ trade.exit_time.strftime('%m/%d %H:%M') if trade.exit_time else trade.trade_date }}</span>
+                    <span class="px-2 py-0.5 rounded text-xs
+                        {% if trade.outcome and trade.outcome.value == 'win' %}bg-success-500/20 text-success-400
+                        {% elif trade.outcome and trade.outcome.value == 'loss' %}bg-danger-500/20 text-danger-400
+                        {% else %}bg-dark-600 text-dark-300{% endif %}">
+                        {{ trade.outcome.value | upper if trade.outcome else 'BE' }}
+                    </span>
+                </div>
+                {% if trade.strategy %}
+                <div class="mt-2 text-xs text-dark-500">{{ trade.strategy.name }}</div>
+                {% endif %}
+            </a>
+            {% endfor %}
+        </div>
+
+        <!-- Desktop Table View (hidden on small screens) -->
+        <div class="hidden md:block overflow-x-auto">
             <table class="table-modern">
                 <thead>
                     <tr>
