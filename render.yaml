@@ -8,8 +8,13 @@ services:
     plan: free
     region: oregon
     
-    # Build configuration
-    buildCommand: pip install -r requirements.txt
+    # Build configuration - optimized for speed
+    # 1. Install CPU-only PyTorch (smaller, faster)
+    # 2. Use production requirements (no dev dependencies)
+    buildCommand: |
+      pip install --upgrade pip wheel
+      pip install torch --index-url https://download.pytorch.org/whl/cpu
+      pip install -r requirements-prod.txt
     startCommand: uvicorn app.web.server:app --host 0.0.0.0 --port $PORT
     
     # Python version

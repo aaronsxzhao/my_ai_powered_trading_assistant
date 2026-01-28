@@ -1,5 +1,8 @@
-# Brooks Trading Coach - Requirements
+# Brooks Trading Coach - Full Requirements (Local Development)
 # Python 3.11+
+#
+# For production deployment, use: requirements-prod.txt
+# (smaller, no dev dependencies, CPU-only PyTorch)
 
 # Core data processing
 pandas>=2.2.0
