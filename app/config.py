@@ -288,9 +288,41 @@ def get_openai_api_key() -> str | None:
 
 
 def get_database_url() -> str:
-    """Get database URL from environment or default."""
-    default_db = f"sqlite:///{DATA_DIR}/trades.db"
-    return os.getenv("DATABASE_URL", default_db)
+    """
+    Get database URL from environment or default.
+    
+    For Supabase, set DATABASE_URL to the PostgreSQL connection string.
+    For local development, defaults to SQLite.
+    """
+    db_url = os.getenv("DATABASE_URL", "")
+    
+    if db_url:
+        # Handle Heroku-style postgres:// URLs (Supabase uses postgresql://)
+        if db_url.startswith("postgres://"):
+            db_url = db_url.replace("postgres://", "postgresql://", 1)
+        return db_url
+    
+    # Default to SQLite for local development
+    return f"sqlite:///{DATA_DIR}/trades.db"
+
+
+def get_database_connect_args() -> dict:
+    """
+    Get database connection arguments based on database type.
+    
+    For PostgreSQL: SSL settings for Supabase
+    For SQLite: Check same thread setting
+    """
+    db_url = get_database_url()
+    
+    if db_url.startswith("postgresql"):
+        # For Supabase PostgreSQL, require SSL
+        return {"sslmode": "require"}
+    elif db_url.startswith("sqlite"):
+        # SQLite doesn't support check_same_thread in URL
+        return {"check_same_thread": False}
+    
+    return {}
 
 
 def get_polygon_api_key() -> str | None:

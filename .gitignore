@@ -71,3 +71,11 @@ _shell_write_test
 data/chroma_db/
 data/databento/
 data/llm_logs/
+
+# Supabase local config (if using Supabase CLI)
+supabase/.temp/
+supabase/.branches/
+supabase/.settings.json
+
+# Keep migration files
+!supabase/migrations/

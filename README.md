@@ -389,6 +389,100 @@ This system implements Al Brooks price action methodology:
 - Trades are scoped per user - you only see trades you created
 - If migrating from single-user mode, run the migration script
 
+## Deployment (Production)
+
+### Deploy to Render with Supabase
+
+This application supports deployment to Render (free tier) with Supabase as the backend.
+
+#### 1. Create Supabase Project
+
+1. Go to [supabase.com](https://supabase.com) and create a new project
+2. Note your project credentials from Settings > API:
+   - `SUPABASE_URL` (e.g., `https://xxxxx.supabase.co`)
+   - `SUPABASE_ANON_KEY` (public anon key)
+   - `SUPABASE_SERVICE_KEY` (service role key)
+3. Get the database connection string from Settings > Database > Connection string
+
+#### 2. Run Database Migrations
+
+In Supabase SQL Editor, run the migration files in order:
+
+```sql
+-- Run: supabase/migrations/001_initial_schema.sql
+-- Run: supabase/migrations/002_storage_policies.sql
+```
+
+#### 3. Create Storage Bucket
+
+In Supabase Dashboard > Storage:
+1. Create new bucket named `materials`
+2. Set to Private (RLS policies control access)
+
+#### 4. Configure Supabase Auth
+
+In Authentication > Providers:
+1. Enable Email/Password provider
+2. Configure email templates in Authentication > Email Templates
+3. Set Site URL to your Render domain (e.g., `https://your-app.onrender.com`)
+
+#### 5. Deploy to Render
+
+Option A: Use the Blueprint (recommended):
+```bash
+# Fork or push this repo to GitHub
+# In Render Dashboard, click "New" > "Blueprint"
+# Connect your GitHub repo
+# Render will use render.yaml to configure the service
+```
+
+Option B: Manual deployment:
+```bash
+# In Render Dashboard, click "New" > "Web Service"
+# Connect your GitHub repo
+# Configure:
+#   - Build Command: pip install -r requirements.txt
+#   - Start Command: uvicorn app.web.server:app --host 0.0.0.0 --port $PORT
+```
+
+#### 6. Set Environment Variables in Render
+
+In your Render service > Environment:
+
+```
+DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT].supabase.co:5432/postgres
+SUPABASE_URL=https://[PROJECT].supabase.co
+SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_KEY=your-service-role-key
+LLM_API_KEY=your-llm-api-key
+LLM_BASE_URL=https://your-llm-proxy.com/v1
+LLM_MODEL=claude-sonnet-4.5
+APP_URL=https://your-app.onrender.com
+```
+
+#### What Supabase Provides
+
+- **PostgreSQL Database** - All trades, strategies, settings stored securely
+- **Authentication** - Email/password auth with email verification
+- **Storage** - Per-user training materials (PDFs, text files)
+- **pgvector** - Vector embeddings for semantic search in training materials
+- **Row Level Security** - Each user only sees their own data
+
+### Local Development with Supabase
+
+You can also use Supabase during local development:
+
+```bash
+# Set environment variables
+export SUPABASE_URL=https://your-project.supabase.co
+export SUPABASE_ANON_KEY=your-anon-key
+export SUPABASE_SERVICE_KEY=your-service-key
+export DATABASE_URL=postgresql://...
+
+# Run locally
+python -m app.main web
+```
+
 ## Disclaimer
 
 This software is for educational and informational purposes only. It is not financial advice. Trading involves substantial risk of loss. Past performance is not indicative of future results. Always do your own research and consider your financial situation before trading.

@@ -1,0 +1,54 @@
+# Render Blueprint for Brooks Trading Coach
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: brooks-trading-coach
+    env: python
+    plan: free
+    region: oregon
+    
+    # Build configuration
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.web.server:app --host 0.0.0.0 --port $PORT
+    
+    # Python version
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+      
+      # Supabase Configuration (set in dashboard)
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      
+      # LLM Configuration (set in dashboard)
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_BASE_URL
+        sync: false
+      - key: LLM_MODEL
+        sync: false
+      
+      # Data Provider (optional)
+      - key: DATA_PROVIDER
+        value: yfinance
+      - key: POLYGON_API_KEY
+        sync: false
+      
+      # App settings
+      - key: LOG_LEVEL
+        value: INFO
+      - key: APP_URL
+        sync: false  # Set to your Render URL
+    
+    # Health check
+    healthCheckPath: /api/health
+    
+    # Auto-deploy on push to main branch
+    autoDeploy: true

@@ -1,19 +1,33 @@
 """
 Shared FastAPI dependencies for authentication/authorization.
 
-These are extracted from `app/web/server.py` to keep route modules focused.
+Supports both Supabase Auth (production) and local JWT auth (development).
 """
 
 from __future__ import annotations
+
+import logging
+from typing import Optional, Union
 
 from fastapi import Depends, HTTPException, Request, Security
 from fastapi.security import APIKeyHeader
 
 from app.config import get_app_api_key
 
+logger = logging.getLogger(__name__)
+
 
 # API Key authentication for sensitive endpoints
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+def _is_supabase_enabled() -> bool:
+    """Check if Supabase Auth is configured."""
+    try:
+        from app.db.supabase_client import is_supabase_configured
+        return is_supabase_configured()
+    except ImportError:
+        return False
 
 
 async def verify_api_key(api_key: str = Security(api_key_header)) -> bool:
@@ -54,6 +68,32 @@ async def verify_api_key(api_key: str = Security(api_key_header)) -> bool:
 require_auth = Depends(verify_api_key)
 
 
+async def get_current_user_unified(request: Request):
+    """
+    Get the current authenticated user using either Supabase or local auth.
+    
+    Returns a user object that has at minimum: id, email, name, is_verified
+    The id type varies: UUID string for Supabase, int for local.
+    """
+    if _is_supabase_enabled():
+        from app.auth.supabase_auth import get_current_user as supabase_get_user
+        return await supabase_get_user(request)
+    else:
+        from app.auth.service import get_current_user as local_get_user
+        return await local_get_user(request, None)
+
+
+async def get_current_user_optional_unified(request: Request):
+    """
+    Get the current user if authenticated (using either auth system).
+    Returns None if not authenticated.
+    """
+    try:
+        return await get_current_user_unified(request)
+    except HTTPException:
+        return None
+
+
 async def require_user_or_api_key(request: Request):
     """
     Dependency that requires either:
@@ -62,11 +102,9 @@ async def require_user_or_api_key(request: Request):
 
     Returns the authenticated user if logged in, or True if API key is valid.
     """
-    from app.auth.service import get_current_user_optional
-
     # First, try to get the logged-in user
     try:
-        user = await get_current_user_optional(request, None)
+        user = await get_current_user_optional_unified(request)
         if user:
             return user
     except Exception:
@@ -94,14 +132,25 @@ require_write_auth = Depends(require_user_or_api_key)
 async def get_user_from_request(request: Request):
     """
     Get the current logged-in user from a request (if any).
-    Returns None if using API key authentication.
+    Returns None if using API key authentication or not authenticated.
+    
+    The returned user has: id (str or int), email, name, is_verified
     """
-    from app.auth.service import get_current_user_optional
+    return await get_current_user_optional_unified(request)
 
-    try:
-        return await get_current_user_optional(request, None)
-    except Exception:
+
+def get_user_id(user) -> Optional[str]:
+    """
+    Extract user ID from user object in a consistent format.
+    
+    Handles both Supabase (UUID string) and local auth (int).
+    Returns string ID suitable for database queries.
+    """
+    if user is None:
         return None
+    if hasattr(user, 'id'):
+        return str(user.id)
+    return None
 
 
 async def verify_trade_ownership(trade_id: int, request: Request, session):
@@ -116,7 +165,11 @@ async def verify_trade_ownership(trade_id: int, request: Request, session):
 
     if user:
         # User is logged in - verify ownership
-        trade = session.query(Trade).filter(Trade.id == trade_id, Trade.user_id == user.id).first()
+        user_id_str = get_user_id(user)
+        trade = session.query(Trade).filter(
+            Trade.id == trade_id, 
+            Trade.user_id == user_id_str
+        ).first()
     else:
         # API key auth - allow access to any trade
         trade = session.query(Trade).filter(Trade.id == trade_id).first()
@@ -133,12 +186,15 @@ async def require_login(request: Request):
     Redirects to login page if not authenticated.
     Returns the authenticated user.
     """
-    from app.auth.service import get_current_user
-
     try:
-        user = await get_current_user(request, None)
+        user = await get_current_user_unified(request)
         return user
     except HTTPException:
         # Redirect to login with return URL
         login_url = f"/auth/login?next={request.url.path}"
         raise HTTPException(status_code=307, headers={"Location": login_url})
+
+
+# Convenience alias for routes
+get_current_user = get_current_user_unified
+get_current_user_optional = get_current_user_optional_unified

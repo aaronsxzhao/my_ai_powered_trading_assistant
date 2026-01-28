@@ -6,11 +6,15 @@ Models:
 - Strategy: Strategy taxonomy
 - DailySummary: Daily performance summaries
 - Tag: Trade tags for categorization
+
+Supports both SQLite (local development) and PostgreSQL (Supabase production).
+When using Supabase, user_id is a UUID string from Supabase Auth.
 """
 
 from datetime import datetime, timezone
 from typing import Optional
 import enum
+import os
 
 from sqlalchemy import (
     create_engine,
@@ -33,12 +37,23 @@ from sqlalchemy.orm import (
     Session,
 )
 
-from app.config import get_database_url
+from app.config import get_database_url, get_database_connect_args
 
 
 def utc_now():
     """Get current UTC time (timezone-aware replacement for deprecated utc_now())."""
     return datetime.now(timezone.utc)
+
+
+def is_using_postgresql() -> bool:
+    """Check if the database is PostgreSQL."""
+    db_url = get_database_url()
+    return db_url.startswith("postgresql") or db_url.startswith("postgres")
+
+
+def is_using_supabase() -> bool:
+    """Check if Supabase is configured."""
+    return bool(os.getenv("SUPABASE_URL", "").strip())
 
 
 Base = declarative_base()
@@ -69,7 +84,12 @@ trade_tags = Table(
 
 
 class User(Base):
-    """User account for authentication."""
+    """
+    User account for local authentication.
+    
+    Note: When using Supabase, authentication is handled by Supabase Auth
+    and this model is only used for backward compatibility with local development.
+    """
 
     __tablename__ = "users"
 
@@ -94,8 +114,8 @@ class User(Base):
     created_at = Column(DateTime, default=utc_now)
     last_login = Column(DateTime)
 
-    # Relationships
-    trades = relationship("Trade", back_populates="user")
+    # Note: Trade relationship is managed at application level
+    # to support both integer IDs (local) and UUID (Supabase)
 
     def __repr__(self):
         return f"<User(email='{self.email}', verified={self.is_verified})>"
@@ -143,9 +163,15 @@ class Trade(Base):
 
     id = Column(Integer, primary_key=True)
 
-    # User ownership (nullable for backward compatibility with existing trades)
-    user_id = Column(Integer, ForeignKey("users.id"), index=True)
-    user = relationship("User", back_populates="trades")
+    # User ownership - String to support both integer IDs (SQLite) and UUID (PostgreSQL/Supabase)
+    # When using Supabase, this stores the UUID from auth.users
+    # When using local SQLite, this stores the integer user ID as a string
+    # Nullable for backward compatibility with existing trades
+    user_id = Column(String(36), index=True)  # UUID is 36 chars
+    
+    # Note: User relationship is managed at the application level, not via SQLAlchemy
+    # This avoids complexity with different ID types (int vs UUID)
+    # Use get_user_by_id() or Supabase auth to get user details
 
     # Display order (chronological: oldest = 1)
     # Separate from id so trades display in time order regardless of when added
@@ -449,12 +475,17 @@ class Trade(Base):
 
 
 class DailySummary(Base):
-    """Daily performance summary."""
+    """Daily performance summary - per user."""
 
     __tablename__ = "daily_summaries"
 
     id = Column(Integer, primary_key=True)
-    summary_date = Column(Date, unique=True, nullable=False, index=True)
+    
+    # User ownership - summaries are per-user
+    user_id = Column(String(36), index=True)  # UUID for Supabase, int string for local
+    
+    summary_date = Column(Date, nullable=False, index=True)
+    # Note: Unique constraint is now (user_id, summary_date) - handled via index
 
     # Trade counts
     total_trades = Column(Integer, default=0)
@@ -505,17 +536,62 @@ def get_engine():
     global _engine
     if _engine is None:
         db_url = get_database_url()
-        _engine = create_engine(db_url, echo=False)
+        connect_args = get_database_connect_args()
+        
+        # For PostgreSQL, pool settings for serverless
+        if db_url.startswith("postgresql"):
+            _engine = create_engine(
+                db_url,
+                echo=False,
+                connect_args=connect_args,
+                pool_pre_ping=True,  # Check connection before use
+                pool_recycle=300,    # Recycle connections after 5 min
+            )
+        else:
+            # SQLite
+            _engine = create_engine(db_url, echo=False, connect_args=connect_args)
     return _engine
 
 
 def init_db() -> None:
-    """Initialize database and create tables."""
+    """
+    Initialize database and create tables.
+    
+    For Supabase (PostgreSQL): Tables are created via SQL migrations.
+    For local SQLite: Tables are created via SQLAlchemy and manual migrations.
+    """
+    global _engine
+    
+    # For Supabase, skip table creation (done via SQL migrations)
+    if is_using_supabase() and is_using_postgresql():
+        # Just verify connection works
+        try:
+            engine = get_engine()
+            from sqlalchemy import text
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            import logging
+            logging.getLogger(__name__).info("Connected to Supabase PostgreSQL")
+            return
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(
+                f"PostgreSQL connection failed: {e}\n"
+                "Falling back to SQLite for local development."
+            )
+            # Reset engine to use SQLite fallback
+            _engine = None
+            # Force SQLite by temporarily clearing DATABASE_URL
+            import os
+            os.environ["DATABASE_URL"] = ""
+    
     engine = get_engine()
+    
+    # For local SQLite, create tables
     Base.metadata.create_all(engine)
 
     # Add new columns to existing trades table if they don't exist
-    # This handles migrations for existing databases
+    # This handles migrations for existing SQLite databases
     from sqlalchemy import text
 
     with engine.connect() as conn:
