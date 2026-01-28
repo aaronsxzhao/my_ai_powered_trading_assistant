@@ -4,23 +4,13 @@
 services:
   - type: web
     name: brooks-trading-coach
-    env: python
+    runtime: docker
     plan: free
     region: oregon
+    dockerfilePath: ./Dockerfile
     
-    # Build configuration - optimized for speed
-    # 1. Install CPU-only PyTorch (smaller, faster)
-    # 2. Use production requirements (no dev dependencies)
-    buildCommand: |
-      pip install --upgrade pip wheel
-      pip install torch --index-url https://download.pytorch.org/whl/cpu
-      pip install -r requirements-prod.txt
-    startCommand: uvicorn app.web.server:app --host 0.0.0.0 --port $PORT
-    
-    # Python version
+    # Environment variables
     envVars:
-      - key: PYTHON_VERSION
-        value: "3.11"
       
       # Supabase Configuration (set in dashboard)
       - key: DATABASE_URL

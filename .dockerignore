@@ -1,0 +1,58 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.eggs
+*.egg-info
+.installed.cfg
+*.egg
+.mypy_cache
+.pytest_cache
+.ruff_cache
+
+# Virtual environments
+venv
+.venv
+env
+.env.local
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+.cursor
+
+# Build artifacts
+build
+dist
+*.manifest
+*.spec
+
+# Data files (will be in Supabase)
+data/*.db
+data/cache
+outputs/*
+imports/*.csv
+
+# Documentation
+docs
+*.md
+!README.md
+
+# Tests
+tests
+conftest.py
+
+# Large files
+materials/*.pdf
+
+# Misc
+.DS_Store
+*.log
