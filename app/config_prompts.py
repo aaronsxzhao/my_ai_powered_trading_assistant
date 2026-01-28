@@ -5,7 +5,6 @@ These can be modified via the web UI Settings page.
 """
 
 import yaml
-from pathlib import Path
 from typing import Optional
 import logging
 
@@ -72,7 +71,6 @@ Respond in JSON format:
     "grade_explanation": "brief explanation",
     "coaching_summary": "2-3 sentence Brooks-style coaching summary"
 }""",
-
     "market_context": """
 
 === RESPONSE FORMAT ===
@@ -126,16 +124,14 @@ DEFAULT_SETTINGS = {
     # Cache settings
     "cache": {
         "enable_review_cache": True,  # Whether to cache AI reviews
-        "auto_regenerate": False,     # Always regenerate reviews (ignore cache)
+        "auto_regenerate": False,  # Always regenerate reviews (ignore cache)
     },
-    
     # Candle counts for different timeframes
     "candles": {
-        "daily": 30,       # Number of daily candles to fetch
-        "hourly": 48,      # Number of hourly candles (2 days)
-        "5min": 78,        # Number of 5-min candles (1 trading day = 6.5 hours)
+        "daily": 30,  # Number of daily candles to fetch
+        "hourly": 48,  # Number of hourly candles (2 days)
+        "5min": 78,  # Number of 5-min candles (1 trading day = 6.5 hours)
     },
-    
     # System Prompts (AI persona and instructions)
     "system_prompts": {
         "trade_classification": """You are an expert Al Brooks price action analyst. Your job is to classify trades using the complete Brooks setup taxonomy.
@@ -207,7 +203,6 @@ Respond in JSON format:
     "reasoning": "Brief explanation using Brooks terminology",
     "missing_info": ["list of specific info that would help classify with more confidence, e.g. 'entry reason describing the setup', 'OHLCV context to determine trend', 'whether this was a first or second entry attempt'"]
 }""",
-
         "trade_analysis": """You are coaching as "Al Brooks style price action" (not literally Al Brooks, but quoting books when explaining).
 Your job is to evaluate a COMPLETED trade using Brooks-style principles:
 - Context is everything: market type (trend vs trading range) and location (near magnets, range edges, swing points).
@@ -314,7 +309,6 @@ Your job is to evaluate a COMPLETED trade using Brooks-style principles:
 **K. COACHING SUMMARY:** 2-3 sentences, no fluff.
 
 Use Brooks terminology (always-in, 2nd entry, breakout pullback, etc.). Always reference bars using trading-day numbering for intraday analysis.""",
-
         "market_context": """You are Al Brooks providing a comprehensive pre-market briefing using price action methodology.
 
 === PRE-MARKET REPORT STRUCTURE ===
@@ -348,9 +342,8 @@ Use Brooks terminology (always-in, 2nd entry, breakout pullback, etc.). Always r
 - Setups to avoid
 - Key price levels to watch
 - Plan A (primary expectation)
-- Plan B (if Plan A fails)"""
+- Plan B (if Plan A fails)""",
     },
-    
     # User Prompts (templates for trade data - use {variable} placeholders)
     "user_prompts": {
         "trade_classification": """=== TRADE CLASSIFICATION REQUEST ===
@@ -378,7 +371,6 @@ Classify this trade using the Brooks setup taxonomy. Identify:
 2. Whether this was a second entry attempt
 3. With-trend or countertrend
 4. Signal bar quality and entry location""",
-
         "trade_analysis": """Review this completed trade using ONLY the data below.
 
 TRADE DETAILS (completed):
@@ -453,7 +445,6 @@ INSTRUCTIONS:
 - No generic advice. Give at least 3 concrete "next time" filters in your reasoning, but output only ONE final rule in the JSON field.
 
 Now provide your Brooks-style analysis and coaching.""",
-
         "market_context": """=== PRE-MARKET BRIEFING REQUEST ===
 
 **TICKER:** {ticker}
@@ -472,8 +463,8 @@ Provide a comprehensive Brooks-style pre-market report:
 
 3. **INTRADAY (Last 3 days):** Recent day type, tight ranges, failed breakouts, climax behavior
 
-4. **TRADING PLAN:** Best setups, setups to avoid, key levels, Plan A, Plan B"""
-    }
+4. **TRADING PLAN:** Best setups, setups to avoid, key levels, Plan A, Plan B""",
+    },
 }
 
 
@@ -481,26 +472,26 @@ def load_settings() -> dict:
     """Load settings from file, or return defaults if not found."""
     if SETTINGS_FILE.exists():
         try:
-            with open(SETTINGS_FILE, 'r') as f:
+            with open(SETTINGS_FILE, "r") as f:
                 settings = yaml.safe_load(f) or {}
             # Merge with defaults to ensure all keys exist
             merged = DEFAULT_SETTINGS.copy()
-            merged['system_prompts'] = DEFAULT_SETTINGS['system_prompts'].copy()
-            merged['user_prompts'] = DEFAULT_SETTINGS['user_prompts'].copy()
-            
-            if 'candles' in settings:
-                merged['candles'].update(settings['candles'])
-            
+            merged["system_prompts"] = DEFAULT_SETTINGS["system_prompts"].copy()
+            merged["user_prompts"] = DEFAULT_SETTINGS["user_prompts"].copy()
+
+            if "candles" in settings:
+                merged["candles"].update(settings["candles"])
+
             # Handle both old 'prompts' key and new 'system_prompts' key
-            if 'system_prompts' in settings:
-                merged['system_prompts'].update(settings['system_prompts'])
-            elif 'prompts' in settings:
+            if "system_prompts" in settings:
+                merged["system_prompts"].update(settings["system_prompts"])
+            elif "prompts" in settings:
                 # Backward compatibility: old 'prompts' → 'system_prompts'
-                merged['system_prompts'].update(settings['prompts'])
-            
-            if 'user_prompts' in settings:
-                merged['user_prompts'].update(settings['user_prompts'])
-            
+                merged["system_prompts"].update(settings["prompts"])
+
+            if "user_prompts" in settings:
+                merged["user_prompts"].update(settings["user_prompts"])
+
             return merged
         except Exception as e:
             logger.error(f"Error loading settings: {e}")
@@ -511,7 +502,7 @@ def load_settings() -> dict:
 def save_settings(settings: dict) -> bool:
     """Save settings to file."""
     try:
-        with open(SETTINGS_FILE, 'w') as f:
+        with open(SETTINGS_FILE, "w") as f:
             yaml.dump(settings, f, default_flow_style=False, allow_unicode=True)
         logger.info(f"Settings saved to {SETTINGS_FILE}")
         return True
@@ -523,47 +514,52 @@ def save_settings(settings: dict) -> bool:
 def get_candle_count(timeframe: str) -> int:
     """Get the configured candle count for a timeframe."""
     settings = load_settings()
-    return settings.get('candles', {}).get(timeframe, DEFAULT_SETTINGS['candles'].get(timeframe, 30))
+    return settings.get("candles", {}).get(
+        timeframe, DEFAULT_SETTINGS["candles"].get(timeframe, 30)
+    )
 
 
 def get_materials_content() -> str:
     """Load training materials content for prompt enhancement."""
     from app.config import MATERIALS_DIR
-    
+
     content_parts = []
-    
+
     if not MATERIALS_DIR.exists():
         return ""
-    
+
     for f in sorted(MATERIALS_DIR.iterdir()):
-        if f.is_file() and not f.name.startswith('.'):
+        if f.is_file() and not f.name.startswith("."):
             try:
                 ext = f.suffix.lower()
-                
-                if ext == '.pdf':
+
+                if ext == ".pdf":
                     # Try to extract PDF text
                     try:
                         import fitz  # PyMuPDF
+
                         doc = fitz.open(str(f))
                         text = ""
                         for page in doc:
                             text += page.get_text()
                         doc.close()
                         if text.strip():
-                            content_parts.append(f"=== {f.name} ===\n{text[:8000]}")  # Limit per file
+                            content_parts.append(
+                                f"=== {f.name} ===\n{text[:8000]}"
+                            )  # Limit per file
                     except ImportError:
                         logger.warning(f"PyMuPDF not installed, skipping PDF: {f.name}")
                     except Exception as e:
                         logger.error(f"Error reading PDF {f.name}: {e}")
-                        
-                elif ext in {'.txt', '.md'}:
-                    text = f.read_text(encoding='utf-8', errors='ignore')
+
+                elif ext in {".txt", ".md"}:
+                    text = f.read_text(encoding="utf-8", errors="ignore")
                     if text.strip():
                         content_parts.append(f"=== {f.name} ===\n{text[:8000]}")
-                        
+
             except Exception as e:
                 logger.error(f"Error reading material {f.name}: {e}")
-    
+
     if content_parts:
         # Limit total materials to 20k chars
         full_content = "\n\n".join(content_parts)
@@ -573,16 +569,18 @@ def get_materials_content() -> str:
 
 def get_system_prompt(prompt_type: str, include_materials: bool = True) -> str:
     """Get a configured system prompt by type, optionally with training materials.
-    
+
     Automatically appends protected JSON schema if one exists for this prompt type.
     """
     settings = load_settings()
-    base_prompt = settings.get('system_prompts', {}).get(prompt_type, DEFAULT_SETTINGS['system_prompts'].get(prompt_type, ''))
-    
+    base_prompt = settings.get("system_prompts", {}).get(
+        prompt_type, DEFAULT_SETTINGS["system_prompts"].get(prompt_type, "")
+    )
+
     # Append protected JSON schema if exists (not user-editable)
-    json_schema = PROTECTED_JSON_SCHEMAS.get(prompt_type, '')
+    json_schema = PROTECTED_JSON_SCHEMAS.get(prompt_type, "")
     full_prompt = base_prompt + json_schema
-    
+
     if include_materials:
         materials = get_materials_content()
         if materials:
@@ -593,44 +591,48 @@ def get_system_prompt(prompt_type: str, include_materials: bool = True) -> str:
 === END TRAINING MATERIALS ===
 """
             return full_prompt + materials_section
-    
+
     return full_prompt
 
 
 def _strip_json_format(prompt: str) -> str:
     """Strip the JSON format section from a prompt if present.
-    
+
     This removes everything after "Respond in JSON format:" or "=== RESPONSE FORMAT ==="
     """
     import re
-    
+
     # Try to find and strip JSON format sections
     patterns = [
-        r'\n*=== RESPONSE FORMAT ===.*',  # New format
-        r'\n*Respond in JSON format:\s*\{.*',  # Old format with JSON
-        r'\n*Respond in JSON format:.*',  # Old format
+        r"\n*=== RESPONSE FORMAT ===.*",  # New format
+        r"\n*Respond in JSON format:\s*\{.*",  # Old format with JSON
+        r"\n*Respond in JSON format:.*",  # Old format
     ]
-    
+
     for pattern in patterns:
         match = re.search(pattern, prompt, re.DOTALL | re.IGNORECASE)
         if match:
-            return prompt[:match.start()].rstrip()
-    
+            return prompt[: match.start()].rstrip()
+
     return prompt
 
 
 def get_editable_prompt(prompt_type: str, is_user_prompt: bool = False) -> str:
     """Get only the editable part of a prompt (without protected JSON schema).
-    
+
     This is used by the settings UI to show only what users can safely edit.
     Automatically strips any JSON format section from saved prompts.
     """
     settings = load_settings()
     if is_user_prompt:
-        prompt = settings.get('user_prompts', {}).get(prompt_type, DEFAULT_SETTINGS['user_prompts'].get(prompt_type, ''))
+        prompt = settings.get("user_prompts", {}).get(
+            prompt_type, DEFAULT_SETTINGS["user_prompts"].get(prompt_type, "")
+        )
     else:
-        prompt = settings.get('system_prompts', {}).get(prompt_type, DEFAULT_SETTINGS['system_prompts'].get(prompt_type, ''))
-    
+        prompt = settings.get("system_prompts", {}).get(
+            prompt_type, DEFAULT_SETTINGS["system_prompts"].get(prompt_type, "")
+        )
+
     # Strip JSON format if present (migration from old saved settings)
     return _strip_json_format(prompt)
 
@@ -638,7 +640,9 @@ def get_editable_prompt(prompt_type: str, is_user_prompt: bool = False) -> str:
 def get_user_prompt(prompt_type: str) -> str:
     """Get a configured user prompt template by type."""
     settings = load_settings()
-    return settings.get('user_prompts', {}).get(prompt_type, DEFAULT_SETTINGS['user_prompts'].get(prompt_type, ''))
+    return settings.get("user_prompts", {}).get(
+        prompt_type, DEFAULT_SETTINGS["user_prompts"].get(prompt_type, "")
+    )
 
 
 # Backward compatibility alias
@@ -647,57 +651,65 @@ def get_prompt(prompt_type: str, include_materials: bool = True) -> str:
     return get_system_prompt(prompt_type, include_materials)
 
 
-def update_candles(daily: Optional[int] = None, hourly: Optional[int] = None, five_min: Optional[int] = None) -> bool:
+def update_candles(
+    daily: Optional[int] = None, hourly: Optional[int] = None, five_min: Optional[int] = None
+) -> bool:
     """Update candle count settings."""
     settings = load_settings()
     if daily is not None:
-        settings['candles']['daily'] = daily
+        settings["candles"]["daily"] = daily
     if hourly is not None:
-        settings['candles']['hourly'] = hourly
+        settings["candles"]["hourly"] = hourly
     if five_min is not None:
-        settings['candles']['5min'] = five_min
+        settings["candles"]["5min"] = five_min
     return save_settings(settings)
 
 
 def update_prompt(prompt_type: str, prompt_text: str, is_user_prompt: bool = False) -> bool:
     """Update a specific prompt (system or user).
-    
+
     Automatically strips any JSON format section to keep settings clean.
     The JSON schema is protected and will be appended automatically when used.
     """
     # Strip any JSON format the user might have pasted
     clean_prompt = _strip_json_format(prompt_text)
-    
+
     settings = load_settings()
     if is_user_prompt:
-        if 'user_prompts' not in settings:
-            settings['user_prompts'] = {}
-        settings['user_prompts'][prompt_type] = clean_prompt
+        if "user_prompts" not in settings:
+            settings["user_prompts"] = {}
+        settings["user_prompts"][prompt_type] = clean_prompt
     else:
-        if 'system_prompts' not in settings:
-            settings['system_prompts'] = {}
-        settings['system_prompts'][prompt_type] = clean_prompt
+        if "system_prompts" not in settings:
+            settings["system_prompts"] = {}
+        settings["system_prompts"][prompt_type] = clean_prompt
     return save_settings(settings)
 
 
 def get_cache_settings() -> dict:
     """Get cache settings."""
     settings = load_settings()
-    defaults = DEFAULT_SETTINGS.get('cache', {})
-    cache_settings = settings.get('cache', {})
+    defaults = DEFAULT_SETTINGS.get("cache", {})
+    cache_settings = settings.get("cache", {})
     return {
-        'enable_review_cache': cache_settings.get('enable_review_cache', defaults.get('enable_review_cache', True)),
-        'auto_regenerate': cache_settings.get('auto_regenerate', defaults.get('auto_regenerate', False)),
+        "enable_review_cache": cache_settings.get(
+            "enable_review_cache", defaults.get("enable_review_cache", True)
+        ),
+        "auto_regenerate": cache_settings.get(
+            "auto_regenerate", defaults.get("auto_regenerate", False)
+        ),
     }
 
 
-def update_cache_settings(enable_review_cache: Optional[bool] = None, auto_regenerate: Optional[bool] = None) -> bool:
+def update_cache_settings(
+    enable_review_cache: Optional[bool] = None, auto_regenerate: Optional[bool] = None
+) -> bool:
     """Update cache settings."""
     settings = load_settings()
-    if 'cache' not in settings:
-        settings['cache'] = {}
+    if "cache" not in settings:
+        settings["cache"] = {}
     if enable_review_cache is not None:
-        settings['cache']['enable_review_cache'] = enable_review_cache
+        settings["cache"]["enable_review_cache"] = enable_review_cache
     if auto_regenerate is not None:
-        settings['cache']['auto_regenerate'] = auto_regenerate
+        settings["cache"]["auto_regenerate"] = auto_regenerate
     return save_settings(settings)

@@ -17,13 +17,6 @@ import time
 import threading
 import warnings
 
-# Suppress SWIG deprecation warnings from databento's C++ bindings
-# These come from C++ SWIG wrappers and are harmless
-warnings.filterwarnings("ignore", message=".*Swig.*")
-warnings.filterwarnings("ignore", message=".*swig.*")
-warnings.filterwarnings("ignore", message=".*__module__ attribute.*")
-warnings.filterwarnings("ignore", category=DeprecationWarning, module="importlib.*")
-
 import pandas as pd
 import pytz
 
@@ -44,18 +37,18 @@ def get_databento_api_key() -> str | None:
 
 class RateLimiter:
     """Simple rate limiter with per-second limits."""
-    
+
     def __init__(self, calls_per_second: float = 0.5):
         """
         Initialize rate limiter.
-        
+
         Args:
             calls_per_second: Maximum calls per second (default 0.5 = 1 call per 2 seconds)
         """
         self.min_interval = 1.0 / calls_per_second
         self.last_call = 0.0
         self._lock = threading.Lock()
-    
+
     def wait(self):
         """Wait if necessary to respect rate limit."""
         with self._lock:
@@ -78,7 +71,7 @@ OHLCV_COLUMNS = ["datetime", "open", "high", "low", "close", "volume"]
 def normalize_ticker(ticker: str) -> tuple[str, str]:
     """
     Normalize ticker symbol and detect exchange.
-    
+
     Handles various formats:
     - "HKEX:0700" -> "0700.HK", 'HK'
     - "0700.HK" -> "0700.HK", 'HK'
@@ -87,84 +80,85 @@ def normalize_ticker(ticker: str) -> tuple[str, str]:
     - "SPY" -> "SPY", 'US'
     - "MES=F", "ES=F" -> "MES=F", 'FUTURES'
     - "CME_MINI:MES1!" -> "MES=F", 'FUTURES'
-    
+
     Returns:
         tuple of (normalized_ticker, exchange)
         exchange can be: 'US', 'HK', 'UK', 'JP', 'CN', 'FUTURES'
     """
     ticker = ticker.upper().strip()
-    
+
     # Detect futures by =F suffix (Yahoo Finance format)
-    if '=F' in ticker:
-        return ticker, 'FUTURES'
-    
+    if "=F" in ticker:
+        return ticker, "FUTURES"
+
     # Handle exchange prefix (e.g., "HKEX:0700", "AMEX:SPY", "CME_MINI:MES1!")
-    if ':' in ticker:
-        exchange_prefix, symbol = ticker.split(':', 1)
-        
+    if ":" in ticker:
+        exchange_prefix, symbol = ticker.split(":", 1)
+
         # CME Futures (from TradingView format like "CME_MINI:MES1!")
-        if exchange_prefix in ['CME', 'CME_MINI', 'CBOT', 'NYMEX', 'COMEX']:
+        if exchange_prefix in ["CME", "CME_MINI", "CBOT", "NYMEX", "COMEX"]:
             # Convert TradingView format to Yahoo Finance format
             # MES1! -> MES=F, ES1! -> ES=F, NQ1! -> NQ=F
-            base_symbol = symbol.rstrip('0123456789!').upper()
-            return f"{base_symbol}=F", 'FUTURES'
-        
+            base_symbol = symbol.rstrip("0123456789!").upper()
+            return f"{base_symbol}=F", "FUTURES"
+
         # Hong Kong Exchange
-        if exchange_prefix in ['HKEX', 'HKG', 'SEHK']:
+        if exchange_prefix in ["HKEX", "HKG", "SEHK"]:
             # HK tickers need .HK suffix for yfinance
             # Pad with leading zeros if needed (e.g., 700 -> 0700)
-            symbol = symbol.lstrip('0') or '0'  # Remove leading zeros first
+            symbol = symbol.lstrip("0") or "0"  # Remove leading zeros first
             symbol = symbol.zfill(4)  # Pad to 4 digits
-            return f"{symbol}.HK", 'HK'
-        
+            return f"{symbol}.HK", "HK"
+
         # China mainland exchanges
-        if exchange_prefix in ['SSE', 'SHA']:  # Shanghai
-            return f"{symbol}.SS", 'CN'
-        if exchange_prefix in ['SZSE', 'SHE']:  # Shenzhen
-            return f"{symbol}.SZ", 'CN'
-        
+        if exchange_prefix in ["SSE", "SHA"]:  # Shanghai
+            return f"{symbol}.SS", "CN"
+        if exchange_prefix in ["SZSE", "SHE"]:  # Shenzhen
+            return f"{symbol}.SZ", "CN"
+
         # US exchanges - just return the symbol
-        if exchange_prefix in ['AMEX', 'NYSE', 'NASDAQ', 'ARCA', 'BATS', 'OTC']:
-            return symbol, 'US'
-        
+        if exchange_prefix in ["AMEX", "NYSE", "NASDAQ", "ARCA", "BATS", "OTC"]:
+            return symbol, "US"
+
         # Unknown exchange prefix - try to handle as regular ticker
         ticker = symbol
-    
+
     # Already has exchange suffix
-    if '.HK' in ticker:
-        return ticker, 'HK'
-    if '.SS' in ticker:
-        return ticker, 'CN'
-    if '.SZ' in ticker:
-        return ticker, 'CN'
-    if '.L' in ticker:
-        return ticker, 'UK'
-    if '.T' in ticker:
-        return ticker, 'JP'
-    
+    if ".HK" in ticker:
+        return ticker, "HK"
+    if ".SS" in ticker:
+        return ticker, "CN"
+    if ".SZ" in ticker:
+        return ticker, "CN"
+    if ".L" in ticker:
+        return ticker, "UK"
+    if ".T" in ticker:
+        return ticker, "JP"
+
     # Detect HK stocks (numeric only, 1-5 digits)
     # HK stock codes range from 1 to 99999 (e.g., 5, 16, 700, 981, 9988)
     if ticker.isdigit() and 1 <= len(ticker) <= 5:
         ticker = ticker.zfill(4)  # Pad to 4 digits with leading zeros (e.g., 981 -> 0981)
-        return f"{ticker}.HK", 'HK'
-    
+        return f"{ticker}.HK", "HK"
+
     # Default to US
-    return ticker, 'US'
+    return ticker, "US"
 
 
 def is_international_ticker(ticker: str) -> bool:
     """Check if ticker is for an international (non-US) market.
-    
+
     Note: Futures are NOT considered international (they trade on CME in Chicago).
     """
     _, exchange = normalize_ticker(ticker)
-    return exchange in ['HK', 'CN', 'UK', 'JP']
+    return exchange in ["HK", "CN", "UK", "JP"]
 
 
 def is_futures_ticker(ticker: str) -> bool:
     """Check if ticker is for a futures contract."""
     _, exchange = normalize_ticker(ticker)
-    return exchange == 'FUTURES'
+    return exchange == "FUTURES"
+
 
 Timeframe = Literal["1d", "2h", "1h", "30m", "15m", "5m", "1m"]
 
@@ -244,7 +238,7 @@ class DataProvider(ABC):
 
 class YFinanceProvider(DataProvider):
     """Yahoo Finance data provider.
-    
+
     Strategy:
     1. First try direct Yahoo Finance API (faster, less rate-limited)
     2. Fall back to yfinance library if direct API fails
@@ -269,114 +263,116 @@ class YFinanceProvider(DataProvider):
     ) -> pd.DataFrame:
         """
         Fetch data using direct Yahoo Finance API.
-        
+
         This is faster and less prone to rate limiting than the yfinance library.
         """
         import requests
-        
+
         # Map our interval format to Yahoo Finance API format
         # Yahoo accepts: 1m, 2m, 5m, 15m, 30m, 60m, 90m, 1h, 1d, 5d, 1wk, 1mo, 3mo
         interval_map = {
-            '1m': '1m',
-            '5m': '5m',
-            '15m': '15m',
-            '30m': '30m',
-            '1h': '60m',
-            '2h': '60m',  # Yahoo doesn't have 2h, use 1h as closest
-            '1d': '1d',
+            "1m": "1m",
+            "5m": "5m",
+            "15m": "15m",
+            "30m": "30m",
+            "1h": "60m",
+            "2h": "60m",  # Yahoo doesn't have 2h, use 1h as closest
+            "1d": "1d",
         }
         yahoo_interval = interval_map.get(interval, interval)
-        
+
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/{normalized_ticker}"
-        
+
         # Calculate days for range parameter
         days_diff = (end - start).days + 1
-        
+
         # Yahoo Finance range options: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max
-        if yahoo_interval in ['1m', '2m', '5m', '15m', '30m']:
+        if yahoo_interval in ["1m", "2m", "5m", "15m", "30m"]:
             # Intraday data limited to recent days
-            range_param = '5d' if days_diff <= 5 else '1mo'
-        elif yahoo_interval in ['60m', '90m', '1h']:
-            range_param = '1mo' if days_diff <= 30 else '3mo'
+            range_param = "5d" if days_diff <= 5 else "1mo"
+        elif yahoo_interval in ["60m", "90m", "1h"]:
+            range_param = "1mo" if days_diff <= 30 else "3mo"
         else:
             # Daily data
             if days_diff <= 30:
-                range_param = '1mo'
+                range_param = "1mo"
             elif days_diff <= 90:
-                range_param = '3mo'
+                range_param = "3mo"
             elif days_diff <= 180:
-                range_param = '6mo'
+                range_param = "6mo"
             elif days_diff <= 365:
-                range_param = '1y'
+                range_param = "1y"
             else:
-                range_param = '2y'
-        
+                range_param = "2y"
+
         params = {
-            'interval': yahoo_interval,
-            'range': range_param,
+            "interval": yahoo_interval,
+            "range": range_param,
         }
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
         }
-        
+
         try:
             response = requests.get(url, params=params, headers=headers, timeout=15)
-            
+
             if response.status_code == 429:
                 logger.warning(f"Direct API rate limited for {normalized_ticker}")
                 return pd.DataFrame()
-            
+
             if response.status_code != 200:
                 logger.warning(f"Direct API error {response.status_code} for {normalized_ticker}")
                 return pd.DataFrame()
-            
+
             data = response.json()
-            result = data.get('chart', {}).get('result', [])
-            
+            result = data.get("chart", {}).get("result", [])
+
             if not result:
                 return pd.DataFrame()
-            
-            timestamps = result[0].get('timestamp', [])
-            quote = result[0].get('indicators', {}).get('quote', [{}])[0]
-            
+
+            timestamps = result[0].get("timestamp", [])
+            quote = result[0].get("indicators", {}).get("quote", [{}])[0]
+
             if not timestamps:
                 return pd.DataFrame()
-            
+
             # Build DataFrame
-            df = pd.DataFrame({
-                'datetime': pd.to_datetime(timestamps, unit='s'),
-                'open': quote.get('open', []),
-                'high': quote.get('high', []),
-                'low': quote.get('low', []),
-                'close': quote.get('close', []),
-                'volume': quote.get('volume', []),
-            })
-            
+            df = pd.DataFrame(
+                {
+                    "datetime": pd.to_datetime(timestamps, unit="s"),
+                    "open": quote.get("open", []),
+                    "high": quote.get("high", []),
+                    "low": quote.get("low", []),
+                    "close": quote.get("close", []),
+                    "volume": quote.get("volume", []),
+                }
+            )
+
             # Remove rows with None values
-            df = df.dropna(subset=['open', 'high', 'low', 'close'])
-            
+            df = df.dropna(subset=["open", "high", "low", "close"])
+
             if df.empty:
                 return df
-            
+
             # Log the data range we got from the API (timestamps are in UTC)
-            api_start = df['datetime'].min()
-            api_end = df['datetime'].max()
-            
+            api_start = df["datetime"].min()
+            api_end = df["datetime"].max()
+
             # Filter to requested date range
             # IMPORTANT: Yahoo API returns timestamps in UTC, so we must convert
             # start/end to UTC before comparing
             pre_filter_count = len(df)
             start_ts = pd.Timestamp(start)
             end_ts = pd.Timestamp(end)
-            
+
             # Convert timezone-aware timestamps to UTC, then make naive for comparison
             if start_ts.tzinfo is not None:
-                start_ts = start_ts.tz_convert('UTC').tz_localize(None)
+                start_ts = start_ts.tz_convert("UTC").tz_localize(None)
             if end_ts.tzinfo is not None:
-                end_ts = end_ts.tz_convert('UTC').tz_localize(None)
-            
-            df = df[(df['datetime'] >= start_ts) & (df['datetime'] <= end_ts)]
-            
+                end_ts = end_ts.tz_convert("UTC").tz_localize(None)
+
+            df = df[(df["datetime"] >= start_ts) & (df["datetime"] <= end_ts)]
+
             if df.empty and pre_filter_count > 0:
                 # The API returned data but it's outside the requested range
                 # This usually means the trade is older than the available data
@@ -385,9 +381,9 @@ class YFinanceProvider(DataProvider):
                     f"(API range: {api_start} to {api_end} UTC) but requested range "
                     f"({start_ts} to {end_ts} UTC) has no overlap"
                 )
-            
+
             return df
-            
+
         except Exception as e:
             logger.warning(f"Direct API exception for {normalized_ticker}: {e}")
             return pd.DataFrame()
@@ -404,19 +400,19 @@ class YFinanceProvider(DataProvider):
         Fetch data using yfinance library (fallback).
         """
         import yfinance as yf
-        
+
         # Map our interval format to yfinance format
         interval_map = {
-            '1m': '1m',
-            '5m': '5m',
-            '15m': '15m',
-            '30m': '30m',
-            '1h': '1h',
-            '2h': '1h',  # yfinance doesn't have 2h, use 1h as closest
-            '1d': '1d',
+            "1m": "1m",
+            "5m": "5m",
+            "15m": "15m",
+            "30m": "30m",
+            "1h": "1h",
+            "2h": "1h",  # yfinance doesn't have 2h, use 1h as closest
+            "1d": "1d",
         }
         yf_interval = interval_map.get(interval, interval)
-        
+
         try:
             ticker_obj = yf.Ticker(normalized_ticker)
             df = ticker_obj.history(
@@ -428,7 +424,7 @@ class YFinanceProvider(DataProvider):
 
             if df.empty:
                 # Try shorter date range for intraday
-                if yf_interval in ['1m', '5m', '15m', '30m', '1h']:
+                if yf_interval in ["1m", "5m", "15m", "30m", "1h"]:
                     df = ticker_obj.history(period="5d", interval=yf_interval, actions=False)
 
             if df.empty:
@@ -437,7 +433,7 @@ class YFinanceProvider(DataProvider):
             # Reset index to get datetime as column
             df = df.reset_index()
             df = df.rename(columns={"Date": "datetime", "Datetime": "datetime"})
-            
+
             logger.debug(f"yfinance library: got {len(df)} bars for {normalized_ticker}")
             return df
 
@@ -458,7 +454,7 @@ class YFinanceProvider(DataProvider):
         cancellation_check: callable = None,
     ) -> pd.DataFrame:
         """Fetch OHLCV data from Yahoo Finance.
-        
+
         Strategy:
         1. First try direct Yahoo Finance API (faster, less rate-limited)
         2. Fall back to yfinance library if direct API fails
@@ -468,8 +464,13 @@ class YFinanceProvider(DataProvider):
 
         # Map timeframe to interval
         interval_map = {
-            "1d": "1d", "2h": "2h", "1h": "1h",
-            "30m": "30m", "15m": "15m", "5m": "5m", "1m": "1m",
+            "1d": "1d",
+            "2h": "2h",
+            "1h": "1h",
+            "30m": "30m",
+            "15m": "15m",
+            "5m": "5m",
+            "1m": "1m",
         }
         interval = interval_map.get(timeframe, "1d")
 
@@ -480,7 +481,7 @@ class YFinanceProvider(DataProvider):
 
         # Rate limit before making request
         self.rate_limiter.wait()
-        
+
         # Check again after rate limit wait
         if cancellation_check and cancellation_check():
             logger.info(f"⏹️ Cancelled fetching {ticker}")
@@ -489,65 +490,71 @@ class YFinanceProvider(DataProvider):
         # Strategy 1: Try direct Yahoo Finance API first (faster, less rate-limited)
         logger.info(f"📡 Fetching {normalized_ticker} via direct Yahoo API...")
         df = self._fetch_via_direct_api(normalized_ticker, interval, start, end)
-        
+
         if not df.empty:
             logger.info(f"✅ Direct API: got {len(df)} bars for {normalized_ticker}")
             return self._normalize_dataframe(df)
-        
+
         # Strategy 2: Fall back to yfinance library
-        logger.info(f"⚠️ Direct API returned no data for {normalized_ticker}, trying yfinance library...")
-        
+        logger.info(
+            f"⚠️ Direct API returned no data for {normalized_ticker}, trying yfinance library..."
+        )
+
         for attempt in range(self.max_retries):
             if cancellation_check and cancellation_check():
                 logger.info(f"⏹️ Cancelled fetching {ticker}")
                 return pd.DataFrame(columns=OHLCV_COLUMNS)
-            
+
             df = self._fetch_via_yfinance_library(
                 normalized_ticker, interval, start, end, cancellation_check
             )
-            
+
             if not df.empty:
                 return self._normalize_dataframe(df)
-            
+
             # Wait before retry with exponential backoff
             if attempt < self.max_retries - 1:
-                delay = self.base_delay * (2 ** attempt)
-                logger.debug(f"Retry {attempt + 1}/{self.max_retries} for {ticker}, waiting {delay:.1f}s...")
-                
+                delay = self.base_delay * (2**attempt)
+                logger.debug(
+                    f"Retry {attempt + 1}/{self.max_retries} for {ticker}, waiting {delay:.1f}s..."
+                )
+
                 # Check cancellation during wait
                 for _ in range(int(delay)):
                     if cancellation_check and cancellation_check():
                         logger.info(f"⏹️ Cancelled during retry wait for {ticker}")
                         return pd.DataFrame(columns=OHLCV_COLUMNS)
                     time.sleep(1)
-                
+
                 # Rate limit before next attempt
                 self.rate_limiter.wait()
 
         # All retries exhausted
-        if exchange == 'HK':
+        if exchange == "HK":
             logger.warning(
                 f"Failed to fetch HK stock {ticker} from Yahoo Finance. "
                 f"TIP: Configure ALLTICK_TOKEN in .env for better HK stock data."
             )
         else:
-            logger.warning(f"Failed to fetch {ticker} from Yahoo Finance after {self.max_retries} retries")
-        
+            logger.warning(
+                f"Failed to fetch {ticker} from Yahoo Finance after {self.max_retries} retries"
+            )
+
         return pd.DataFrame(columns=OHLCV_COLUMNS)
 
 
 class PolygonRateLimiter:
     """Rate limiter for Polygon API to avoid 429 errors.
-    
+
     Polygon free tier: 5 requests/minute
     Polygon paid tiers: Higher limits
     """
-    
+
     def __init__(self, requests_per_minute: int = 5):
         self._lock = threading.Lock()
         self._last_request_time = 0
         self._min_interval = 60.0 / requests_per_minute  # seconds between requests
-    
+
     def wait(self):
         """Wait if necessary to respect rate limits."""
         with self._lock:
@@ -587,19 +594,19 @@ class PolygonProvider(DataProvider):
         cancellation_check: callable = None,
     ) -> pd.DataFrame:
         """Fetch OHLCV data from Polygon.io with rate limiting and retry."""
-        
+
         # Polygon only supports US stocks - fall back to yfinance for international
         if is_international_ticker(ticker):
             return YFinanceProvider().get_ohlcv(ticker, timeframe, start, end, cancellation_check)
-        
+
         # Normalize ticker (strip exchange prefix like "AMEX:SOXL" -> "SOXL")
         normalized_ticker, _ = normalize_ticker(ticker)
-        
+
         # Check for cancellation
         if cancellation_check and cancellation_check():
             logger.info(f"⏹️ Cancelled fetching {ticker}")
             return pd.DataFrame(columns=OHLCV_COLUMNS)
-        
+
         if not self.api_key:
             raise ValueError("POLYGON_API_KEY is required for Polygon provider")
 
@@ -623,25 +630,24 @@ class PolygonProvider(DataProvider):
         )
         params = {"apiKey": self.api_key, "adjusted": "true", "sort": "asc", "limit": 50000}
 
-        last_error = None
         for attempt in range(self.max_retries):
             try:
                 # Rate limit before making request
                 self.rate_limiter.wait()
-                
+
                 response = httpx.get(url, params=params, timeout=30)
-                
+
                 # Handle rate limiting (429)
                 if response.status_code == 429:
                     # Exponential backoff with jitter
-                    delay = self.base_delay * (2 ** attempt) + (time.time() % 1)
+                    delay = self.base_delay * (2**attempt) + (time.time() % 1)
                     logger.warning(
                         f"Polygon rate limit hit for {ticker}, "
                         f"waiting {delay:.1f}s (attempt {attempt + 1}/{self.max_retries})"
                     )
                     time.sleep(delay)
                     continue
-                
+
                 response.raise_for_status()
                 data = response.json()
 
@@ -665,22 +671,26 @@ class PolygonProvider(DataProvider):
                 return self._normalize_dataframe(df)
 
             except httpx.HTTPStatusError as e:
-                last_error = e
                 if e.response.status_code == 429:
-                    delay = self.base_delay * (2 ** attempt) + (time.time() % 1)
+                    delay = self.base_delay * (2**attempt) + (time.time() % 1)
                     logger.warning(f"Polygon 429 for {ticker}, retry in {delay:.1f}s")
                     time.sleep(delay)
                     continue
                 else:
                     logger.warning(f"Polygon error for {ticker}: {e}, falling back to YFinance")
-                    return YFinanceProvider().get_ohlcv(ticker, timeframe, start, end, cancellation_check)
+                    return YFinanceProvider().get_ohlcv(
+                        ticker, timeframe, start, end, cancellation_check
+                    )
             except Exception as e:
-                last_error = e
                 logger.warning(f"Polygon error for {ticker}: {e}, falling back to YFinance")
-                return YFinanceProvider().get_ohlcv(ticker, timeframe, start, end, cancellation_check)
-        
+                return YFinanceProvider().get_ohlcv(
+                    ticker, timeframe, start, end, cancellation_check
+                )
+
         # All retries exhausted - fall back to YFinance
-        logger.warning(f"Polygon failed for {ticker} after {self.max_retries} retries, falling back to YFinance")
+        logger.warning(
+            f"Polygon failed for {ticker} after {self.max_retries} retries, falling back to YFinance"
+        )
         return YFinanceProvider().get_ohlcv(ticker, timeframe, start, end, cancellation_check)
 
 
@@ -708,7 +718,7 @@ class AlpacaProvider(DataProvider):
         """Fetch OHLCV data from Alpaca Markets."""
         if cancellation_check and cancellation_check():
             return pd.DataFrame(columns=OHLCV_COLUMNS)
-            
+
         if not self.api_key:
             raise ValueError("ALPACA_API_KEY is required for Alpaca provider")
 
@@ -768,10 +778,10 @@ class AlpacaProvider(DataProvider):
 class AllTickProvider(DataProvider):
     """
     AllTick data provider for HK, US, and A-share stocks.
-    
+
     Uses AllTick API: https://alltick.co
     Best for Hong Kong stocks with real-time and historical K-line data.
-    
+
     API Reference: https://en.apis.alltick.co/rest-api/http-interface-api/get-single-product-k-line-query
     """
 
@@ -794,28 +804,28 @@ class AllTickProvider(DataProvider):
     def _normalize_ticker_for_alltick(self, ticker: str) -> tuple[str, bool]:
         """
         Normalize ticker to AllTick format.
-        
+
         AllTick uses:
         - HK stocks: 700.HK, 9988.HK (no leading zeros needed)
         - US stocks: AAPL, MSFT
         - A-shares: 600519.SH, 000001.SZ
-        
+
         Returns:
             tuple of (alltick_code, is_supported)
         """
         normalized, exchange = normalize_ticker(ticker)
-        
-        if exchange == 'HK':
+
+        if exchange == "HK":
             # AllTick HK format: remove leading zeros and add .HK
             # e.g., 0700.HK -> 700.HK
-            symbol = normalized.replace('.HK', '').lstrip('0') or '0'
+            symbol = normalized.replace(".HK", "").lstrip("0") or "0"
             return f"{symbol}.HK", True
-        elif exchange == 'US':
+        elif exchange == "US":
             return normalized, True
-        elif exchange == 'CN':
+        elif exchange == "CN":
             # A-shares: .SS -> .SH for AllTick
-            if '.SS' in normalized:
-                return normalized.replace('.SS', '.SH'), True
+            if ".SS" in normalized:
+                return normalized.replace(".SS", ".SH"), True
             return normalized, True
         else:
             return normalized, False
@@ -832,11 +842,11 @@ class AllTickProvider(DataProvider):
         import httpx
         import json
         from urllib.parse import quote
-        
+
         if not self.is_available:
             logger.warning("AllTick token not configured")
             return pd.DataFrame(columns=OHLCV_COLUMNS)
-        
+
         # Check for cancellation
         if cancellation_check and cancellation_check():
             logger.info(f"⏹️ Cancelled fetching {ticker}")
@@ -869,7 +879,7 @@ class AllTickProvider(DataProvider):
             query_num = min(hours_needed, 500)
         elif timeframe in ["5m", "15m", "30m"]:
             minutes_needed = int((end - start).total_seconds() / 60)
-            bars_per_minute = {"5m": 1/5, "15m": 1/15, "30m": 1/30}[timeframe]
+            bars_per_minute = {"5m": 1 / 5, "15m": 1 / 15, "30m": 1 / 30}[timeframe]
             query_num = min(int(minutes_needed * bars_per_minute) + 1, 500)
         else:
             query_num = 500
@@ -882,13 +892,13 @@ class AllTickProvider(DataProvider):
                 "kline_type": kline_type,
                 "kline_timestamp_end": 0,  # Get from latest
                 "query_kline_num": query_num,
-                "adjust_type": 0  # Ex-rights adjustment
-            }
+                "adjust_type": 0,  # Ex-rights adjustment
+            },
         }
 
         query_json = json.dumps(query_payload)
         encoded_query = quote(query_json)
-        
+
         url = f"{self.base_url}/kline?token={self.token}&query={encoded_query}"
 
         for attempt in range(self.max_retries):
@@ -896,15 +906,15 @@ class AllTickProvider(DataProvider):
             if cancellation_check and cancellation_check():
                 logger.info(f"⏹️ Cancelled fetching {ticker}")
                 return pd.DataFrame(columns=OHLCV_COLUMNS)
-            
+
             try:
                 self.rate_limiter.wait()
-                
+
                 # Check again after rate limit wait
                 if cancellation_check and cancellation_check():
                     logger.info(f"⏹️ Cancelled fetching {ticker}")
                     return pd.DataFrame(columns=OHLCV_COLUMNS)
-                
+
                 response = httpx.get(url, timeout=30)
                 response.raise_for_status()
                 data = response.json()
@@ -913,11 +923,13 @@ class AllTickProvider(DataProvider):
                 ret_code = data.get("ret", data.get("code", -1))
                 if ret_code != 0:
                     error_msg = data.get("msg", "Unknown error")
-                    logger.warning(f"AllTick API error for {alltick_code}: ret={ret_code}, msg={error_msg}")
+                    logger.warning(
+                        f"AllTick API error for {alltick_code}: ret={ret_code}, msg={error_msg}"
+                    )
                     return pd.DataFrame(columns=OHLCV_COLUMNS)
 
                 kline_list = data.get("data", {}).get("kline_list", [])
-                
+
                 if not kline_list:
                     logger.warning(f"No K-line data returned for {alltick_code}")
                     return pd.DataFrame(columns=OHLCV_COLUMNS)
@@ -931,15 +943,17 @@ class AllTickProvider(DataProvider):
                         ts = k.get("timestamp", 0)
                         if isinstance(ts, str):
                             ts = int(ts) if ts else 0
-                        
-                        records.append({
-                            "datetime": pd.to_datetime(ts, unit="s"),
-                            "open": float(k.get("open_price", 0)),
-                            "high": float(k.get("high_price", 0)),
-                            "low": float(k.get("low_price", 0)),
-                            "close": float(k.get("close_price", 0)),
-                            "volume": int(float(k.get("volume", 0))),  # volume is string
-                        })
+
+                        records.append(
+                            {
+                                "datetime": pd.to_datetime(ts, unit="s"),
+                                "open": float(k.get("open_price", 0)),
+                                "high": float(k.get("high_price", 0)),
+                                "low": float(k.get("low_price", 0)),
+                                "close": float(k.get("close_price", 0)),
+                                "volume": int(float(k.get("volume", 0))),  # volume is string
+                            }
+                        )
                     except (ValueError, TypeError) as e:
                         logger.debug(f"Skipping invalid kline data: {e}")
                         continue
@@ -947,24 +961,24 @@ class AllTickProvider(DataProvider):
                 if not records:
                     logger.warning(f"No valid kline records parsed for {alltick_code}")
                     return pd.DataFrame(columns=OHLCV_COLUMNS)
-                
+
                 df = pd.DataFrame(records)
 
                 # Filter to requested date range
                 df = df[(df["datetime"] >= start) & (df["datetime"] <= end)]
 
                 logger.debug(f"📈 AllTick: Fetched {len(df)} {timeframe} bars for {alltick_code}")
-                
+
                 return self._normalize_dataframe(df)
 
             except httpx.HTTPStatusError as e:
-                logger.warning(f"AllTick HTTP error (attempt {attempt+1}): {e}")
+                logger.warning(f"AllTick HTTP error (attempt {attempt + 1}): {e}")
                 if attempt < self.max_retries - 1:
-                    time.sleep(2 ** attempt)
+                    time.sleep(2**attempt)
             except Exception as e:
                 logger.error(f"AllTick error for {alltick_code}: {e}")
                 if attempt < self.max_retries - 1:
-                    time.sleep(2 ** attempt)
+                    time.sleep(2**attempt)
 
         return pd.DataFrame(columns=OHLCV_COLUMNS)
 
@@ -972,16 +986,16 @@ class AllTickProvider(DataProvider):
 class DatabentoProvider(DataProvider):
     """
     Databento data provider for futures (ES, MES, NQ, etc.).
-    
+
     Uses Databento API: https://databento.com
     Best for CME futures with professional-grade data quality.
     Pay-as-you-go pricing starting at < $0.01 per query.
-    
+
     Data Loading Priority:
     1. Local DBN files in data/databento/ (fastest, no API calls)
     2. Databento API (if API key configured)
     3. YFinance fallback (if all else fails)
-    
+
     API Reference: https://databento.com/docs
     """
 
@@ -1019,7 +1033,7 @@ class DatabentoProvider(DataProvider):
         # Euro FX
         "6E=F": ("GLBX.MDP3", "6E"),
     }
-    
+
     # Map timeframe to Databento schema names
     SCHEMA_MAP = {
         "1m": "ohlcv-1m",
@@ -1037,9 +1051,10 @@ class DatabentoProvider(DataProvider):
         self.rate_limiter = RateLimiter(calls_per_second=1.0)  # Conservative rate limit
         self.max_retries = 3
         self._client = None
-        
+
         # Local DBN file directory
         import pathlib
+
         self.data_dir = pathlib.Path(__file__).parent.parent.parent / "data" / "databento"
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1051,7 +1066,7 @@ class DatabentoProvider(DataProvider):
     def is_available(self) -> bool:
         """Check if Databento is available (local files OR API key)."""
         return self.api_key is not None or self._has_local_data()
-    
+
     def _has_local_data(self) -> bool:
         """Check if we have any local DBN files."""
         if not self.data_dir.exists():
@@ -1064,56 +1079,51 @@ class DatabentoProvider(DataProvider):
             try:
                 # Suppress SWIG warnings right before import
                 import warnings
+
                 warnings.filterwarnings("ignore", category=DeprecationWarning)
                 import databento as db
+
                 self._client = db.Historical(key=self.api_key)
             except ImportError:
-                logger.error(
-                    "databento package not installed. "
-                    "Install with: pip install databento"
-                )
+                logger.error("databento package not installed. Install with: pip install databento")
                 return None
         return self._client
 
     def _get_front_month_symbol(self, base_symbol: str) -> str:
         """
         Get the front-month continuous contract symbol for Databento.
-        
+
         Databento uses patterns like "ES.c.0" for front month.
         """
         # Use continuous contract notation
         return f"{base_symbol}.c.0"
-    
+
     def _find_local_dbn_files(
-        self, 
-        base_symbol: str, 
-        schema: str, 
-        start: datetime, 
-        end: datetime
+        self, base_symbol: str, schema: str, start: datetime, end: datetime
     ) -> list:
         """
         Find local DBN files that cover the requested date range.
-        
+
         Supports two file naming conventions:
         1. Custom format: {SYMBOL}_{SCHEMA}_{START}_{END}.dbn.zst
            Example: MES_ohlcv-1d_2025-01-01_2025-12-31.dbn.zst
-        
+
         2. Databento download format (daily split): glbx-mdp3-{YYYYMMDD}.{schema}.dbn.zst
            Located in subfolders: GLBX-{date}-{id}/
            Example: GLBX-20260122-ABC123/glbx-mdp3-20250121.ohlcv-1m.dbn.zst
         """
         matching_files = []
-        
+
         # Convert date range to date objects for comparison
-        start_date = start.date() if hasattr(start, 'date') else start
-        end_date = end.date() if hasattr(end, 'date') else end
-        
+        start_date = start.date() if hasattr(start, "date") else start
+        end_date = end.date() if hasattr(end, "date") else end
+
         # ===== Format 1: Custom format (symbol_schema_start_end.dbn.zst) =====
         patterns = [
             f"{base_symbol}_{schema}_*.dbn.zst",
             f"{base_symbol}_{schema}_*.dbn",
         ]
-        
+
         for pattern in patterns:
             for file_path in self.data_dir.glob(pattern):
                 try:
@@ -1122,22 +1132,24 @@ class DatabentoProvider(DataProvider):
                     if len(parts) >= 4:
                         file_start = datetime.strptime(parts[-2], "%Y-%m-%d")
                         file_end = datetime.strptime(parts[-1], "%Y-%m-%d")
-                        
+
                         if file_start.date() <= end_date and file_end.date() >= start_date:
-                            matching_files.append({
-                                "path": file_path,
-                                "start": file_start,
-                                "end": file_end,
-                            })
+                            matching_files.append(
+                                {
+                                    "path": file_path,
+                                    "start": file_start,
+                                    "end": file_end,
+                                }
+                            )
                 except (ValueError, IndexError) as e:
                     logger.debug(f"Could not parse filename {file_path}: {e}")
                     continue
-        
+
         # ===== Format 2: Databento download format (daily split in subfolders) =====
         # Pattern: GLBX-*/glbx-mdp3-{YYYYMMDD}.{schema}.dbn.zst
         # Note: These files contain data for ALL symbols in the dataset
         daily_pattern = f"*/glbx-mdp3-*.{schema}.dbn.zst"
-        
+
         for file_path in self.data_dir.glob(daily_pattern):
             try:
                 # Parse date from filename: glbx-mdp3-20250121.ohlcv-1m.dbn.zst
@@ -1145,21 +1157,23 @@ class DatabentoProvider(DataProvider):
                 # Extract date part
                 date_part = name.split(".")[0].split("-")[-1]  # Get '20250121'
                 file_date = datetime.strptime(date_part, "%Y%m%d").date()
-                
+
                 # Check if this file's date is within requested range
                 if start_date <= file_date <= end_date:
-                    matching_files.append({
-                        "path": file_path,
-                        "start": datetime.combine(file_date, datetime.min.time()),
-                        "end": datetime.combine(file_date, datetime.max.time()),
-                    })
+                    matching_files.append(
+                        {
+                            "path": file_path,
+                            "start": datetime.combine(file_date, datetime.min.time()),
+                            "end": datetime.combine(file_date, datetime.max.time()),
+                        }
+                    )
             except (ValueError, IndexError) as e:
                 logger.debug(f"Could not parse filename {file_path}: {e}")
                 continue
-        
+
         # Sort by start date and remove duplicates
         matching_files.sort(key=lambda x: x["start"])
-        
+
         # Remove duplicate files (same date from different folders)
         seen_dates = set()
         unique_files = []
@@ -1168,18 +1182,18 @@ class DatabentoProvider(DataProvider):
             if date_key not in seen_dates:
                 seen_dates.add(date_key)
                 unique_files.append(f)
-        
+
         return unique_files
-    
+
     def get_available_dates(self, schema: str) -> set:
         """
         Get set of dates that have local data for a given schema.
-        
+
         Returns:
             Set of datetime.date objects for which we have local data
         """
         available_dates = set()
-        
+
         # Check custom format files
         for file_path in self.data_dir.glob(f"*_{schema}_*.dbn.zst"):
             try:
@@ -1195,7 +1209,7 @@ class DatabentoProvider(DataProvider):
                         current += timedelta(days=1)
             except (ValueError, IndexError):
                 continue
-        
+
         # Check Databento daily format files
         for file_path in self.data_dir.glob(f"*/glbx-mdp3-*.{schema}.dbn.zst"):
             try:
@@ -1205,9 +1219,9 @@ class DatabentoProvider(DataProvider):
                 available_dates.add(file_date)
             except (ValueError, IndexError):
                 continue
-        
+
         return available_dates
-    
+
     def _load_from_local_dbn(
         self,
         base_symbol: str,
@@ -1219,7 +1233,7 @@ class DatabentoProvider(DataProvider):
     ) -> pd.DataFrame:
         """
         Load data from local DBN files.
-        
+
         Args:
             base_symbol: Base symbol (e.g., 'MES')
             schema: Data schema (e.g., 'ohlcv-1m')
@@ -1229,133 +1243,140 @@ class DatabentoProvider(DataProvider):
                          (useful when multiple contracts exist at different price levels)
             trade_date: Optional trade date to use for contract price comparison
                        (more accurate than using highest volume day)
-        
+
         Returns:
             DataFrame with OHLCV data, or empty DataFrame if no data found
         """
         # Suppress SWIG warnings before import
-        import warnings
         warnings.filterwarnings("ignore", category=DeprecationWarning)
         import databento as db
-        
+
         matching_files = self._find_local_dbn_files(base_symbol, schema, start, end)
-        
+
         if not matching_files:
             return pd.DataFrame()
-        
+
         all_dfs = []
-        
+
         for file_info in matching_files:
             try:
                 logger.info(f"📂 Loading local DBN: {file_info['path'].name}")
-                
+
                 # Read DBN file
                 data = db.DBNStore.from_file(str(file_info["path"]))
                 df = data.to_df()
-                
+
                 if not df.empty:
                     all_dfs.append(df)
-                    
+
             except Exception as e:
                 logger.warning(f"Error reading {file_info['path']}: {e}")
                 continue
-        
+
         if not all_dfs:
             return pd.DataFrame()
-        
+
         # Combine all dataframes
         combined = pd.concat(all_dfs, ignore_index=False)
-        
+
         # Filter to single contract (DBN files contain all contracts)
         # We filter out spreads and select appropriate contract
-        if 'symbol' in combined.columns:
+        if "symbol" in combined.columns:
             # Filter out spreads (symbols with '-' like MESZ5-MESH6)
-            combined = combined[~combined['symbol'].str.contains('-', na=False)]
-            
-            if not combined.empty and len(combined['symbol'].unique()) > 1:
-                unique_symbols = combined['symbol'].unique()
+            combined = combined[~combined["symbol"].str.contains("-", na=False)]
+
+            if not combined.empty and len(combined["symbol"].unique()) > 1:
+                unique_symbols = combined["symbol"].unique()
                 selected_contract = None
-                
+
                 # If target price provided, select contract with closest price
                 # Use trade_date if provided (most accurate), else fall back to heuristics
                 if target_price is not None:
                     best_match = None
-                    best_diff = float('inf')
-                    
+                    best_diff = float("inf")
+
                     # Determine reference date for price comparison
                     if trade_date is not None:
                         # Use the specific trade date (most accurate)
                         reference_date = trade_date
                     else:
                         # Fallback: find the date with most trading volume
-                        volume_by_date = combined.groupby(combined.index.date)['volume'].sum()
+                        volume_by_date = combined.groupby(combined.index.date)["volume"].sum()
                         if not volume_by_date.empty:
                             reference_date = volume_by_date.idxmax()
                         else:
                             all_dates = sorted(set(combined.index.date))
                             reference_date = all_dates[len(all_dates) // 2] if all_dates else None
-                    
+
                     if reference_date:
                         reference_day_data = combined[combined.index.date == reference_date]
                     else:
                         reference_day_data = combined
-                    
+
                     if reference_day_data.empty:
                         reference_day_data = combined  # Fallback to all data
-                    
-                    logger.debug(f"Using {reference_date} for contract selection (target={target_price})")
-                    
+
+                    logger.debug(
+                        f"Using {reference_date} for contract selection (target={target_price})"
+                    )
+
                     for symbol in unique_symbols:
-                        sym_data = reference_day_data[reference_day_data['symbol'] == symbol]
+                        sym_data = reference_day_data[reference_day_data["symbol"] == symbol]
                         if sym_data.empty:
                             # If no data on reference day for this symbol, use all data
-                            sym_data = combined[combined['symbol'] == symbol]
-                        
-                        avg_price = sym_data['close'].mean()
+                            sym_data = combined[combined["symbol"] == symbol]
+
+                        avg_price = sym_data["close"].mean()
                         diff = abs(avg_price - target_price)
-                        
-                        logger.debug(f"Contract {symbol}: avg_price={avg_price:.2f}, diff from target={diff:.2f}")
-                        
+
+                        logger.debug(
+                            f"Contract {symbol}: avg_price={avg_price:.2f}, diff from target={diff:.2f}"
+                        )
+
                         if diff < best_diff:
                             best_diff = diff
                             best_match = symbol
-                    
+
                     if best_match and best_diff < target_price * 0.05:  # Within 5%
                         selected_contract = best_match
-                        logger.info(f"Selected contract {selected_contract} (closest to target price {target_price} on {reference_date}, diff={best_diff:.2f})")
-                
+                        logger.info(
+                            f"Selected contract {selected_contract} (closest to target price {target_price} on {reference_date}, diff={best_diff:.2f})"
+                        )
+
                 # Fallback: select by highest volume
                 if selected_contract is None:
-                    symbol_volumes = combined.groupby('symbol')['volume'].sum()
+                    symbol_volumes = combined.groupby("symbol")["volume"].sum()
                     if not symbol_volumes.empty:
                         selected_contract = symbol_volumes.idxmax()
                         logger.info(f"Selected contract {selected_contract} (highest volume)")
-                
+
                 if selected_contract:
                     original_count = len(combined)
-                    combined = combined[combined['symbol'] == selected_contract]
-                    logger.debug(f"Filtered to {selected_contract}: {original_count} -> {len(combined)} bars")
-        
+                    combined = combined[combined["symbol"] == selected_contract]
+                    logger.debug(
+                        f"Filtered to {selected_contract}: {original_count} -> {len(combined)} bars"
+                    )
+
         # Remove duplicates
-        combined = combined[~combined.index.duplicated(keep='first')]
-        
+        combined = combined[~combined.index.duplicated(keep="first")]
+
         # Sort by datetime
         combined = combined.sort_index()
-        
+
         # Filter to requested date range
         # Handle timezone conversion carefully
         start_ts = pd.Timestamp(start)
         end_ts = pd.Timestamp(end)
-        
-        index_tz = getattr(combined.index, 'tz', None)
-        
+
+        index_tz = getattr(combined.index, "tz", None)
+
         if index_tz is not None:
             # Index is timezone-aware, make start/end match
             if start_ts.tz is None:
                 start_ts = start_ts.tz_localize(index_tz)
             else:
                 start_ts = start_ts.tz_convert(index_tz)
-            
+
             if end_ts.tz is None:
                 end_ts = end_ts.tz_localize(index_tz)
             else:
@@ -1364,31 +1385,26 @@ class DatabentoProvider(DataProvider):
             # Index is timezone-naive, make start/end naive too
             if start_ts.tz is not None:
                 # Convert to UTC then remove timezone info using replace
-                start_ts = start_ts.tz_convert('UTC').replace(tzinfo=None)
+                start_ts = start_ts.tz_convert("UTC").replace(tzinfo=None)
             if end_ts.tz is not None:
-                end_ts = end_ts.tz_convert('UTC').replace(tzinfo=None)
-        
+                end_ts = end_ts.tz_convert("UTC").replace(tzinfo=None)
+
         combined = combined[(combined.index >= start_ts) & (combined.index <= end_ts)]
-        
+
         if not combined.empty:
             logger.info(f"✅ Loaded {len(combined)} bars from local DBN files")
-        
+
         return combined
-    
-    def _process_databento_df(
-        self, 
-        df: pd.DataFrame, 
-        timeframe: str, 
-        schema: str
-    ) -> pd.DataFrame:
+
+    def _process_databento_df(self, df: pd.DataFrame, timeframe: str, schema: str) -> pd.DataFrame:
         """
         Process a Databento DataFrame into standard OHLCV format.
-        
+
         Handles column renaming and resampling as needed.
         """
         if df.empty:
             return df
-        
+
         # Reset index if needed (DBN files have datetime as index)
         if isinstance(df.index, pd.DatetimeIndex):
             df = df.reset_index()
@@ -1397,53 +1413,65 @@ class DatabentoProvider(DataProvider):
                 df = df.rename(columns={"ts_event": "datetime"})
             elif df.columns[0] not in ["datetime", "open", "high", "low", "close", "volume"]:
                 df = df.rename(columns={df.columns[0]: "datetime"})
-        
+
         # Rename Databento columns to standard format
         column_map = {
             "ts_event": "datetime",
             "ts_recv": "datetime",
         }
         df = df.rename(columns=column_map)
-        
+
         # If datetime column doesn't exist, try first column
         if "datetime" not in df.columns and len(df.columns) > 0:
             if df.columns[0] not in ["open", "high", "low", "close", "volume"]:
                 df = df.rename(columns={df.columns[0]: "datetime"})
-        
+
         # Ensure we have required columns
         required_cols = ["datetime", "open", "high", "low", "close", "volume"]
         available_cols = [c for c in required_cols if c in df.columns]
-        
+
         if len(available_cols) < 6:
             logger.warning(f"Databento data missing columns. Have: {list(df.columns)}")
             return pd.DataFrame()
-        
+
         df = df[available_cols].copy()
-        
+
         # Resample if needed (e.g., 5m from 1m data)
         if timeframe in ["5m", "15m", "30m"] and schema == "ohlcv-1m":
             df = df.set_index("datetime")
             resample_map = {"5m": "5min", "15m": "15min", "30m": "30min"}
-            df = df.resample(resample_map[timeframe]).agg({
-                "open": "first",
-                "high": "max",
-                "low": "min",
-                "close": "last",
-                "volume": "sum",
-            }).dropna()
+            df = (
+                df.resample(resample_map[timeframe])
+                .agg(
+                    {
+                        "open": "first",
+                        "high": "max",
+                        "low": "min",
+                        "close": "last",
+                        "volume": "sum",
+                    }
+                )
+                .dropna()
+            )
             df = df.reset_index()
-        
+
         if timeframe == "2h" and schema == "ohlcv-1h":
             df = df.set_index("datetime")
-            df = df.resample("2h").agg({
-                "open": "first",
-                "high": "max",
-                "low": "min",
-                "close": "last",
-                "volume": "sum",
-            }).dropna()
+            df = (
+                df.resample("2h")
+                .agg(
+                    {
+                        "open": "first",
+                        "high": "max",
+                        "low": "min",
+                        "close": "last",
+                        "volume": "sum",
+                    }
+                )
+                .dropna()
+            )
             df = df.reset_index()
-        
+
         return df
 
     def get_ohlcv(
@@ -1458,14 +1486,14 @@ class DatabentoProvider(DataProvider):
     ) -> pd.DataFrame:
         """
         Fetch OHLCV data from Databento.
-        
+
         Loading priority:
         1. Local DBN files (fastest, no API calls needed)
         2. Databento API (if API key configured)
         3. YFinance fallback (if all else fails)
-        
+
         Args:
-            target_price: Optional price to help select correct contract 
+            target_price: Optional price to help select correct contract
                          (e.g., entry price to distinguish between different contract months)
             trade_date: Optional trade date to use for contract price comparison
         """
@@ -1476,7 +1504,7 @@ class DatabentoProvider(DataProvider):
 
         # Normalize ticker to get the Yahoo format
         normalized_ticker, exchange = normalize_ticker(ticker)
-        
+
         # Check if this is a supported futures contract
         if normalized_ticker not in self.FUTURES_MAP:
             logger.warning(
@@ -1488,16 +1516,18 @@ class DatabentoProvider(DataProvider):
 
         # Get the schema for this timeframe
         schema = self.SCHEMA_MAP.get(timeframe, "ohlcv-1d")
-        
+
         # ===== PRIORITY 1: Try local DBN files first =====
-        local_df = self._load_from_local_dbn(base_symbol, schema, start, end, target_price=target_price, trade_date=trade_date)
-        
+        local_df = self._load_from_local_dbn(
+            base_symbol, schema, start, end, target_price=target_price, trade_date=trade_date
+        )
+
         if not local_df.empty:
             # Process and return local data
             df = self._process_databento_df(local_df, timeframe, schema)
             if not df.empty:
                 return self._normalize_dataframe(df)
-        
+
         # ===== PRIORITY 2: Try Databento API =====
         if not self.api_key:
             logger.warning(
@@ -1516,18 +1546,18 @@ class DatabentoProvider(DataProvider):
             if cancellation_check and cancellation_check():
                 logger.info(f"⏹️ Cancelled fetching {ticker}")
                 return pd.DataFrame(columns=OHLCV_COLUMNS)
-            
+
             try:
                 self.rate_limiter.wait()
-                
+
                 if cancellation_check and cancellation_check():
                     logger.info(f"⏹️ Cancelled fetching {ticker}")
                     return pd.DataFrame(columns=OHLCV_COLUMNS)
-                
+
                 # Use [ROOT].FUT format for futures parent symbol
                 parent_symbol = f"{base_symbol}.FUT"
                 logger.info(f"📡 Fetching {parent_symbol} from Databento ({schema})...")
-                
+
                 # Fetch data using Databento API
                 # Use stype_in="parent" with [ROOT].FUT format to get all contracts
                 data = client.timeseries.get_range(
@@ -1538,33 +1568,36 @@ class DatabentoProvider(DataProvider):
                     start=start.strftime("%Y-%m-%d"),
                     end=end.strftime("%Y-%m-%d"),
                 )
-                
+
                 # Convert to pandas DataFrame
                 df = data.to_df()
-                
+
                 if df.empty:
                     logger.warning(f"No data returned from Databento for {base_symbol}")
-                    return YFinanceProvider().get_ohlcv(ticker, timeframe, start, end, cancellation_check)
-                
+                    return YFinanceProvider().get_ohlcv(
+                        ticker, timeframe, start, end, cancellation_check
+                    )
+
                 # Process the DataFrame
                 df = self._process_databento_df(df, timeframe, schema)
-                
+
                 if df.empty:
-                    return YFinanceProvider().get_ohlcv(ticker, timeframe, start, end, cancellation_check)
-                
+                    return YFinanceProvider().get_ohlcv(
+                        ticker, timeframe, start, end, cancellation_check
+                    )
+
                 logger.info(f"✅ Databento API: got {len(df)} bars for {base_symbol}")
                 return self._normalize_dataframe(df)
 
             except ImportError:
-                logger.error(
-                    "databento package not installed. "
-                    "Install with: pip install databento"
+                logger.error("databento package not installed. Install with: pip install databento")
+                return YFinanceProvider().get_ohlcv(
+                    ticker, timeframe, start, end, cancellation_check
                 )
-                return YFinanceProvider().get_ohlcv(ticker, timeframe, start, end, cancellation_check)
             except Exception as e:
                 error_str = str(e).lower()
                 if "rate" in error_str or "limit" in error_str or "429" in error_str:
-                    delay = 2 ** attempt
+                    delay = 2**attempt
                     logger.warning(
                         f"Databento rate limit for {ticker}, waiting {delay}s "
                         f"(attempt {attempt + 1}/{self.max_retries})"
@@ -1576,12 +1609,16 @@ class DatabentoProvider(DataProvider):
                         f"Databento free tier doesn't include recent data for {ticker}. "
                         f"Falling back to YFinance. Consider subscribing at databento.com/pricing#cme"
                     )
-                    return YFinanceProvider().get_ohlcv(ticker, timeframe, start, end, cancellation_check)
+                    return YFinanceProvider().get_ohlcv(
+                        ticker, timeframe, start, end, cancellation_check
+                    )
                 else:
                     logger.warning(f"Databento error for {ticker}: {e}")
                     if attempt == self.max_retries - 1:
                         logger.info("Falling back to YFinance for futures data")
-                        return YFinanceProvider().get_ohlcv(ticker, timeframe, start, end, cancellation_check)
+                        return YFinanceProvider().get_ohlcv(
+                            ticker, timeframe, start, end, cancellation_check
+                        )
                     time.sleep(1)
 
         # All retries exhausted
@@ -1599,12 +1636,16 @@ def get_provider(name: str | None = None) -> DataProvider:
 
     Args:
         name: Provider name ('yfinance', 'polygon', 'alpaca', 'alltick', 'databento').
-              Defaults to config setting.
+              Defaults to 'yfinance'.
 
     Returns:
         DataProvider instance (cached)
     """
-    provider_name = name or settings.data_provider
+    provider_name = name or "yfinance"
+
+    # If Polygon is selected but no API key is configured, fall back to yfinance.
+    if provider_name == "polygon" and not get_polygon_api_key():
+        provider_name = "yfinance"
 
     # Return cached instance if available
     if provider_name in _provider_cache:
@@ -1630,42 +1671,45 @@ def get_provider(name: str | None = None) -> DataProvider:
 def get_provider_for_ticker(ticker: str) -> DataProvider:
     """
     Get the best data provider for a specific ticker (cached).
-    
+
     Provider routing:
     - Futures (ES, MES, NQ, etc.): Databento (primary), YFinance fallback
     - US stocks: Polygon (primary), with YFinance fallback on error
     - HK stocks: YFinance (primary), AllTick if ALLTICK_TOKEN configured
     - Other international (CN, JP, UK): YFinance
-    
+
     Args:
         ticker: Stock symbol
-        
+
     Returns:
         Best DataProvider for this ticker (cached)
     """
     _, exchange = normalize_ticker(ticker)
-    
+
     # For futures, prefer Databento if available, otherwise YFinance
-    if exchange == 'FUTURES':
+    if exchange == "FUTURES":
         databento_key = get_databento_api_key()
         if databento_key:
             return get_provider("databento")
         logger.info(f"No DATABENTO_API_KEY configured, using YFinance for {ticker}")
         return get_provider("yfinance")
-    
+
     # For HK stocks, prefer AllTick if available, otherwise YFinance
-    if exchange == 'HK':
+    if exchange == "HK":
         alltick_token = get_alltick_token()
         if alltick_token:
             return get_provider("alltick")
         return get_provider("yfinance")
-    
+
     # For other international stocks, use YFinance
-    if exchange in ['CN', 'JP', 'UK']:
+    if exchange in ["CN", "JP", "UK"]:
         return get_provider("yfinance")
-    
-    # For US stocks, use configured provider (Polygon default, with YFinance fallback)
-    return get_provider()
+
+    # For US stocks, prefer configured provider when possible.
+    provider_name = settings.data_provider
+    if provider_name == "polygon" and get_polygon_api_key():
+        return get_provider("polygon")
+    return get_provider("yfinance")
 
 
 def get_daily_data(ticker: str, days: int = 252) -> pd.DataFrame:

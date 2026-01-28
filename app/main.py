@@ -4,29 +4,26 @@ Brooks Trading Coach CLI Application.
 Command-line interface for the trading coach system.
 """
 
-# Suppress SWIG deprecation warnings from databento's C++ bindings EARLY
+import logging
 import warnings
-warnings.filterwarnings("ignore", message=".*Swig.*has no __module__ attribute")
-warnings.filterwarnings("ignore", message=".*swig.*has no __module__ attribute")
-warnings.filterwarnings("ignore", message="builtin type .* has no __module__ attribute")
-
 from datetime import date, datetime
 from pathlib import Path
-from typing import Optional
-import logging
 
 import typer
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from rich.markdown import Markdown
-from rich import print as rprint
 
-from app.config import (
-    settings, save_config, load_config, 
-    TICKERS_FILE, IMPORTS_DIR, load_tickers_from_file
-)
+from app.config import settings, load_config, TICKERS_FILE, IMPORTS_DIR, load_tickers_from_file
 from app.journal.models import init_db
+from app.logging_utils import install_log_safety
+
+# Silence noisy shutdown warning sometimes triggered by joblib/loky on Python 3.13+
+warnings.filterwarnings(
+    "ignore",
+    message=r"resource_tracker: There appear to be .* leaked semaphore objects to clean up at shutdown.*",
+)
 
 # Initialize CLI app
 app = typer.Typer(
@@ -53,6 +50,11 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
+try:
+    install_log_safety()
+except Exception:
+    # Logging should never prevent app startup.
+    pass
 
 
 def init():
@@ -69,7 +71,9 @@ def trade_add(
     direction: str = typer.Option(..., "--direction", "-d", help="Trade direction (long/short)"),
     entry: float = typer.Option(..., "--entry", "-e", help="Entry price"),
     exit_price: float = typer.Option(..., "--exit", "-x", help="Exit price"),
-    stop_loss: float = typer.Option(None, "--sl", "-s", help="Stop Loss level (where trade is wrong)"),
+    stop_loss: float = typer.Option(
+        None, "--sl", "-s", help="Stop Loss level (where trade is wrong)"
+    ),
     take_profit: float = typer.Option(None, "--tp", help="Take Profit level (target)"),
     size: float = typer.Option(1.0, "--size", help="Position size"),
     trade_date: str = typer.Option(None, "--date", help="Trade date (YYYY-MM-DD)"),
@@ -117,7 +121,9 @@ def trade_add(
                 f"Direction: {direction.upper()}\n"
                 f"Entry: ${entry:.2f} → Exit: ${exit_price:.2f}\n"
                 f"R-Multiple: {r:+.2f}R {emoji}\n"
-                f"PnL: ${trade.pnl_dollars:+.2f}" if trade.pnl_dollars else "",
+                f"PnL: ${trade.pnl_dollars:+.2f}"
+                if trade.pnl_dollars
+                else "",
                 title="✅ Trade Logged",
                 border_style="green",
             )
@@ -149,9 +155,7 @@ def trade_import(
 
         console.print(
             Panel(
-                f"[bold]Import Complete[/bold]\n\n"
-                f"✅ Imported: {imported}\n"
-                f"❌ Errors: {errors}",
+                f"[bold]Import Complete[/bold]\n\n✅ Imported: {imported}\n❌ Errors: {errors}",
                 title="CSV Import",
                 border_style="blue",
             )
@@ -224,7 +228,7 @@ def trade_reclassify():
 
     analyzer = get_analyzer()
     if not analyzer.is_available:
-        console.print("[red]LLM not available. Set OPENAI_API_KEY in .env[/red]")
+        console.print("[red]LLM not available. Set LLM_API_KEY in .env[/red]")
         raise typer.Exit(1)
 
     ingester = TradeIngester()
@@ -606,24 +610,25 @@ def config_show():
     console.print("\n[bold cyan]📁 Key File Locations:[/bold cyan]")
     console.print(f"  Tickers:     [green]{TICKERS_FILE}[/green]")
     console.print(f"  Imports:     [green]{IMPORTS_DIR}/[/green]")
-    console.print(f"  Config:      config.yaml")
-    console.print(f"  Env vars:    .env")
+    console.print("  Config:      config.yaml")
+    console.print("  Env vars:    .env")
 
     console.print(f"\n[bold cyan]📈 Tickers ({len(tickers)}):[/bold cyan]")
     console.print(f"  {', '.join(tickers)}")
 
-    console.print(f"\n[bold cyan]⚙️  Settings:[/bold cyan]")
+    console.print("\n[bold cyan]⚙️  Settings:[/bold cyan]")
     console.print(f"  Timezone:      {config.get('timezone', 'America/New_York')}")
     console.print(f"  Data Provider: {config.get('data', {}).get('provider', 'yfinance')}")
-    
+
     # Check LLM availability
     from app.config import get_openai_api_key
+
     has_api_key = get_openai_api_key() is not None
-    llm_status = "[green]✓ Available[/green]" if has_api_key else "[red]✗ Set OPENAI_API_KEY[/red]"
+    llm_status = "[green]✓ Available[/green]" if has_api_key else "[red]✗ Set LLM_API_KEY[/red]"
     console.print(f"  LLM Status:    {llm_status}")
 
     risk = config.get("risk", {})
-    console.print(f"\n[bold cyan]🛡️  Risk Controls:[/bold cyan]")
+    console.print("\n[bold cyan]🛡️  Risk Controls:[/bold cyan]")
     console.print(f"  Max Daily Loss:   {risk.get('max_daily_loss_r', 3.0)}R")
     console.print(f"  Max Losing Streak: {risk.get('max_losing_streak', 3)}")
 
@@ -637,7 +642,9 @@ def config_init():
     init()
     console.print("[green]✅ Database initialized[/green]")
     console.print("[green]✅ Configuration ready[/green]")
-    console.print(f"\n[dim]Database: {settings.get('database_url', 'sqlite:///data/trades.db')}[/dim]")
+    console.print(
+        f"\n[dim]Database: {settings.get('database_url', 'sqlite:///data/trades.db')}[/dim]"
+    )
 
 
 # ==================== WEB SERVER ====================
@@ -654,14 +661,23 @@ def run_web(
     ),
 ):
     """Start the web interface."""
+    # Suppress noisy `multiprocessing.resource_tracker` warnings in subprocesses (e.g., uvicorn reload).
+    # Using PYTHONWARNINGS ensures it also applies to child processes.
+    import os
+
+    ignore_rule = "ignore:resource_tracker:UserWarning:multiprocessing.resource_tracker"
+    existing = os.environ.get("PYTHONWARNINGS", "")
+    if ignore_rule not in existing:
+        os.environ["PYTHONWARNINGS"] = ",".join([p for p in [existing, ignore_rule] if p])
+
     init()
-    
+
     url_host = host
     if url_host in {"0.0.0.0", "::"}:
         # Bind-all isn't directly reachable in a local browser URL.
         url_host = "127.0.0.1"
     url = f"http://{url_host}:{port}"
-    
+
     console.print(
         Panel(
             f"[bold]🚀 Brooks Trading Coach Web UI[/bold]\n\n"
@@ -671,16 +687,16 @@ def run_web(
             border_style="green",
         )
     )
-    
+
     from app.web.server import run_server
-    
+
     if open_browser:
         # Uvicorn blocks; open browser from a background thread after the port is ready.
         import threading
         import time
         import socket
         import webbrowser
-        
+
         def _open_when_ready() -> None:
             deadline = time.time() + 10.0
             while time.time() < deadline:
@@ -694,9 +710,9 @@ def run_web(
             except Exception:
                 # Non-fatal: server is still usable; user can open manually.
                 pass
-        
+
         threading.Thread(target=_open_when_ready, daemon=True).start()
-    
+
     run_server(host=host, port=port)
 
 
@@ -712,9 +728,9 @@ def main():
     Al Brooks price action concepts.
 
     ⚠️  This is an ADVISORY ONLY system. It does NOT place trades.
-    
+
     QUICK START:
-    
+
     1. Start web interface: brooks web
     2. Or use CLI commands: brooks --help
     """

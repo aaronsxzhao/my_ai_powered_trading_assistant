@@ -10,6 +10,7 @@ WARNING: This system does NOT auto-trade. It is advisory only.
 # Suppress SWIG deprecation warnings from databento's C++ bindings
 # Must be set BEFORE any databento imports happen
 import warnings
+
 # Filter by message pattern
 warnings.filterwarnings("ignore", message=".*Swig.*")
 warnings.filterwarnings("ignore", message=".*swig.*")

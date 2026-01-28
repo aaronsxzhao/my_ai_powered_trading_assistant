@@ -8,14 +8,9 @@ Models:
 - Tag: Trade tags for categorization
 """
 
-from datetime import datetime, date, timezone
-from typing import Optional, Literal
+from datetime import datetime, timezone
+from typing import Optional
 import enum
-
-
-def utc_now():
-    """Get current UTC time (timezone-aware replacement for deprecated utc_now())."""
-    return datetime.now(timezone.utc)
 
 from sqlalchemy import (
     create_engine,
@@ -38,7 +33,13 @@ from sqlalchemy.orm import (
     Session,
 )
 
-from app.config import get_database_url, DATA_DIR
+from app.config import get_database_url
+
+
+def utc_now():
+    """Get current UTC time (timezone-aware replacement for deprecated utc_now())."""
+    return datetime.now(timezone.utc)
+
 
 Base = declarative_base()
 
@@ -75,27 +76,27 @@ class User(Base):
     id = Column(Integer, primary_key=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
-    
+
     # Email verification
     is_verified = Column(Boolean, default=False)
     verification_token = Column(String(100), index=True)
     verification_token_expires = Column(DateTime)
-    
+
     # Password reset
     reset_token = Column(String(100), index=True)
     reset_token_expires = Column(DateTime)
-    
+
     # Profile info
     name = Column(String(100))
-    
+
     # Account status
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=utc_now)
     last_login = Column(DateTime)
-    
+
     # Relationships
     trades = relationship("Trade", back_populates="user")
-    
+
     def __repr__(self):
         return f"<User(email='{self.email}', verified={self.is_verified})>"
 
@@ -141,11 +142,11 @@ class Trade(Base):
     __tablename__ = "trades"
 
     id = Column(Integer, primary_key=True)
-    
+
     # User ownership (nullable for backward compatibility with existing trades)
     user_id = Column(Integer, ForeignKey("users.id"), index=True)
     user = relationship("User", back_populates="trades")
-    
+
     # Display order (chronological: oldest = 1)
     # Separate from id so trades display in time order regardless of when added
     trade_number = Column(Integer, index=True)
@@ -168,21 +169,23 @@ class Trade(Base):
 
     # Position sizing
     size = Column(Float)  # Number of shares/contracts
-    
+
     # Risk management (manually maintained by user)
     stop_loss = Column(Float)  # SL - Stop Loss level (where you would exit if wrong)
     take_profit = Column(Float)  # TP - Take Profit level (target exit)
-    
+
     # Legacy - kept for backward compatibility, use stop_loss instead
     stop_price = Column(Float)  # Deprecated: use stop_loss
     target_price = Column(Float)  # Deprecated: use take_profit
-    
+
     # Currency (for non-USD trades)
     currency = Column(String(10), default="USD")  # USD, HKD, EUR, etc.
     currency_rate = Column(Float, default=1.0)  # Rate to convert to USD (1 USD = X currency)
-    
+
     # Timezone of the market where the trade took place
-    market_timezone = Column(String(50), default="America/New_York")  # e.g., America/New_York, Asia/Hong_Kong
+    market_timezone = Column(
+        String(50), default="America/New_York"
+    )  # e.g., America/New_York, Asia/Hong_Kong
     input_timezone = Column(String(50))  # User's original timezone when importing (for display)
 
     # Computed metrics (populated by analytics)
@@ -205,7 +208,7 @@ class Trade(Base):
     strategy_id = Column(Integer, ForeignKey("strategies.id"))
     strategy = relationship("Strategy", back_populates="trades")
     setup_type = Column(String(50))  # Quick classification
-    
+
     # Original AI classification (preserved even if strategy is manually changed)
     ai_setup_classification = Column(String(100))  # Original AI classification, never overwritten
 
@@ -216,10 +219,10 @@ class Trade(Base):
     # User notes and coaching
     notes = Column(Text)
     mistakes = Column(Text)  # Legacy - kept for backward compatibility
-    lessons = Column(Text)   # Legacy - kept for backward compatibility
+    lessons = Column(Text)  # Legacy - kept for backward compatibility
     mistakes_and_lessons = Column(Text)  # Combined field for mistakes & lessons
     coach_feedback = Column(Text)
-    
+
     @property
     def effective_mistakes_lessons(self) -> str:
         """Get combined mistakes and lessons (prefers new combined field, falls back to legacy)."""
@@ -231,15 +234,19 @@ class Trade(Base):
         if self.lessons:
             parts.append(self.lessons)
         return "\n\n".join(parts) if parts else ""
-    
+
     # Extended Brooks-style trade analysis fields
     trend_assessment = Column(Text)  # My assessment of the current trend (major and minor)
-    signal_reason = Column(Text)  # Reason for entry (Strong Signal Bar, BO & follow-thru, High 2, etc)
+    signal_reason = Column(
+        Text
+    )  # Reason for entry (Strong Signal Bar, BO & follow-thru, High 2, etc)
     was_signal_present = Column(Text)  # Was there a signal? If not, why?
-    strategy_alignment = Column(Text)  # Does this entry align with all the criteria of the chosen strategy?
+    strategy_alignment = Column(
+        Text
+    )  # Does this entry align with all the criteria of the chosen strategy?
     entry_exit_emotions = Column(Text)  # Emotions when exit & entry, any hesitation? Why?
     entry_tp_distance = Column(Text)  # Are the entry and TP too far apart?
-    
+
     # Brooks-style trade intent fields
     trade_type = Column(String(20))  # scalp, swing, position
     entry_order_type = Column(String(20))  # market, limit, stop, stop_limit
@@ -251,7 +258,7 @@ class Trade(Base):
     emotional_state = Column(String(50))  # calm, rushed, revenge, fomo, tired
     followed_plan = Column(Boolean)  # Did trader follow their plan?
     account_type = Column(String(20), default="paper")  # paper, live
-    
+
     # Cached AI review (JSON string)
     cached_review = Column(Text)  # Stores JSON of TradeReview
     review_generated_at = Column(DateTime)  # When the review was generated
@@ -272,24 +279,24 @@ class Trade(Base):
         """Get human-readable duration (e.g., '2h 15m' or '1d 3h 20m')."""
         if not self.entry_time or not self.exit_time:
             return "-"
-        
+
         delta = self.exit_time - self.entry_time
         total_seconds = int(delta.total_seconds())
-        
+
         if total_seconds < 0:
             return "-"
-        
+
         days = total_seconds // 86400
         hours = (total_seconds % 86400) // 3600
         minutes = (total_seconds % 3600) // 60
-        
+
         parts = []
         if days > 0:
             parts.append(f"{days}d")
         if hours > 0 or days > 0:  # Show hours if there are days
             parts.append(f"{hours}h")
         parts.append(f"{minutes}m")
-        
+
         # Simplify display
         if days == 0 and hours == 0:
             return f"{minutes}m"
@@ -312,7 +319,12 @@ class Trade(Base):
         """Get P&L converted to USD."""
         if self.pnl_dollars is None:
             return None
-        if self.currency and self.currency != 'USD' and self.currency_rate and self.currency_rate > 0:
+        if (
+            self.currency
+            and self.currency != "USD"
+            and self.currency_rate
+            and self.currency_rate > 0
+        ):
             return self.pnl_dollars / self.currency_rate
         return self.pnl_dollars
 
@@ -320,12 +332,12 @@ class Trade(Base):
     def entry_time_local(self) -> Optional[datetime]:
         """Get entry time in the original input timezone."""
         return self._convert_to_input_timezone(self.entry_time)
-    
+
     @property
     def exit_time_local(self) -> Optional[datetime]:
         """Get exit time in the original input timezone."""
         return self._convert_to_input_timezone(self.exit_time)
-    
+
     def _convert_to_input_timezone(self, dt: Optional[datetime]) -> Optional[datetime]:
         """Convert a market timezone datetime back to input timezone."""
         if dt is None or not self.input_timezone or not self.market_timezone:
@@ -334,6 +346,7 @@ class Trade(Base):
             return dt
         try:
             from zoneinfo import ZoneInfo
+
             market_tz = ZoneInfo(self.market_timezone)
             input_tz = ZoneInfo(self.input_timezone)
             # Assume dt is in market timezone (naive)
@@ -348,12 +361,12 @@ class Trade(Base):
     def effective_stop_loss(self) -> Optional[float]:
         """Get the effective stop loss (prefer stop_loss, fallback to stop_price for legacy)."""
         return self.stop_loss or self.stop_price
-    
+
     @property
     def effective_take_profit(self) -> Optional[float]:
         """Get the effective take profit (prefer take_profit, fallback to target_price for legacy)."""
         return self.take_profit or self.target_price
-    
+
     @property
     def initial_risk_dollars(self) -> Optional[float]:
         """Calculate initial risk in dollars."""
@@ -366,7 +379,7 @@ class Trade(Base):
     def compute_metrics(self) -> None:
         """Compute derived metrics from trade data."""
         sl = self.effective_stop_loss
-        
+
         # R-multiple
         if self.entry_price and self.exit_price and sl:
             if self.direction == TradeDirection.LONG:
@@ -500,42 +513,51 @@ def init_db() -> None:
     """Initialize database and create tables."""
     engine = get_engine()
     Base.metadata.create_all(engine)
-    
+
     # Add new columns to existing trades table if they don't exist
     # This handles migrations for existing databases
     from sqlalchemy import text
+
     with engine.connect() as conn:
         # Currency columns
         try:
             conn.execute(text("SELECT currency FROM trades LIMIT 1"))
         except Exception:
             try:
-                conn.execute(text("ALTER TABLE trades ADD COLUMN currency VARCHAR(10) DEFAULT 'USD'"))
+                conn.execute(
+                    text("ALTER TABLE trades ADD COLUMN currency VARCHAR(10) DEFAULT 'USD'")
+                )
                 conn.execute(text("ALTER TABLE trades ADD COLUMN currency_rate FLOAT DEFAULT 1.0"))
                 conn.commit()
             except Exception:
                 pass
-        
+
         # Trade timeframe column (5m, 2h, 1d)
         try:
             conn.execute(text("SELECT timeframe FROM trades LIMIT 1"))
         except Exception:
             try:
-                conn.execute(text("ALTER TABLE trades ADD COLUMN timeframe VARCHAR(10) DEFAULT '5m'"))
+                conn.execute(
+                    text("ALTER TABLE trades ADD COLUMN timeframe VARCHAR(10) DEFAULT '5m'")
+                )
                 conn.commit()
             except Exception:
                 pass
-        
+
         # Market timezone column
         try:
             conn.execute(text("SELECT market_timezone FROM trades LIMIT 1"))
         except Exception:
             try:
-                conn.execute(text("ALTER TABLE trades ADD COLUMN market_timezone VARCHAR(50) DEFAULT 'America/New_York'"))
+                conn.execute(
+                    text(
+                        "ALTER TABLE trades ADD COLUMN market_timezone VARCHAR(50) DEFAULT 'America/New_York'"
+                    )
+                )
                 conn.commit()
             except Exception:
                 pass
-        
+
         # Input timezone column (user's original timezone)
         try:
             conn.execute(text("SELECT input_timezone FROM trades LIMIT 1"))
@@ -545,7 +567,7 @@ def init_db() -> None:
                 conn.commit()
             except Exception:
                 pass
-        
+
         # Stop Loss column (SL)
         try:
             conn.execute(text("SELECT stop_loss FROM trades LIMIT 1"))
@@ -555,7 +577,7 @@ def init_db() -> None:
                 conn.commit()
             except Exception:
                 pass
-        
+
         # Take Profit column (TP)
         try:
             conn.execute(text("SELECT take_profit FROM trades LIMIT 1"))
@@ -576,17 +598,19 @@ def init_db() -> None:
                 conn.commit()
             except Exception:
                 pass
-        
+
         # Review in progress flag
         try:
             conn.execute(text("SELECT review_in_progress FROM trades LIMIT 1"))
         except Exception:
             try:
-                conn.execute(text("ALTER TABLE trades ADD COLUMN review_in_progress BOOLEAN DEFAULT 0"))
+                conn.execute(
+                    text("ALTER TABLE trades ADD COLUMN review_in_progress BOOLEAN DEFAULT 0")
+                )
                 conn.commit()
             except Exception:
                 pass
-        
+
         # Brooks-style trade intent columns
         try:
             conn.execute(text("SELECT trade_type FROM trades LIMIT 1"))
@@ -601,21 +625,25 @@ def init_db() -> None:
                 conn.execute(text("ALTER TABLE trades ADD COLUMN confidence_level INTEGER"))
                 conn.execute(text("ALTER TABLE trades ADD COLUMN emotional_state VARCHAR(50)"))
                 conn.execute(text("ALTER TABLE trades ADD COLUMN followed_plan BOOLEAN"))
-                conn.execute(text("ALTER TABLE trades ADD COLUMN account_type VARCHAR(20) DEFAULT 'paper'"))
+                conn.execute(
+                    text("ALTER TABLE trades ADD COLUMN account_type VARCHAR(20) DEFAULT 'paper'")
+                )
                 conn.commit()
             except Exception:
                 pass
-        
+
         # Original AI classification (permanent, never overwritten)
         try:
             conn.execute(text("SELECT ai_setup_classification FROM trades LIMIT 1"))
         except Exception:
             try:
-                conn.execute(text("ALTER TABLE trades ADD COLUMN ai_setup_classification VARCHAR(100)"))
+                conn.execute(
+                    text("ALTER TABLE trades ADD COLUMN ai_setup_classification VARCHAR(100)")
+                )
                 conn.commit()
             except Exception:
                 pass
-        
+
         # Extended Brooks-style trade analysis fields
         try:
             conn.execute(text("SELECT trend_assessment FROM trades LIMIT 1"))
@@ -630,7 +658,7 @@ def init_db() -> None:
                 conn.commit()
             except Exception:
                 pass
-        
+
         # Combined mistakes and lessons field
         try:
             conn.execute(text("SELECT mistakes_and_lessons FROM trades LIMIT 1"))
@@ -640,7 +668,7 @@ def init_db() -> None:
                 conn.commit()
             except Exception:
                 pass
-        
+
         # Trade number for display order (chronological: oldest = 1)
         try:
             conn.execute(text("SELECT trade_number FROM trades LIMIT 1"))
@@ -650,7 +678,7 @@ def init_db() -> None:
                 conn.commit()
             except Exception:
                 pass
-        
+
         # Add fees column
         try:
             conn.execute(text("SELECT fees FROM trades LIMIT 1"))
@@ -660,7 +688,7 @@ def init_db() -> None:
                 conn.commit()
             except Exception:
                 pass
-        
+
         # User ID column for multi-user support
         try:
             conn.execute(text("SELECT user_id FROM trades LIMIT 1"))
@@ -677,31 +705,117 @@ def init_db() -> None:
         if session.query(Strategy).count() == 0:
             default_strategies = [
                 # With-trend
-                Strategy(name="breakout_pullback_long", category="with_trend", description="Long after pullback to breakout level"),
-                Strategy(name="breakout_pullback_short", category="with_trend", description="Short after rally to breakdown level"),
-                Strategy(name="second_entry_buy", category="with_trend", description="2nd entry long in uptrend pullback"),
-                Strategy(name="second_entry_sell", category="with_trend", description="2nd entry short in downtrend rally"),
-                Strategy(name="trend_resumption_long", category="with_trend", description="Long on trend resumption"),
-                Strategy(name="trend_resumption_short", category="with_trend", description="Short on trend resumption"),
+                Strategy(
+                    name="breakout_pullback_long",
+                    category="with_trend",
+                    description="Long after pullback to breakout level",
+                ),
+                Strategy(
+                    name="breakout_pullback_short",
+                    category="with_trend",
+                    description="Short after rally to breakdown level",
+                ),
+                Strategy(
+                    name="second_entry_buy",
+                    category="with_trend",
+                    description="2nd entry long in uptrend pullback",
+                ),
+                Strategy(
+                    name="second_entry_sell",
+                    category="with_trend",
+                    description="2nd entry short in downtrend rally",
+                ),
+                Strategy(
+                    name="trend_resumption_long",
+                    category="with_trend",
+                    description="Long on trend resumption",
+                ),
+                Strategy(
+                    name="trend_resumption_short",
+                    category="with_trend",
+                    description="Short on trend resumption",
+                ),
                 # Countertrend
-                Strategy(name="failed_breakout_long", category="countertrend", description="Long on failed breakdown"),
-                Strategy(name="failed_breakout_short", category="countertrend", description="Short on failed breakout"),
-                Strategy(name="wedge_reversal_long", category="countertrend", description="Long on wedge/3-push reversal"),
-                Strategy(name="wedge_reversal_short", category="countertrend", description="Short on wedge/3-push reversal"),
-                Strategy(name="double_bottom_long", category="countertrend", description="Long on double bottom"),
-                Strategy(name="double_top_short", category="countertrend", description="Short on double top"),
-                Strategy(name="climax_reversal_long", category="countertrend", description="Long on climax reversal"),
-                Strategy(name="climax_reversal_short", category="countertrend", description="Short on climax reversal"),
+                Strategy(
+                    name="failed_breakout_long",
+                    category="countertrend",
+                    description="Long on failed breakdown",
+                ),
+                Strategy(
+                    name="failed_breakout_short",
+                    category="countertrend",
+                    description="Short on failed breakout",
+                ),
+                Strategy(
+                    name="wedge_reversal_long",
+                    category="countertrend",
+                    description="Long on wedge/3-push reversal",
+                ),
+                Strategy(
+                    name="wedge_reversal_short",
+                    category="countertrend",
+                    description="Short on wedge/3-push reversal",
+                ),
+                Strategy(
+                    name="double_bottom_long",
+                    category="countertrend",
+                    description="Long on double bottom",
+                ),
+                Strategy(
+                    name="double_top_short",
+                    category="countertrend",
+                    description="Short on double top",
+                ),
+                Strategy(
+                    name="climax_reversal_long",
+                    category="countertrend",
+                    description="Long on climax reversal",
+                ),
+                Strategy(
+                    name="climax_reversal_short",
+                    category="countertrend",
+                    description="Short on climax reversal",
+                ),
                 # Trading range
-                Strategy(name="range_fade_high", category="trading_range", description="Short at range high"),
-                Strategy(name="range_fade_low", category="trading_range", description="Long at range low"),
-                Strategy(name="range_scalp_long", category="trading_range", description="Quick long scalp in range"),
-                Strategy(name="range_scalp_short", category="trading_range", description="Quick short scalp in range"),
+                Strategy(
+                    name="range_fade_high",
+                    category="trading_range",
+                    description="Short at range high",
+                ),
+                Strategy(
+                    name="range_fade_low", category="trading_range", description="Long at range low"
+                ),
+                Strategy(
+                    name="range_scalp_long",
+                    category="trading_range",
+                    description="Quick long scalp in range",
+                ),
+                Strategy(
+                    name="range_scalp_short",
+                    category="trading_range",
+                    description="Quick short scalp in range",
+                ),
                 # Special
-                Strategy(name="trend_from_open_long", category="special", description="Trend from open - long"),
-                Strategy(name="trend_from_open_short", category="special", description="Trend from open - short"),
-                Strategy(name="opening_reversal_long", category="special", description="Opening reversal up"),
-                Strategy(name="opening_reversal_short", category="special", description="Opening reversal down"),
+                Strategy(
+                    name="trend_from_open_long",
+                    category="special",
+                    description="Trend from open - long",
+                ),
+                Strategy(
+                    name="trend_from_open_short",
+                    category="special",
+                    description="Trend from open - short",
+                ),
+                Strategy(
+                    name="opening_reversal_long",
+                    category="special",
+                    description="Opening reversal up",
+                ),
+                Strategy(
+                    name="opening_reversal_short",
+                    category="special",
+                    description="Opening reversal down",
+                ),
                 Strategy(name="gap_fill_long", category="special", description="Gap fill long"),
                 Strategy(name="gap_fill_short", category="special", description="Gap fill short"),
                 Strategy(name="unclassified", category="other", description="Unclassified trade"),
@@ -734,7 +848,7 @@ def get_all_strategies() -> list[Strategy]:
     """Get all strategies."""
     session = get_session()
     try:
-        return session.query(Strategy).filter(Strategy.is_active == True).all()
+        return session.query(Strategy).filter(Strategy.is_active).all()
     finally:
         session.close()
 
@@ -742,9 +856,9 @@ def get_all_strategies() -> list[Strategy]:
 def recalculate_trade_numbers() -> int:
     """
     Recalculate trade_number for all trades based on chronological order.
-    
+
     Trade number 1 = oldest trade (by exit_time, then by id for same exit_time).
-    
+
     Returns:
         Number of trades updated
     """
@@ -752,7 +866,7 @@ def recalculate_trade_numbers() -> int:
     try:
         # Get all trades sorted chronologically (oldest first)
         trades = session.query(Trade).all()
-        
+
         # Sort by exit_time (primary), then by id (secondary - add order)
         def sort_key(t):
             # Use exit_time if available, otherwise fall back to entry_time, then trade_date
@@ -764,13 +878,13 @@ def recalculate_trade_numbers() -> int:
                 return (datetime.combine(t.trade_date, datetime.min.time()), t.id)
             else:
                 return (datetime.max, t.id)
-        
+
         sorted_trades = sorted(trades, key=sort_key)
-        
+
         # Assign trade numbers (oldest = 1)
         for i, trade in enumerate(sorted_trades, start=1):
             trade.trade_number = i
-        
+
         session.commit()
         return len(sorted_trades)
     finally:

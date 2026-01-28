@@ -1,8 +1,5 @@
 """Tests for trade analytics and R-multiple calculations."""
 
-import pytest
-from datetime import date, datetime
-
 from app.features.ohlc_features import compute_r_multiple, compute_mae_mfe
 
 
@@ -124,7 +121,7 @@ class TestExpectancy:
     def test_expectancy_positive(self):
         """Test expectancy with positive edge."""
         from app.journal.analytics import TradeAnalytics
-        from app.journal.models import Trade, TradeDirection, TradeOutcome
+        from app.journal.models import TradeOutcome
 
         analytics = TradeAnalytics()
 
@@ -140,8 +137,8 @@ class TestExpectancy:
             MockTrade(1.5),  # Win
             MockTrade(1.5),  # Win
             MockTrade(1.5),  # Win
-            MockTrade(-1.0), # Loss
-            MockTrade(-1.0), # Loss
+            MockTrade(-1.0),  # Loss
+            MockTrade(-1.0),  # Loss
         ]
 
         # 3 wins, 2 losses
@@ -166,8 +163,8 @@ class TestExpectancy:
         # 40% win rate, avg winner 1R, avg loser -1.5R
         # Expectancy = 0.4 * 1 - 0.6 * 1.5 = 0.4 - 0.9 = -0.5R
         trades = [
-            MockTrade(1.0),   # Win
-            MockTrade(1.0),   # Win
+            MockTrade(1.0),  # Win
+            MockTrade(1.0),  # Win
             MockTrade(-1.5),  # Loss
             MockTrade(-1.5),  # Loss
             MockTrade(-1.5),  # Loss
@@ -200,8 +197,8 @@ class TestProfitFactor:
 
         # Gross profit = 4R, Gross loss = 2R, PF = 2.0
         trades = [
-            MockTrade(2.0),   # Win
-            MockTrade(2.0),   # Win
+            MockTrade(2.0),  # Win
+            MockTrade(2.0),  # Win
             MockTrade(-1.0),  # Loss
             MockTrade(-1.0),  # Loss
         ]
@@ -221,8 +218,8 @@ class TestProfitFactor:
 
         # Gross profit = 2R, Gross loss = 2R, PF = 1.0
         trades = [
-            MockTrade(1.0),   # Win
-            MockTrade(1.0),   # Win
+            MockTrade(1.0),  # Win
+            MockTrade(1.0),  # Win
             MockTrade(-1.0),  # Loss
             MockTrade(-1.0),  # Loss
         ]

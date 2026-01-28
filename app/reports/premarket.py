@@ -9,7 +9,7 @@ Uses LLM for intelligent market analysis:
 - Avoid list
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta, date
 from pathlib import Path
 from typing import Optional
@@ -21,7 +21,7 @@ import pytz
 from app.config import settings, OUTPUTS_DIR
 from app.data.cache import get_cached_ohlcv
 from app.features.ohlc_features import OHLCFeatures
-from app.features.brooks_patterns import BrooksPatternDetector, RegimeAnalysis
+from app.features.brooks_patterns import BrooksPatternDetector
 from app.features.magnets import MagnetDetector
 
 logger = logging.getLogger(__name__)
@@ -89,10 +89,13 @@ class PremarketReport:
         """Lazy load LLM analyzer."""
         if self._llm_analyzer is None:
             from app.llm.analyzer import get_analyzer
+
             self._llm_analyzer = get_analyzer()
         return self._llm_analyzer
 
-    def generate_ticker_report(self, ticker: str, report_date: Optional[date] = None) -> TickerReport:
+    def generate_ticker_report(
+        self, ticker: str, report_date: Optional[date] = None
+    ) -> TickerReport:
         """
         Generate premarket report for a single ticker using LLM analysis.
 
@@ -110,12 +113,12 @@ class PremarketReport:
 
         # Fetch data for each timeframe in parallel
         from concurrent.futures import ThreadPoolExecutor
-        
+
         with ThreadPoolExecutor(max_workers=3) as executor:
             future_daily = executor.submit(self._fetch_daily_data, ticker, report_date)
             future_2h = executor.submit(self._fetch_2h_data, ticker, report_date)
             future_5m = executor.submit(self._fetch_5m_data, ticker, report_date)
-            
+
             daily_df = future_daily.result()
             two_hour_df = future_2h.result()
             five_min_df = future_5m.result()
@@ -134,27 +137,29 @@ class PremarketReport:
         # Fallback to rule-based analysis (parallel)
         with ThreadPoolExecutor(max_workers=3) as executor:
             future_daily_analysis = executor.submit(self._analyze_timeframe, daily_df, "daily")
-            future_2h_analysis = executor.submit(self._analyze_timeframe, two_hour_df, "2h") if not two_hour_df.empty else None
-            future_5m_analysis = executor.submit(self._analyze_timeframe, five_min_df, "5m") if not five_min_df.empty else None
-            
+            future_2h_analysis = (
+                executor.submit(self._analyze_timeframe, two_hour_df, "2h")
+                if not two_hour_df.empty
+                else None
+            )
+            future_5m_analysis = (
+                executor.submit(self._analyze_timeframe, five_min_df, "5m")
+                if not five_min_df.empty
+                else None
+            )
+
             daily_analysis = future_daily_analysis.result()
             two_hour_analysis = future_2h_analysis.result() if future_2h_analysis else None
             five_min_analysis = future_5m_analysis.result() if future_5m_analysis else None
 
         # Get magnets
-        magnets_above, magnets_below, measured_moves = self._get_magnets(
-            daily_df, current_price
-        )
+        magnets_above, magnets_below, measured_moves = self._get_magnets(daily_df, current_price)
 
         # Generate plans
-        plan_a, plan_b = self._generate_plans(
-            daily_analysis, two_hour_analysis, five_min_analysis
-        )
+        plan_a, plan_b = self._generate_plans(daily_analysis, two_hour_analysis, five_min_analysis)
 
         # Generate avoid conditions
-        avoid_conditions = self._generate_avoid_list(
-            daily_analysis, two_hour_analysis
-        )
+        avoid_conditions = self._generate_avoid_list(daily_analysis, two_hour_analysis)
 
         # Determine overall bias
         overall_bias, bias_confidence = self._determine_overall_bias(
@@ -183,7 +188,9 @@ class PremarketReport:
         try:
             # Format OHLCV data for LLM
             daily_str = self._format_ohlcv_for_llm(daily_df.tail(20))
-            two_hour_str = self._format_ohlcv_for_llm(two_hour_df.tail(20)) if not two_hour_df.empty else None
+            two_hour_str = (
+                self._format_ohlcv_for_llm(two_hour_df.tail(20)) if not two_hour_df.empty else None
+            )
 
             llm_analysis = self.llm_analyzer.analyze_market_context(
                 ticker=ticker,
@@ -194,7 +201,7 @@ class PremarketReport:
             if "error" in llm_analysis:
                 logger.warning(f"LLM returned error for {ticker}: {llm_analysis.get('error')}")
                 return None
-            
+
             # Debug: log what LLM returned
             logger.debug(f"LLM analysis keys for {ticker}: {list(llm_analysis.keys())}")
 
@@ -203,33 +210,39 @@ class PremarketReport:
 
             # Extract nested structures from LLM response
             daily_context = llm_analysis.get("daily_context", {})
-            
+
             # Debug: Check if we got expected structure
             if not daily_context:
-                logger.warning(f"No daily_context in LLM response for {ticker}. Keys: {list(llm_analysis.keys())}")
-            two_hour_context = llm_analysis.get("two_hour_context", {})
-            intraday_context = llm_analysis.get("intraday_context", {})
+                logger.warning(
+                    f"No daily_context in LLM response for {ticker}. Keys: {list(llm_analysis.keys())}"
+                )
             trading_plan = llm_analysis.get("trading_plan", {})
-            
+
             # Extract key levels from daily_context
             key_levels_data = daily_context.get("key_levels", {})
             swing_highs = key_levels_data.get("swing_highs", [])
             swing_lows = key_levels_data.get("swing_lows", [])
-            
+
             # Build resistance/support lists
             resistance = []
             support = []
-            
+
             if key_levels_data.get("prior_day_high"):
-                resistance.append({"price": key_levels_data["prior_day_high"], "description": "Prior Day High"})
+                resistance.append(
+                    {"price": key_levels_data["prior_day_high"], "description": "Prior Day High"}
+                )
             if key_levels_data.get("range_high"):
-                resistance.append({"price": key_levels_data["range_high"], "description": "Range High"})
+                resistance.append(
+                    {"price": key_levels_data["range_high"], "description": "Range High"}
+                )
             for sh in swing_highs if isinstance(swing_highs, list) else []:
                 if isinstance(sh, (int, float)):
                     resistance.append({"price": sh, "description": "Swing High"})
-                    
+
             if key_levels_data.get("prior_day_low"):
-                support.append({"price": key_levels_data["prior_day_low"], "description": "Prior Day Low"})
+                support.append(
+                    {"price": key_levels_data["prior_day_low"], "description": "Prior Day Low"}
+                )
             if key_levels_data.get("range_low"):
                 support.append({"price": key_levels_data["range_low"], "description": "Range Low"})
             for sl in swing_lows if isinstance(swing_lows, list) else []:
@@ -243,15 +256,28 @@ class PremarketReport:
                 always_in=daily_context.get("always_in", "neutral"),
                 confidence="medium",  # LLM doesn't return confidence in this format
                 description=llm_analysis.get("narrative", ""),
-                key_levels=[{"price": r.get("price"), "type": "resistance", "description": r.get("description", "")} for r in resistance] +
-                           [{"price": s.get("price"), "type": "support", "description": s.get("description", "")} for s in support],
+                key_levels=[
+                    {
+                        "price": r.get("price"),
+                        "type": "resistance",
+                        "description": r.get("description", ""),
+                    }
+                    for r in resistance
+                ]
+                + [
+                    {
+                        "price": s.get("price"),
+                        "type": "support",
+                        "description": s.get("description", ""),
+                    }
+                    for s in support
+                ],
                 patterns=[],
-                strength={"strength": daily_context.get("trend_strength", "unknown"), "reasoning": ""},
+                strength={
+                    "strength": daily_context.get("trend_strength", "unknown"),
+                    "reasoning": "",
+                },
             )
-
-            # Extract plan A/B from trading_plan
-            plan_a_data = trading_plan
-            plan_b_data = {}
 
             # Determine bias from always_in
             always_in = daily_context.get("always_in", "neutral")
@@ -261,12 +287,14 @@ class PremarketReport:
                 bias = "SHORT"
             else:
                 bias = "NEUTRAL"
-            
+
             plan_a = {
                 "scenario": trading_plan.get("plan_a", ""),
                 "bias": bias,
                 "setups": trading_plan.get("best_setups", []),
-                "entry_zones": ", ".join(trading_plan.get("key_levels", [])) if trading_plan.get("key_levels") else "",
+                "entry_zones": ", ".join(trading_plan.get("key_levels", []))
+                if trading_plan.get("key_levels")
+                else "",
                 "targets": "",
             }
 
@@ -278,8 +306,22 @@ class PremarketReport:
             }
 
             # Format magnets from LLM analysis
-            magnets_above = [{"price": r.get("price"), "type": "resistance", "description": r.get("description", "")} for r in resistance]
-            magnets_below = [{"price": s.get("price"), "type": "support", "description": s.get("description", "")} for s in support]
+            magnets_above = [
+                {
+                    "price": r.get("price"),
+                    "type": "resistance",
+                    "description": r.get("description", ""),
+                }
+                for r in resistance
+            ]
+            magnets_below = [
+                {
+                    "price": s.get("price"),
+                    "type": "support",
+                    "description": s.get("description", ""),
+                }
+                for s in support
+            ]
 
             return TickerReport(
                 ticker=ticker,
@@ -309,8 +351,14 @@ class PremarketReport:
 
         lines = ["Date | Open | High | Low | Close | Volume"]
         for _, row in df.iterrows():
-            dt = row["datetime"].strftime("%Y-%m-%d") if hasattr(row["datetime"], "strftime") else str(row["datetime"])[:10]
-            lines.append(f"{dt} | {row['open']:.2f} | {row['high']:.2f} | {row['low']:.2f} | {row['close']:.2f} | {int(row['volume'])}")
+            dt = (
+                row["datetime"].strftime("%Y-%m-%d")
+                if hasattr(row["datetime"], "strftime")
+                else str(row["datetime"])[:10]
+            )
+            lines.append(
+                f"{dt} | {row['open']:.2f} | {row['high']:.2f} | {row['low']:.2f} | {row['close']:.2f} | {int(row['volume'])}"
+            )
         return "\n".join(lines)
 
     def _fetch_daily_data(self, ticker: str, report_date: date) -> pd.DataFrame:
@@ -379,17 +427,21 @@ class PremarketReport:
 
         key_levels = []
         for sh in swing_highs[-3:]:  # Last 3 swing highs
-            key_levels.append({
-                "price": round(sh.price, 2),
-                "type": "resistance",
-                "description": "Swing High",
-            })
+            key_levels.append(
+                {
+                    "price": round(sh.price, 2),
+                    "type": "resistance",
+                    "description": "Swing High",
+                }
+            )
         for sl in swing_lows[-3:]:
-            key_levels.append({
-                "price": round(sl.price, 2),
-                "type": "support",
-                "description": "Swing Low",
-            })
+            key_levels.append(
+                {
+                    "price": round(sl.price, 2),
+                    "type": "support",
+                    "description": "Swing Low",
+                }
+            )
 
         # Strength analysis
         strength = features.get_recent_strength()
@@ -516,26 +568,32 @@ class PremarketReport:
         avoid = []
 
         if daily.regime == "trend_up":
-            avoid.extend([
-                "Avoid shorting without clear reversal structure",
-                "Avoid buying after extended move (3+ legs up without correction)",
-                "Avoid chasing - wait for pullbacks",
-            ])
+            avoid.extend(
+                [
+                    "Avoid shorting without clear reversal structure",
+                    "Avoid buying after extended move (3+ legs up without correction)",
+                    "Avoid chasing - wait for pullbacks",
+                ]
+            )
 
         elif daily.regime == "trend_down":
-            avoid.extend([
-                "Avoid buying without clear reversal structure",
-                "Avoid selling after extended move (3+ legs down)",
-                "Avoid bottom-picking - wait for signs of strength",
-            ])
+            avoid.extend(
+                [
+                    "Avoid buying without clear reversal structure",
+                    "Avoid selling after extended move (3+ legs down)",
+                    "Avoid bottom-picking - wait for signs of strength",
+                ]
+            )
 
         else:  # Range
-            avoid.extend([
-                "Avoid stop entries - they often fail in ranges",
-                "Avoid trading middle of range",
-                "Avoid expecting big moves - scale out early",
-                "Avoid trading tight trading ranges (barbwire)",
-            ])
+            avoid.extend(
+                [
+                    "Avoid stop entries - they often fail in ranges",
+                    "Avoid trading middle of range",
+                    "Avoid expecting big moves - scale out early",
+                    "Avoid trading tight trading ranges (barbwire)",
+                ]
+            )
 
         # Check for patterns that suggest caution
         if daily.patterns:
@@ -612,7 +670,9 @@ class PremarketReport:
 
         return bias, confidence
 
-    def generate_all_reports(self, report_date: Optional[date] = None, delay_between: float = 3.0) -> list[TickerReport]:
+    def generate_all_reports(
+        self, report_date: Optional[date] = None, delay_between: float = 3.0
+    ) -> list[TickerReport]:
         """
         Generate reports for all favorite tickers.
 
@@ -624,26 +684,30 @@ class PremarketReport:
             List of TickerReport objects
         """
         from concurrent.futures import ThreadPoolExecutor, as_completed
-        
+
         tickers = settings.tickers
         reports = []
-        
+
         # Use limited workers to avoid overwhelming the API (rate limiting)
         # Each ticker fetches 3 timeframes, so limit concurrency
         max_concurrent = min(3, len(tickers))  # Max 3 tickers at once
-        
-        logger.info(f"📊 Generating premarket reports for {len(tickers)} tickers (parallel, {max_concurrent} workers)")
-        
+
+        logger.info(
+            f"📊 Generating premarket reports for {len(tickers)} tickers (parallel, {max_concurrent} workers)"
+        )
+
         def generate_with_error_handling(ticker):
             try:
                 return self.generate_ticker_report(ticker, report_date)
             except Exception as e:
                 logger.error(f"Failed to generate report for {ticker}: {e}")
                 return None
-        
+
         with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
-            futures = {executor.submit(generate_with_error_handling, ticker): ticker for ticker in tickers}
-            
+            futures = {
+                executor.submit(generate_with_error_handling, ticker): ticker for ticker in tickers
+            }
+
             for future in as_completed(futures):
                 ticker = futures[future]
                 try:
@@ -652,7 +716,7 @@ class PremarketReport:
                         reports.append(report)
                 except Exception as e:
                     logger.error(f"Failed to get result for {ticker}: {e}")
-        
+
         # Sort reports to maintain original ticker order
         ticker_order = {t: i for i, t in enumerate(tickers)}
         reports.sort(key=lambda r: ticker_order.get(r.ticker, 999))
@@ -684,28 +748,34 @@ class PremarketReport:
             lines.append("")
 
         if report.two_hour_analysis:
-            lines.extend([
-                "## 2-Hour Chart Analysis",
-                f"- **Regime**: {report.two_hour_analysis.regime}",
-                f"- **Always-In**: {report.two_hour_analysis.always_in}",
-                f"- {report.two_hour_analysis.description}",
-                "",
-            ])
+            lines.extend(
+                [
+                    "## 2-Hour Chart Analysis",
+                    f"- **Regime**: {report.two_hour_analysis.regime}",
+                    f"- **Always-In**: {report.two_hour_analysis.always_in}",
+                    f"- {report.two_hour_analysis.description}",
+                    "",
+                ]
+            )
 
         if report.five_min_analysis:
-            lines.extend([
-                "## 5-Minute Context (Past 3 Days)",
-                f"- **Recent Regime**: {report.five_min_analysis.regime}",
-                f"- **Strength**: {report.five_min_analysis.strength.get('strength', 'unknown')}",
-                "",
-            ])
+            lines.extend(
+                [
+                    "## 5-Minute Context (Past 3 Days)",
+                    f"- **Recent Regime**: {report.five_min_analysis.regime}",
+                    f"- **Strength**: {report.five_min_analysis.strength.get('strength', 'unknown')}",
+                    "",
+                ]
+            )
 
         # Magnets
-        lines.extend([
-            "## Magnet Map",
-            "",
-            "### Resistance (above current price)",
-        ])
+        lines.extend(
+            [
+                "## Magnet Map",
+                "",
+                "### Resistance (above current price)",
+            ]
+        )
         for m in report.magnets_above[:5]:
             lines.append(f"- ${m['price']:.2f}: {m['description']}")
 
@@ -722,35 +792,39 @@ class PremarketReport:
                 lines.append(f"- {direction} ${mm['target']:.2f}")
 
         # Plans
-        lines.extend([
-            "",
-            "---",
-            "",
-            "## Plan A (Most Likely)",
-            f"**Scenario**: {report.plan_a['scenario']}",
-            f"**Bias**: {report.plan_a['bias']}",
-            "",
-            "**Setups to look for**:",
-        ])
+        lines.extend(
+            [
+                "",
+                "---",
+                "",
+                "## Plan A (Most Likely)",
+                f"**Scenario**: {report.plan_a['scenario']}",
+                f"**Bias**: {report.plan_a['bias']}",
+                "",
+                "**Setups to look for**:",
+            ]
+        )
         for setup in report.plan_a.get("setups", []):
             lines.append(f"- {setup}")
 
-        lines.extend([
-            "",
-            f"**Entry Zones**: {report.plan_a.get('entry_zones', 'N/A')}",
-            f"**Targets**: {report.plan_a.get('targets', 'N/A')}",
-            f"**Stops**: {report.plan_a.get('stops', 'N/A')}",
-            "",
-            "## Plan B (If Reversal)",
-            f"**Scenario**: {report.plan_b['scenario']}",
-            f"**Trigger**: {report.plan_b.get('trigger', 'N/A')}",
-            f"**New Bias**: {report.plan_b.get('bias', 'N/A')}",
-            f"**Action**: {report.plan_b.get('action', 'N/A')}",
-            "",
-            "---",
-            "",
-            "## ⚠️ Avoid List",
-        ])
+        lines.extend(
+            [
+                "",
+                f"**Entry Zones**: {report.plan_a.get('entry_zones', 'N/A')}",
+                f"**Targets**: {report.plan_a.get('targets', 'N/A')}",
+                f"**Stops**: {report.plan_a.get('stops', 'N/A')}",
+                "",
+                "## Plan B (If Reversal)",
+                f"**Scenario**: {report.plan_b['scenario']}",
+                f"**Trigger**: {report.plan_b.get('trigger', 'N/A')}",
+                f"**New Bias**: {report.plan_b.get('bias', 'N/A')}",
+                f"**Action**: {report.plan_b.get('action', 'N/A')}",
+                "",
+                "---",
+                "",
+                "## ⚠️ Avoid List",
+            ]
+        )
         for avoid in report.avoid_conditions:
             lines.append(f"- {avoid}")
 
@@ -809,11 +883,13 @@ class PremarketReport:
                 f"| {r.ticker} | {r.overall_bias} | {r.bias_confidence} | {r.daily_analysis.regime} |"
             )
 
-        lines.extend([
-            "",
-            "## Best Setups Today",
-            "",
-        ])
+        lines.extend(
+            [
+                "",
+                "## Best Setups Today",
+                "",
+            ]
+        )
 
         # Group by bias
         longs = [r for r in reports if r.overall_bias == "LONG"]
@@ -823,13 +899,17 @@ class PremarketReport:
         if longs:
             lines.append("### Long Candidates")
             for r in longs:
-                lines.append(f"- **{r.ticker}**: {r.plan_a['setups'][0] if r.plan_a.get('setups') else 'N/A'}")
+                lines.append(
+                    f"- **{r.ticker}**: {r.plan_a['setups'][0] if r.plan_a.get('setups') else 'N/A'}"
+                )
 
         if shorts:
             lines.append("")
             lines.append("### Short Candidates")
             for r in shorts:
-                lines.append(f"- **{r.ticker}**: {r.plan_a['setups'][0] if r.plan_a.get('setups') else 'N/A'}")
+                lines.append(
+                    f"- **{r.ticker}**: {r.plan_a['setups'][0] if r.plan_a.get('setups') else 'N/A'}"
+                )
 
         if neutral:
             lines.append("")

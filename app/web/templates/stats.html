@@ -17,8 +17,8 @@
         <h2 class="text-xl font-bold mb-4 text-white">Portfolio Overview</h2>
         <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
             <div class="text-center">
-                <div class="text-2xl font-bold {% if portfolio_stats.total_pnl_dollars >= 0 %}positive{% else %}negative{% endif %}">
-                    ${{ "%.0f"|format(portfolio_stats.total_pnl_dollars) }}
+                <div class="text-2xl font-bold {% if total_pnl_usd >= 0 %}positive{% else %}negative{% endif %}">
+                    ${{ "%.0f"|format(total_pnl_usd) }}
                 </div>
                 <div class="text-xs text-dark-400">Total P&L</div>
             </div>

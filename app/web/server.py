@@ -9,271 +9,51 @@ Provides a browser-based interface for:
 - Report generation
 """
 
-# Suppress SWIG deprecation warnings from databento's C++ bindings EARLY
-# Must be before any databento imports
-import warnings
-warnings.filterwarnings("ignore", message=".*Swig.*has no __module__ attribute")
-warnings.filterwarnings("ignore", message=".*swig.*has no __module__ attribute")
-warnings.filterwarnings("ignore", message="builtin type .* has no __module__ attribute")
-
-import asyncio
-import json
 import logging
-import os
-import shutil
-import time
-from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException, Depends, Security
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.security import APIKeyHeader
 
 from app.config import (
-    settings, IMPORTS_DIR, OUTPUTS_DIR, PROJECT_ROOT, MATERIALS_DIR,
-    load_tickers_from_file, save_tickers_to_file, get_llm_api_key,
-    get_polygon_api_key, get_app_api_key, is_auth_enabled
+    IMPORTS_DIR,
+    MATERIALS_DIR,
+    OUTPUTS_DIR,
+    get_polygon_api_key,
+    load_tickers_from_file,
 )
 from app.config_prompts import get_cache_settings
-from app.journal.models import init_db, Trade, Strategy, get_session, TradeDirection, TradeOutcome
-from app.web.schemas import (
-    APIResponse, TradeUpdate, TradeNotesUpdate, TradeStrategyUpdate,
-    StrategyCreate, StrategyUpdate, StrategyMerge,
-    CacheSettings, CandleSettings, PromptSettings,
-    RobinhoodCredentials, BulkAnalysisRequest,
-    success_response, error_response
-)
-from app.journal.ingest import TradeIngester
 from app.journal.analytics import TradeAnalytics
-from app.journal.coach import TradeCoach
+from app.journal.models import Strategy, Trade, TradeOutcome, get_session, init_db
+from app.logging_utils import install_log_safety
+from app.web.dependencies import require_login
+from app.web.routes import (
+    auth_router,
+    imports_router,
+    materials_router,
+    reports_router,
+    settings_router,
+    strategies_router,
+    system_router,
+    tickers_router,
+    trades_router,
+)
+from app.web.utils import (
+    get_active_strategies_cached,
+    get_template_context_with_user,
+    ticker_display,
+    ticker_exchange,
+)
 
 logger = logging.getLogger(__name__)
-
-# ==================== AUTHENTICATION ====================
-
-# API Key authentication for sensitive endpoints
-api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
-
-
-async def verify_api_key(api_key: str = Security(api_key_header)) -> bool:
-    """
-    Verify API key for protected endpoints.
-    
-    If APP_API_KEY is not set in environment, authentication is disabled.
-    If set, the X-API-Key header must match.
-    
-    Returns True if authenticated or auth is disabled.
-    Raises HTTPException 401 if key is required but missing/invalid.
-    """
-    expected_key = get_app_api_key()
-    
-    # If no API key configured, auth is disabled
-    if expected_key is None:
-        return True
-    
-    # API key is required
-    if not api_key:
-        raise HTTPException(
-            status_code=401,
-            detail="API key required. Set X-API-Key header.",
-            headers={"WWW-Authenticate": "ApiKey"}
-        )
-    
-    if api_key != expected_key:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid API key",
-            headers={"WWW-Authenticate": "ApiKey"}
-        )
-    
-    return True
-
-
-# Dependency for API key-protected routes (used for DELETE endpoints)
-require_auth = Depends(verify_api_key)
-
-
-async def require_user_or_api_key(request: Request):
-    """
-    Dependency that requires either:
-    1. A logged-in user (via session cookie or Bearer token), OR
-    2. A valid API key
-    
-    Returns the authenticated user if logged in, or True if API key is valid.
-    """
-    from app.auth.service import get_current_user_optional
-    
-    # First, try to get the logged-in user
-    try:
-        user = await get_current_user_optional(request, None)
-        if user:
-            return user
-    except Exception:
-        pass
-    
-    # Fall back to API key authentication
-    api_key = request.headers.get("X-API-Key")
-    expected_key = get_app_api_key()
-    
-    if expected_key and api_key == expected_key:
-        return True
-    
-    # Neither user nor API key - require authentication
-    raise HTTPException(
-        status_code=401,
-        detail="Authentication required. Please log in or provide a valid API key.",
-        headers={"WWW-Authenticate": "Bearer"}
-    )
-
-
-# Dependency for write operations (POST/PATCH)
-require_write_auth = Depends(require_user_or_api_key)
-
-
-async def get_user_from_request(request: Request):
-    """
-    Get the current logged-in user from a request (if any).
-    Returns None if using API key authentication.
-    """
-    from app.auth.service import get_current_user_optional
-    try:
-        return await get_current_user_optional(request, None)
-    except Exception:
-        return None
-
-
-async def verify_trade_ownership(trade_id: int, request: Request, session):
-    """
-    Verify that the trade belongs to the current user.
-    For API key auth, returns the trade without ownership check.
-    Returns the trade if authorized, raises 404 if not found or not authorized.
-    """
-    user = await get_user_from_request(request)
-    
-    if user:
-        # User is logged in - verify ownership
-        trade = session.query(Trade).filter(Trade.id == trade_id, Trade.user_id == user.id).first()
-    else:
-        # API key auth - allow access to any trade
-        trade = session.query(Trade).filter(Trade.id == trade_id).first()
-    
-    if not trade:
-        raise HTTPException(status_code=404, detail="Trade not found")
-    
-    return trade, user
-
-
-# ==================== FILE UPLOAD SECURITY ====================
-
-# Maximum file sizes (in bytes)
-MAX_CSV_SIZE = 10 * 1024 * 1024       # 10 MB for CSV imports
-MAX_MATERIAL_SIZE = 50 * 1024 * 1024  # 50 MB for training materials (PDFs can be large)
-MAX_TOTAL_UPLOAD_SIZE = 100 * 1024 * 1024  # 100 MB total for batch uploads
-
-# Allowed file extensions
-ALLOWED_CSV_EXTENSIONS = {'.csv'}
-ALLOWED_MATERIAL_EXTENSIONS = {'.pdf', '.txt', '.md'}
-
-
-async def validate_upload_file(
-    file: UploadFile, 
-    allowed_extensions: set[str], 
-    max_size: int,
-    error_prefix: str = "File"
-) -> bytes:
-    """
-    Validate and read an uploaded file.
-    
-    Args:
-        file: The uploaded file
-        allowed_extensions: Set of allowed file extensions (e.g., {'.csv', '.pdf'})
-        max_size: Maximum file size in bytes
-        error_prefix: Prefix for error messages
-        
-    Returns:
-        File content as bytes
-        
-    Raises:
-        HTTPException: If validation fails
-    """
-    if not file.filename:
-        raise HTTPException(status_code=400, detail=f"{error_prefix} name is required")
-    
-    # Sanitize filename
-    filename = Path(file.filename).name  # Strip any path components
-    ext = Path(filename).suffix.lower()
-    
-    # Check extension
-    if ext not in allowed_extensions:
-        allowed = ", ".join(sorted(allowed_extensions))
-        raise HTTPException(
-            status_code=400, 
-            detail=f"{error_prefix} type '{ext}' not allowed. Allowed types: {allowed}"
-        )
-    
-    # Read content and check size
-    content = await file.read()
-    if len(content) > max_size:
-        max_mb = max_size / (1024 * 1024)
-        actual_mb = len(content) / (1024 * 1024)
-        raise HTTPException(
-            status_code=413,
-            detail=f"{error_prefix} too large: {actual_mb:.1f} MB (max: {max_mb:.0f} MB)"
-        )
-    
-    return content
-
-
-def sanitize_filename(filename: str) -> str:
-    """Sanitize a filename to prevent path traversal attacks."""
-    # Get just the filename, strip any directory components
-    name = Path(filename).name
-    # Remove any null bytes or other problematic characters
-    name = name.replace('\x00', '').replace('/', '').replace('\\', '')
-    return name
-
-
-# Track cancelled review generations (trade_id -> True if cancelled)
-_cancelled_reviews: dict[int, bool] = {}
-
-# Simple in-memory cache with TTL for frequently accessed data
-_cache: dict[str, tuple[any, float]] = {}
-CACHE_TTL = 60  # seconds
-
-
-def get_cached(key: str, ttl: int = CACHE_TTL):
-    """Get value from cache if not expired."""
-    if key in _cache:
-        value, timestamp = _cache[key]
-        if time.time() - timestamp < ttl:
-            return value
-    return None
-
-
-def set_cached(key: str, value: any):
-    """Store value in cache."""
-    _cache[key] = (value, time.time())
-
-
-def clear_cache(key: str = None):
-    """Clear cache (specific key or all)."""
-    if key:
-        _cache.pop(key, None)
-    else:
-        _cache.clear()
-
-
-def get_active_strategies_cached(session) -> list:
-    """Get active strategies with caching (reduces DB queries)."""
-    cached = get_cached("active_strategies")
-    if cached is not None:
-        return cached
-    strategies = session.query(Strategy).filter(Strategy.is_active == True).order_by(Strategy.category, Strategy.name).all()
-    set_cached("active_strategies", strategies)
-    return strategies
+try:
+    install_log_safety()
+except Exception:
+    # Logging should never prevent app startup.
+    pass
 
 
 # Initialize FastAPI app with OpenAPI tags for better documentation
@@ -286,6 +66,9 @@ tags_metadata = [
     {"name": "materials", "description": "Training materials and RAG"},
     {"name": "settings", "description": "Application settings"},
     {"name": "imports", "description": "Data import operations"},
+    {"name": "tickers", "description": "Favorite ticker configuration"},
+    {"name": "reports", "description": "Report generation and batch analysis"},
+    {"name": "auth", "description": "Authentication and user management"},
 ]
 
 app = FastAPI(
@@ -295,11 +78,14 @@ app = FastAPI(
     openapi_tags=tags_metadata,
 )
 
-# Include modular routers
-from app.web.routes import trades_router, strategies_router, materials_router, auth_router
+app.include_router(system_router)
 app.include_router(trades_router)
 app.include_router(strategies_router)
 app.include_router(materials_router)
+app.include_router(tickers_router)
+app.include_router(imports_router)
+app.include_router(reports_router)
+app.include_router(settings_router)
 app.include_router(auth_router)
 
 # Mount static files directory
@@ -315,48 +101,51 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 # Enable auto-reload for templates in development (instant frontend changes)
 templates.env.auto_reload = True
 
-# Custom Jinja2 filters
-def ticker_display(ticker: str) -> str:
-    """
-    Strip exchange prefix from ticker for display.
-    
-    Examples:
-        "HKEX:0981" -> "0981"
-        "AMEX:SOXL" -> "SOXL"
-        "SOXL" -> "SOXL"
-    """
-    if ticker and ":" in ticker:
-        return ticker.split(":", 1)[1]
-    return ticker or ""
-
-def ticker_exchange(ticker: str) -> str:
-    """
-    Extract exchange prefix from ticker.
-    
-    Examples:
-        "HKEX:0981" -> "HKEX"
-        "AMEX:SOXL" -> "AMEX"
-        "SOXL" -> ""
-    """
-    if ticker and ":" in ticker:
-        return ticker.split(":", 1)[0]
-    return ""
-
 # Register custom filters
 templates.env.filters["ticker_display"] = ticker_display
 templates.env.filters["ticker_exchange"] = ticker_exchange
+
 
 # Initialize database on startup
 @app.on_event("startup")
 async def startup():
     init_db()
     IMPORTS_DIR.mkdir(exist_ok=True)
-    
+
     # Recalculate trade numbers on startup (ensures chronological order)
     from app.journal.models import recalculate_trade_numbers
+
     count = recalculate_trade_numbers()
     if count > 0:
         logger.info(f"📊 Recalculated trade numbers for {count} trades")
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    """
+    Best-effort cleanup for background executors.
+
+    Some third-party libs (notably joblib/loky, pulled in via ML deps) can leave
+    a tracked semaphore behind and emit a noisy warning on interpreter shutdown.
+    This proactively shuts down any reusable loky executor if it was created.
+    """
+    try:
+        from joblib.externals.loky import reusable_executor  # type: ignore
+
+        executor = getattr(reusable_executor, "_executor", None)
+        if executor is not None:
+            try:
+                executor.shutdown(wait=True)
+            except TypeError:
+                # Older/newer signatures differ; fall back to default shutdown.
+                executor.shutdown()
+            try:
+                reusable_executor._executor = None  # type: ignore[attr-defined]
+            except Exception:
+                pass
+    except Exception:
+        # Non-fatal: app can still shut down cleanly.
+        pass
 
 
 # Favicon - prevents 404 errors in browser
@@ -364,99 +153,27 @@ async def startup():
 async def favicon():
     """Return a simple SVG favicon."""
     from fastapi.responses import Response
+
     # Simple chart icon as SVG favicon
-    svg = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+    svg = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
         <rect width="32" height="32" rx="4" fill="#3B82F6"/>
         <path d="M6 22 L12 16 L18 20 L26 10" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round"/>
         <circle cx="26" cy="10" r="2" fill="#10B981"/>
-    </svg>'''
+    </svg>"""
     return Response(content=svg, media_type="image/svg+xml")
 
 
 # ==================== HEALTH & STATUS ====================
 
-@app.get("/health")
-async def health_check():
-    """Health check endpoint for monitoring."""
-    return JSONResponse(success_response(
-        data={"status": "healthy"},
-        message="Service is running"
-    ))
-
-
-@app.get("/api/status")
-async def api_status():
-    """Get API status including auth and service availability."""
-    return JSONResponse(success_response(data={
-        "version": "0.1.0",
-        "auth_enabled": is_auth_enabled(),
-        "llm_available": get_llm_api_key() is not None,
-        "polygon_available": get_polygon_api_key() is not None,
-        "data_provider": settings.data_provider,
-    }))
-
-
-# ==================== USER CONTEXT HELPER ====================
-
-async def get_template_context(request: Request) -> dict:
-    """Get common template context including current user."""
-    from app.auth.service import get_current_user_optional
-    
-    context = {
-        "data_provider": settings.data_provider,
-        "llm_available": get_llm_api_key() is not None,
-    }
-    
-    # Try to get current user (non-blocking)
-    try:
-        user = await get_current_user_optional(request, None)
-        context["current_user"] = user
-    except Exception:
-        context["current_user"] = None
-    
-    return context
-
-
-# ==================== AUTHENTICATION DEPENDENCIES ====================
-
-async def require_login(request: Request):
-    """
-    Dependency that requires user to be logged in.
-    Redirects to login page if not authenticated.
-    Returns the authenticated user.
-    """
-    from app.auth.service import get_current_user
-    from fastapi.responses import RedirectResponse
-    
-    try:
-        user = await get_current_user(request, None)
-        return user
-    except HTTPException:
-        # Redirect to login with return URL
-        login_url = f"/auth/login?next={request.url.path}"
-        raise HTTPException(
-            status_code=307,
-            headers={"Location": login_url}
-        )
-
-
-async def get_template_context_with_user(request: Request, user) -> dict:
-    """Get template context for authenticated pages."""
-    return {
-        "data_provider": settings.data_provider,
-        "llm_available": get_llm_api_key() is not None,
-        "current_user": user,
-    }
-
-
 # ==================== PAGES ====================
 
+
 @app.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request, user = Depends(require_login)):
+async def dashboard(request: Request, user=Depends(require_login)):
     """Main dashboard page."""
     analytics = TradeAnalytics()
     base_context = await get_template_context_with_user(request, user)
-    
+
     session = get_session()
     try:
         # Get recent trades for this user (limit 10) - newest by trade_number first
@@ -467,41 +184,54 @@ async def dashboard(request: Request, user = Depends(require_login)):
             .limit(10)
             .all()
         )
-        
+
         # Use efficient COUNT queries for this user's trades only
         from sqlalchemy import func
-        
-        total_trades = session.query(func.count(Trade.id)).filter(Trade.user_id == user.id).scalar() or 0
-        winners = session.query(func.count(Trade.id)).filter(Trade.user_id == user.id, Trade.outcome == TradeOutcome.WIN).scalar() or 0
-        total_r = session.query(func.sum(Trade.r_multiple)).filter(Trade.user_id == user.id).scalar() or 0
+
+        total_trades = (
+            session.query(func.count(Trade.id)).filter(Trade.user_id == user.id).scalar() or 0
+        )
+        winners = (
+            session.query(func.count(Trade.id))
+            .filter(Trade.user_id == user.id, Trade.outcome == TradeOutcome.WIN)
+            .scalar()
+            or 0
+        )
+        total_r = (
+            session.query(func.sum(Trade.r_multiple)).filter(Trade.user_id == user.id).scalar() or 0
+        )
         win_rate = winners / total_trades if total_trades > 0 else 0
-        
+
         # Calculate total P&L in USD (converting from original currency if needed)
         all_trades = session.query(Trade).filter(Trade.user_id == user.id).all()
         total_pnl = sum(t.pnl_usd for t in all_trades if t.pnl_usd is not None)
-        
+
         # Get strategy stats for this user
         strategy_stats = analytics.get_all_strategy_stats(user_id=user.id)[:5]
-        
+
         # Get portfolio stats with drawdown and advanced metrics
         portfolio_stats = analytics.get_portfolio_stats(user_id=user.id)
-        
+
         # Check data provider
         polygon_available = get_polygon_api_key() is not None
-        
-        return templates.TemplateResponse(request, "dashboard.html", {
-            **base_context,
-            "recent_trades": recent_trades,
-            "total_trades": total_trades,
-            "total_r": total_r,
-            "total_pnl": total_pnl,
-            "win_rate": win_rate,
-            "winners": winners,
-            "strategy_stats": strategy_stats,
-            "portfolio_stats": portfolio_stats,
-            "tickers": load_tickers_from_file(),
-            "polygon_available": polygon_available,
-        })
+
+        return templates.TemplateResponse(
+            request,
+            "dashboard.html",
+            {
+                **base_context,
+                "recent_trades": recent_trades,
+                "total_trades": total_trades,
+                "total_r": total_r,
+                "total_pnl": total_pnl,
+                "win_rate": win_rate,
+                "winners": winners,
+                "strategy_stats": strategy_stats,
+                "portfolio_stats": portfolio_stats,
+                "tickers": load_tickers_from_file(),
+                "polygon_available": polygon_available,
+            },
+        )
     finally:
         session.close()
 
@@ -513,11 +243,11 @@ async def trades_page(
     per_page: int = 50,
     ticker: Optional[str] = None,
     outcome: Optional[str] = None,
-    user = Depends(require_login),
+    user=Depends(require_login),
 ):
     """
     All trades page with pagination and filtering.
-    
+
     Args:
         page: Page number (1-indexed)
         per_page: Number of trades per page (default 50, max 200)
@@ -525,18 +255,18 @@ async def trades_page(
         outcome: Filter by outcome (win, loss, breakeven)
     """
     from math import ceil
-    
+
     base_context = await get_template_context_with_user(request, user)
-    
+
     # Validate pagination params
     page = max(1, page)
     per_page = min(max(10, per_page), 200)  # Between 10 and 200
-    
+
     session = get_session()
     try:
         # Build query with user filter and optional filters
         query = session.query(Trade).filter(Trade.user_id == user.id)
-        
+
         if ticker:
             query = query.filter(Trade.ticker.ilike(f"%{ticker}%"))
         if outcome:
@@ -547,52 +277,50 @@ async def trades_page(
                 query = query.filter(Trade.outcome == TradeOutcome.LOSS)
             elif outcome_lower == "breakeven":
                 query = query.filter(Trade.outcome == TradeOutcome.BREAKEVEN)
-        
+
         # Get total count for pagination
         total_trades = query.count()
         total_pages = ceil(total_trades / per_page) if total_trades > 0 else 1
-        
+
         # Ensure page is within bounds
         page = min(page, total_pages)
-        
+
         # Get paginated trades
         offset = (page - 1) * per_page
-        trades = (
-            query
-            .order_by(Trade.trade_number.desc())
-            .offset(offset)
-            .limit(per_page)
-            .all()
-        )
-        
+        trades = query.order_by(Trade.trade_number.desc()).offset(offset).limit(per_page).all()
+
         strategies = get_active_strategies_cached(session)
 
-        return templates.TemplateResponse(request, "trades.html", {
-            **base_context,
-            "trades": trades,
-            "strategies": strategies,
-            # Pagination info
-            "page": page,
-            "per_page": per_page,
-            "total_trades": total_trades,
-            "total_pages": total_pages,
-            "has_next": page < total_pages,
-            "has_prev": page > 1,
-            # Filters
-            "filter_ticker": ticker or "",
-            "filter_outcome": outcome or "",
-        })
+        return templates.TemplateResponse(
+            request,
+            "trades.html",
+            {
+                **base_context,
+                "trades": trades,
+                "strategies": strategies,
+                # Pagination info
+                "page": page,
+                "per_page": per_page,
+                "total_trades": total_trades,
+                "total_pages": total_pages,
+                "has_next": page < total_pages,
+                "has_prev": page > 1,
+                # Filters
+                "filter_ticker": ticker or "",
+                "filter_outcome": outcome or "",
+            },
+        )
     finally:
         session.close()
 
 
 @app.get("/trades/{trade_id}", response_class=HTMLResponse)
-async def trade_detail(request: Request, trade_id: int, user = Depends(require_login)):
+async def trade_detail(request: Request, trade_id: int, user=Depends(require_login)):
     """Trade detail page - loads instantly, review fetched via AJAX."""
     from app.materials_reader import has_materials
-    
+
     base_context = await get_template_context_with_user(request, user)
-    
+
     session = get_session()
     try:
         # Verify trade exists and belongs to this user
@@ -601,885 +329,25 @@ async def trade_detail(request: Request, trade_id: int, user = Depends(require_l
             raise HTTPException(status_code=404, detail="Trade not found")
 
         # Don't block on LLM - page loads instantly, review fetched async
-        return templates.TemplateResponse(request, "trade_detail.html", {
-            **base_context,
-            "trade": trade,
-            "review": None,  # Will be loaded via AJAX
-            "has_materials": has_materials(),
-        })
-    finally:
-        session.close()
-
-
-@app.patch("/api/trades/{trade_id}/notes", dependencies=[require_write_auth])
-async def update_trade_notes(trade_id: int, request: Request):
-    """Update trade notes, personal review, and Brooks intent fields."""
-    data = await request.json()
-
-    session = get_session()
-    try:
-        trade, _ = await verify_trade_ownership(trade_id, request, session)
-
-        # Allowed fields that can be updated via this endpoint
-        allowed_fields = {
-            # Notes
-            'notes', 'entry_reason', 'exit_reason', 'setup_type', 'signal_reason', 'mistakes', 'lessons', 'mistakes_and_lessons',
-            # Brooks intent
-            'trade_type', 'confidence_level', 'emotional_state', 'followed_plan',
-            'stop_reason', 'target_reason', 'invalidation_condition',
-            # Extended analysis
-            'trend_assessment', 'signal_reason', 'was_signal_present',
-            'strategy_alignment', 'entry_exit_emotions', 'entry_tp_distance',
-        }
-        
-        # Update all provided fields
-        for field in allowed_fields:
-            if field in data:
-                setattr(trade, field, data[field])
-
-        # Clear cached review when trade intent is updated (to force re-analysis)
-        trade.cached_review = None
-        trade.review_generated_at = None
-
-        session.commit()
-
-        return JSONResponse({"success": True, "message": "Trade details saved"})
-    finally:
-        session.close()
-
-
-@app.get("/api/trades/{trade_id}/review")
-async def get_trade_review(trade_id: int, force: bool = False, check_only: bool = False):
-    """
-    Get AI review for a trade (non-blocking async endpoint).
-
-    Uses cached review if available and trade hasn't been modified.
-    Set force=true to regenerate the review.
-    Set check_only=true to just check status without triggering generation.
-    """
-    session = get_session()
-    try:
-        trade = session.query(Trade).filter(Trade.id == trade_id).first()
-        if not trade:
-            return JSONResponse({"success": False, "error": "Trade not found"})
-
-        # Check if generation already in progress
-        if trade.review_in_progress:
-            return JSONResponse({
-                "success": True,
-                "in_progress": True,
-                "message": "Review generation in progress..."
-            })
-
-        cache_settings = get_cache_settings()
-
-        # Return cached review if available (unless force=true)
-        if not force and cache_settings.get('enable_review_cache', True) and trade.cached_review and trade.review_generated_at:
-            try:
-                cached = json.loads(trade.cached_review)
-                return JSONResponse({
-                    "success": True,
-                    "cached": True,
-                    "generated_at": trade.review_generated_at.isoformat() if trade.review_generated_at else None,
-                    "review": cached
-                })
-            except json.JSONDecodeError:
-                pass  # Fall through to regenerate
-
-        # Check only mode - don't trigger generation
-        if check_only:
-            return JSONResponse({
-                "success": False,
-                "error": "No cached review available",
-                "in_progress": False
-            })
-
-        # Auto-regenerate option
-        if cache_settings.get('auto_regenerate', False):
-            force = True
-
-        # Mark in progress and start generation
-        trade.review_in_progress = True
-        _cancelled_reviews[trade_id] = False
-        session.commit()
-
-        def _get_review():
-            def is_cancelled():
-                return _cancelled_reviews.get(trade_id, False)
-            return TradeCoach().review_trade(trade_id, cancellation_check=is_cancelled)
-
-        # Run in thread pool to not block event loop
-        review = await asyncio.to_thread(_get_review)
-
-        # Check if cancelled
-        if _cancelled_reviews.get(trade_id, False):
-            trade.review_in_progress = False
-            session.commit()
-            _cancelled_reviews.pop(trade_id, None)
-            return JSONResponse({"success": False, "error": "Review generation was cancelled"})
-
-        if review:
-            session.expire(trade)
-            session.refresh(trade)
-            
-            ai_setup = review.setup_classification
-            
-            # Store original AI classification (once only)
-            if ai_setup and not trade.ai_setup_classification:
-                trade.ai_setup_classification = ai_setup
-            
-            # Auto-set strategy if not manually set
-            if ai_setup and ai_setup.lower() not in ['unknown', 'unclassified', 'insufficient_information']:
-                if not trade.strategy_id:
-                    strategy = session.query(Strategy).filter(Strategy.name == ai_setup).first()
-                    if not strategy:
-                        strategy = Strategy(name=ai_setup, description="Auto-created from AI review")
-                        session.add(strategy)
-                        session.flush()
-                    trade.strategy_id = strategy.id
-            
-            current_strategy = trade.strategy.name if trade.strategy else ai_setup
-            
-            review_dict = {
-                "grade": review.grade,
-                "grade_explanation": review.grade_explanation,
-                "regime": review.regime,
-                "always_in": review.always_in,
-                "context_description": review.context_description,
-                # Use trade's strategy for consistency, fall back to AI classification
-                "setup_classification": current_strategy or ai_setup or "Unknown",
-                "ai_setup_classification": ai_setup,  # Keep the AI's raw classification too
-                "setup_quality": review.setup_quality,
-                "what_was_good": review.what_was_good or [],
-                "what_was_flawed": review.what_was_flawed or [],
-                "errors_detected": review.errors_detected or [],
-                "rule_for_next_time": review.rule_for_next_time or [],
-            }
-            
-            # Cache and clear in_progress
-            trade.cached_review = json.dumps(review_dict)
-            trade.review_generated_at = datetime.now(timezone.utc)
-            trade.review_in_progress = False
-            session.commit()
-            
-            return JSONResponse({
-                "success": True,
-                "cached": False,
-                "generated_at": trade.review_generated_at.isoformat(),
-                "review": review_dict
-            })
-        else:
-            # Clear in_progress flag on failure
-            trade.review_in_progress = False
-            session.commit()
-            return JSONResponse({"success": False, "error": "Review not available"})
-    except Exception as e:
-        logger.error(f"Error getting trade review: {e}")
-        # Clear in_progress flag on error
-        try:
-            trade = session.query(Trade).filter(Trade.id == trade_id).first()
-            if trade:
-                trade.review_in_progress = False
-                session.commit()
-        except Exception:
-            pass  # Best effort to clear flag
-        return JSONResponse({"success": False, "error": str(e)})
-    finally:
-        session.close()
-
-
-@app.post("/api/trades/{trade_id}/review/cancel", dependencies=[require_write_auth])
-async def cancel_trade_review(trade_id: int):
-    """Cancel an in-progress review generation."""
-    session = get_session()
-    try:
-        trade = session.query(Trade).filter(Trade.id == trade_id).first()
-        if not trade:
-            return JSONResponse({"success": False, "error": "Trade not found"})
-        
-        _cancelled_reviews[trade_id] = True
-        
-        if trade.review_in_progress:
-            trade.review_in_progress = False
-            session.commit()
-            return JSONResponse({"success": True, "message": "Review cancelled"})
-        return JSONResponse({"success": True, "message": "No review in progress"})
-    except Exception as e:
-        return JSONResponse({"success": False, "error": str(e)})
-    finally:
-        session.close()
-
-
-@app.get("/api/trades/{trade_id}/check-data")
-async def check_trade_data_availability(trade_id: int):
-    """
-    Check if local data is available for a futures trade.
-    
-    Returns:
-        - has_data: True if all required data is available locally
-        - is_futures: True if this is a futures ticker
-        - missing_schemas: List of schemas that need data
-        - missing_dates: Date range that needs data
-        - ticker: The normalized ticker
-    """
-    from datetime import timedelta
-    from app.data.providers import normalize_ticker, is_futures_ticker, DatabentoProvider
-    from app.journal.ingest import get_market_timezone
-    
-    session = get_session()
-    try:
-        trade = session.query(Trade).filter(Trade.id == trade_id).first()
-        if not trade:
-            return JSONResponse({"success": False, "error": "Trade not found"})
-        
-        normalized_ticker, exchange = normalize_ticker(trade.ticker)
-        
-        # Only check for futures - stocks use Yahoo/Polygon which don't need local data
-        if exchange != 'FUTURES':
-            return JSONResponse({
-                "success": True,
-                "is_futures": False,
-                "has_data": True,
-                "message": "Stock data fetched from online APIs"
-            })
-        
-        # For futures, check local Databento data
-        provider = DatabentoProvider()
-        
-        # Determine the date range we need for analysis
-        # We need: daily (60 days back), 2h (30 days), 5m (5 days)
-        trade_date = trade.trade_date
-        
-        # Date ranges needed for each schema
-        schemas_needed = {
-            "ohlcv-1d": (trade_date - timedelta(days=60), trade_date),
-            "ohlcv-1h": (trade_date - timedelta(days=30), trade_date),
-            "ohlcv-1m": (trade_date - timedelta(days=5), trade_date),
-        }
-        
-        missing_schemas = []
-        missing_date_ranges = {}
-        
-        for schema, (start_date, end_date) in schemas_needed.items():
-            available = provider.get_available_dates(schema)
-            
-            # Check if we have data for the trade date and some context
-            # For daily, we need at least 20 bars; for intraday, at least the trade date
-            if schema == "ohlcv-1d":
-                # Check if we have at least 20 days of data before trade
-                count = sum(1 for d in available if start_date <= d <= end_date)
-                if count < 20:
-                    missing_schemas.append(schema)
-                    missing_date_ranges[schema] = {
-                        "start": start_date.isoformat(),
-                        "end": end_date.isoformat(),
-                        "have": count,
-                        "need": 20,
-                    }
-            else:
-                # For intraday, check if trade date is covered
-                if trade_date not in available:
-                    missing_schemas.append(schema)
-                    missing_date_ranges[schema] = {
-                        "start": start_date.isoformat(),
-                        "end": end_date.isoformat(),
-                        "have": len([d for d in available if start_date <= d <= end_date]),
-                        "need": "trade date",
-                    }
-        
-        has_data = len(missing_schemas) == 0
-        
-        return JSONResponse({
-            "success": True,
-            "is_futures": True,
-            "has_data": has_data,
-            "ticker": normalized_ticker,
-            "trade_date": trade_date.isoformat(),
-            "missing_schemas": missing_schemas,
-            "missing_details": missing_date_ranges,
-            "message": "Data available locally" if has_data else f"Missing data for: {', '.join(missing_schemas)}"
-        })
-        
-    except Exception as e:
-        logger.exception(f"Error checking data availability: {e}")
-        return JSONResponse({"success": False, "error": str(e)})
-    finally:
-        session.close()
-
-
-@app.post("/api/trades/{trade_id}/download-data", dependencies=[require_write_auth])
-async def download_trade_data(trade_id: int):
-    """
-    Download missing Databento data for a futures trade.
-    
-    Only downloads what's needed for the specific trade analysis.
-    """
-    from datetime import timedelta
-    from app.data.providers import normalize_ticker, DatabentoProvider, get_databento_api_key
-    
-    session = get_session()
-    try:
-        trade = session.query(Trade).filter(Trade.id == trade_id).first()
-        if not trade:
-            return JSONResponse({"success": False, "error": "Trade not found"})
-        
-        normalized_ticker, exchange = normalize_ticker(trade.ticker)
-        
-        if exchange != 'FUTURES':
-            return JSONResponse({
-                "success": True,
-                "message": "No download needed for stocks"
-            })
-        
-        # Check API key
-        api_key = get_databento_api_key()
-        if not api_key:
-            return JSONResponse({
-                "success": False,
-                "error": "DATABENTO_API_KEY not configured. Please add it to your .env file or download data manually from databento.com"
-            })
-        
-        # Get base symbol from ticker (e.g., MES=F -> MES)
-        provider = DatabentoProvider()
-        if normalized_ticker not in provider.FUTURES_MAP:
-            return JSONResponse({
-                "success": False,
-                "error": f"Unknown futures symbol: {normalized_ticker}"
-            })
-        
-        _, base_symbol = provider.FUTURES_MAP[normalized_ticker]
-        trade_date = trade.trade_date
-        
-        # Define what we need to download
-        download_tasks = [
-            ("ohlcv-1d", trade_date - timedelta(days=60), trade_date),
-            ("ohlcv-1h", trade_date - timedelta(days=30), trade_date),
-            ("ohlcv-1m", trade_date - timedelta(days=5), trade_date),
-        ]
-        
-        # Run download in thread pool
-        def _download():
-            # Suppress SWIG warnings before import
-            import warnings
-            warnings.filterwarnings("ignore", category=DeprecationWarning)
-            import databento as db
-            
-            client = db.Historical(key=api_key)
-            results = []
-            
-            for schema, start, end in download_tasks:
-                try:
-                    # Check what we already have
-                    available = provider.get_available_dates(schema)
-                    
-                    # Find missing dates (skip weekends - futures don't trade Sat/Sun)
-                    missing_dates = []
-                    current = start
-                    while current <= end:
-                        # Skip weekends (5=Saturday, 6=Sunday)
-                        if current.weekday() < 5 and current not in available:
-                            missing_dates.append(current)
-                        current += timedelta(days=1)
-                    
-                    if not missing_dates:
-                        results.append({
-                            "schema": schema,
-                            "status": "skipped",
-                            "message": "Already have data"
-                        })
-                        continue
-                    
-                    # Download the missing range
-                    download_start = min(missing_dates)
-                    download_end = max(missing_dates)
-                    
-                    logger.info(f"Downloading {base_symbol} {schema} from {download_start} to {download_end}")
-                    
-                    # Use [ROOT].FUT format for futures parent symbol
-                    # This gets all contracts for the product (e.g., MES.FUT gets MESZ5, MESH6, etc.)
-                    parent_symbol = f"{base_symbol}.FUT"
-                    data = client.timeseries.get_range(
-                        dataset="GLBX.MDP3",
-                        symbols=[parent_symbol],
-                        stype_in="parent",  # Get all contracts for this product
-                        schema=schema,
-                        start=download_start.strftime("%Y-%m-%d"),
-                        end=(download_end + timedelta(days=1)).strftime("%Y-%m-%d"),
-                    )
-                    
-                    # Check if we got data
-                    df = data.to_df()
-                    if df.empty:
-                        logger.warning(f"No data returned for {base_symbol} {schema}")
-                        results.append({
-                            "schema": schema,
-                            "status": "no_data",
-                            "message": f"No data available for {download_start} to {download_end}"
-                        })
-                        continue
-                    
-                    # Save to file
-                    filename = f"{base_symbol}_{schema}_{download_start.strftime('%Y-%m-%d')}_{download_end.strftime('%Y-%m-%d')}.dbn.zst"
-                    output_path = provider.data_dir / filename
-                    data.to_file(str(output_path))
-                    
-                    size_kb = output_path.stat().st_size / 1024
-                    results.append({
-                        "schema": schema,
-                        "status": "downloaded",
-                        "file": filename,
-                        "size_kb": round(size_kb, 1),
-                        "dates": len(missing_dates),
-                        "bars": len(df),
-                    })
-                    
-                except Exception as e:
-                    logger.error(f"Error downloading {schema}: {e}")
-                    results.append({
-                        "schema": schema,
-                        "status": "error",
-                        "error": str(e)
-                    })
-            
-            return results
-        
-        results = await asyncio.to_thread(_download)
-        
-        # Check if any downloads failed
-        errors = [r for r in results if r["status"] == "error"]
-        if errors:
-            return JSONResponse({
-                "success": False,
-                "partial": True,
-                "results": results,
-                "error": f"Some downloads failed: {errors[0]['error']}"
-            })
-        
-        return JSONResponse({
-            "success": True,
-            "results": results,
-            "message": "Data downloaded successfully"
-        })
-        
-    except Exception as e:
-        logger.exception(f"Error downloading data: {e}")
-        return JSONResponse({"success": False, "error": str(e)})
-    finally:
-        session.close()
-
-
-@app.get("/api/trades/{trade_id}/chart-data")
-async def get_trade_chart_data(
-    trade_id: int, 
-    timeframe: str = "5m",
-    rth_only: bool = True,
-    show_after_entry: bool = False,
-):
-    """
-    Get OHLCV data for charting a trade.
-    
-    Args:
-        trade_id: Trade ID
-        timeframe: Candle timeframe (1m, 5m, 15m, 1h, 2h, 1d)
-        rth_only: If True, filter to Regular Trading Hours only (9:30 AM - 4:00 PM)
-        show_after_entry: If True, show data after entry time. If False, cut off at entry.
-    
-    Returns candlestick data up to (and optionally after) the trade's entry time.
-    """
-    import asyncio
-    
-    # Run the blocking data fetch in a thread to not block the event loop
-    # This allows other requests (like navigation) to be processed during data fetch
-    result = await asyncio.to_thread(
-        _fetch_chart_data_sync, trade_id, timeframe, rth_only, show_after_entry
-    )
-    return JSONResponse(result)
-
-
-def _fetch_chart_data_sync(trade_id: int, timeframe: str, rth_only: bool, show_after_entry: bool) -> dict:
-    """Synchronous chart data fetching - runs in a thread pool."""
-    from datetime import timedelta
-    from zoneinfo import ZoneInfo
-    from app.data.cache import get_cached_ohlcv
-    from app.data.providers import get_provider_for_ticker
-    
-    session = get_session()
-    try:
-        trade = session.query(Trade).filter(Trade.id == trade_id).first()
-        if not trade:
-            return {"success": False, "error": "Trade not found"}
-        
-        # Derive market timezone from ticker (more reliable than stored field for old trades)
-        from app.journal.ingest import get_market_timezone
-        market_tz_str = get_market_timezone(trade.ticker)
-        market_tz = ZoneInfo(market_tz_str)
-        
-        # Determine the time range to fetch
-        # Trade times are stored as naive datetimes in market_timezone
-        entry_time = trade.entry_time or trade.exit_time
-        exit_time = trade.exit_time or trade.entry_time
-        
-        if not entry_time and not exit_time:
-            # Fallback to trade_date with market-specific times
-            from datetime import datetime as dt
-            # Market open/close times by timezone
-            market_hours = {
-                "Asia/Hong_Kong": (9, 30, 16, 0),     # 9:30 AM - 4:00 PM HKT
-                "Asia/Shanghai": (9, 30, 15, 0),     # 9:30 AM - 3:00 PM CST
-                "Asia/Tokyo": (9, 0, 15, 0),         # 9:00 AM - 3:00 PM JST
-                "Europe/London": (8, 0, 16, 30),     # 8:00 AM - 4:30 PM GMT/BST
-                "America/New_York": (9, 30, 16, 0),  # 9:30 AM - 4:00 PM EST/EDT
-            }
-            open_h, open_m, close_h, close_m = market_hours.get(market_tz_str, (9, 30, 16, 0))
-            entry_time = dt.combine(trade.trade_date, dt.min.time().replace(hour=open_h, minute=open_m))
-            exit_time = dt.combine(trade.trade_date, dt.min.time().replace(hour=close_h, minute=close_m))
-        
-        # Make times timezone-aware in market timezone
-        if entry_time.tzinfo is None:
-            entry_time_aware = entry_time.replace(tzinfo=market_tz)
-        else:
-            entry_time_aware = entry_time
-            
-        if exit_time.tzinfo is None:
-            exit_time_aware = exit_time.replace(tzinfo=market_tz)
-        else:
-            exit_time_aware = exit_time
-        
-        # Store original timeframe (may fall back to daily for old trades)
-        original_timeframe = timeframe
-        
-        # Calculate lookback based on timeframe
-        timeframe_bars = {
-            "1m": 200,
-            "5m": 150,
-            "15m": 100,
-            "1h": 80,
-            "2h": 60,
-            "1d": 60,
-        }
-        bars_to_fetch = timeframe_bars.get(timeframe, 150)
-        
-        # Calculate time delta per bar
-        timeframe_deltas = {
-            "1m": timedelta(minutes=1),
-            "5m": timedelta(minutes=5),
-            "15m": timedelta(minutes=15),
-            "1h": timedelta(hours=1),
-            "2h": timedelta(hours=2),
-            "1d": timedelta(days=1),
-        }
-        bar_delta = timeframe_deltas.get(timeframe, timedelta(minutes=5))
-        
-        # Fetch data with lookback before entry
-        lookback = bar_delta * bars_to_fetch
-        start_time = entry_time_aware - lookback
-        
-        # End time: either at entry or include some bars after
-        if show_after_entry:
-            # Show a few bars after exit for context
-            end_time = exit_time_aware + (bar_delta * 10)
-        else:
-            # Cut off at entry time - show only what trader saw before entering
-            end_time = entry_time_aware + bar_delta  # Include entry bar
-        
-        # For intraday, add extra days for weekend handling
-        if timeframe in ["1m", "5m", "15m", "1h", "2h"]:
-            start_time = start_time - timedelta(days=5)
-            if show_after_entry:
-                end_time = end_time + timedelta(days=2)
-        else:
-            start_time = start_time - timedelta(days=30)
-            if show_after_entry:
-                end_time = end_time + timedelta(days=10)
-        
-        # Fetch OHLCV data
-        # For futures, pass entry_price to help select correct contract month
-        provider = get_provider_for_ticker(trade.ticker)
-        target_price = trade.entry_price if trade.entry_price else None
-        
-        # Try cache first (but cache doesn't support target_price filtering)
-        df = get_cached_ohlcv(trade.ticker, timeframe, start_time, end_time)
-        
-        if df.empty:
-            # Cache miss - fetch from provider with target_price and trade_date for contract selection
-            # Check if provider supports target_price parameter
-            import inspect
-            sig = inspect.signature(provider.get_ohlcv)
-            if 'target_price' in sig.parameters and 'trade_date' in sig.parameters:
-                df = provider.get_ohlcv(trade.ticker, timeframe, start_time, end_time, 
-                                        target_price=target_price, trade_date=trade.trade_date)
-            elif 'target_price' in sig.parameters:
-                df = provider.get_ohlcv(trade.ticker, timeframe, start_time, end_time, target_price=target_price)
-            else:
-                df = provider.get_ohlcv(trade.ticker, timeframe, start_time, end_time)
-        
-        # If intraday data is empty for old trades, try falling back to daily data
-        original_timeframe = timeframe
-        if df.empty and timeframe != "1d":
-            # Check if trade is older than 30 days (Yahoo only keeps ~30 days of intraday)
-            days_old = (datetime.now().date() - trade.trade_date).days
-            if days_old > 30:
-                logger.info(f"Trade is {days_old} days old, falling back to daily data for {trade.ticker}")
-                # Fetch daily data with wider range
-                daily_start = start_time - timedelta(days=30)
-                daily_end = end_time + timedelta(days=10)
-                df = get_cached_ohlcv(trade.ticker, "1d", daily_start, daily_end)
-                if df.empty:
-                    df = provider.get_ohlcv(trade.ticker, "1d", daily_start, daily_end)
-                timeframe = "1d"  # Update timeframe for response
-        
-        if df.empty:
-            # Provide more helpful error message
-            days_old = (datetime.now().date() - trade.trade_date).days
-            if days_old > 30:
-                error_msg = (
-                    f"No data available for {trade.ticker}. "
-                    f"Trade is {days_old} days old - intraday data typically only available for ~30 days. "
-                    f"Try viewing with Daily timeframe."
-                )
-            else:
-                error_msg = f"No data available for {trade.ticker} ({original_timeframe})"
-            return {
-                "success": False, 
-                "error": error_msg
-            }
-        
-        # Filter to RTH (Regular Trading Hours) if requested
-        # RTH for US: 9:30 AM - 4:00 PM ET
-        # RTH for HK: 9:30 AM - 4:00 PM HKT
-        # RTH for futures: typically 9:30 AM - 4:00 PM ET (cash session)
-        if rth_only and timeframe != "1d":
-            # Define RTH hours based on market
-            rth_hours = {
-                "America/New_York": (9, 30, 16, 0),   # 9:30 AM - 4:00 PM ET
-                "Asia/Hong_Kong": (9, 30, 16, 0),    # 9:30 AM - 4:00 PM HKT
-                "Asia/Shanghai": (9, 30, 15, 0),    # 9:30 AM - 3:00 PM CST
-                "Asia/Tokyo": (9, 0, 15, 0),        # 9:00 AM - 3:00 PM JST
-                "Europe/London": (8, 0, 16, 30),    # 8:00 AM - 4:30 PM GMT
-            }
-            open_h, open_m, close_h, close_m = rth_hours.get(market_tz_str, (9, 30, 16, 0))
-            
-            # Filter DataFrame to RTH only
-            # Convert datetime to market timezone for filtering
-            df_filtered = df.copy()
-            if df_filtered['datetime'].dt.tz is not None:
-                df_times = df_filtered['datetime'].dt.tz_convert(market_tz_str)
-            else:
-                df_times = df_filtered['datetime']
-            
-            # Create time bounds
-            rth_start_minutes = open_h * 60 + open_m
-            rth_end_minutes = close_h * 60 + close_m
-            
-            # Calculate minutes since midnight for each bar
-            bar_minutes = df_times.dt.hour * 60 + df_times.dt.minute
-            
-            # Filter to RTH
-            rth_mask = (bar_minutes >= rth_start_minutes) & (bar_minutes < rth_end_minutes)
-            df = df[rth_mask]
-            
-            if df.empty:
-                return {
-                    "success": False,
-                    "error": f"No RTH data available. Try disabling RTH filter."
-                }
-        
-        # Filter to cut off at entry time if show_after_entry is False
-        if not show_after_entry:
-            # Include only bars up to and including entry time
-            # Entry bar starts at entry_time - bar_delta, so include bars <= entry_time
-            if df['datetime'].dt.tz is not None:
-                entry_compare = entry_time_aware
-            else:
-                entry_compare = entry_time_aware.replace(tzinfo=None)
-            
-            df = df[df['datetime'] <= entry_compare]
-            
-            if df.empty:
-                return {
-                    "success": False,
-                    "error": f"No data before entry time."
-                }
-        
-        # Convert to TradingView Lightweight Charts format
-        # Format: { time: unix_timestamp, open, high, low, close, volume }
-        candles = []
-        for _, row in df.iterrows():
-            # Convert datetime to Unix timestamp (seconds)
-            # OHLCV data is timezone-aware in America/New_York
-            timestamp = int(row['datetime'].timestamp())
-            candles.append({
-                "time": timestamp,
-                "open": round(float(row['open']), 4),
-                "high": round(float(row['high']), 4),
-                "low": round(float(row['low']), 4),
-                "close": round(float(row['close']), 4),
-                "volume": int(row['volume']) if 'volume' in row and row['volume'] else 0,
-            })
-        
-        # Sort by time
-        candles = sorted(candles, key=lambda x: x['time'])
-        
-        # Trade markers - need to snap to nearest candle time
-        markers = []
-        
-        # Find the closest candle timestamp for entry/exit markers
-        def find_closest_candle_time(target_ts, candle_list):
-            """Find the candle time closest to the target timestamp."""
-            if not candle_list:
-                return target_ts
-            closest = min(candle_list, key=lambda c: abs(c['time'] - target_ts))
-            return closest['time']
-        
-        # Entry marker
-        # For LONG: Entry = BUY (green), for SHORT: Entry = SELL (red)
-        if trade.entry_time:
-            # Convert trade entry time to Unix timestamp (make timezone-aware first)
-            if trade.entry_time.tzinfo is None:
-                entry_aware = trade.entry_time.replace(tzinfo=market_tz)
-            else:
-                entry_aware = trade.entry_time
-            entry_ts = int(entry_aware.timestamp())
-            
-            # Snap to nearest candle
-            snapped_entry_ts = find_closest_candle_time(entry_ts, candles)
-            
-            # Entry color: LONG=BUY=Green, SHORT=SELL=Red
-            is_long = trade.direction.value == "long"
-            entry_color = "#26a69a" if is_long else "#ef5350"  # Green for buy, Red for sell
-            entry_label = "𝗕𝗨𝗬" if is_long else "𝗦𝗘𝗟𝗟"  # Bold Unicode
-            
-            markers.append({
-                "time": snapped_entry_ts,
-                "position": "belowBar" if is_long else "aboveBar",
-                "color": entry_color,
-                "shape": "arrowUp" if is_long else "arrowDown",
-                "text": f"{entry_label} ${trade.entry_price:.2f}",
-            })
-        
-        # Exit marker (only show when after entry is selected)
-        # For LONG: Exit = SELL (red), for SHORT: Exit = BUY (green)
-        if show_after_entry and trade.exit_time and trade.exit_price:
-            # Convert trade exit time to Unix timestamp
-            if trade.exit_time.tzinfo is None:
-                exit_aware = trade.exit_time.replace(tzinfo=market_tz)
-            else:
-                exit_aware = trade.exit_time
-            exit_ts = int(exit_aware.timestamp())
-            
-            # Snap to nearest candle
-            snapped_exit_ts = find_closest_candle_time(exit_ts, candles)
-            
-            # Exit color: LONG exit=SELL=Red, SHORT exit=BUY=Green
-            is_long = trade.direction.value == "long"
-            exit_color = "#ef5350" if is_long else "#26a69a"  # Red for sell, Green for buy
-            exit_label = "𝗦𝗘𝗟𝗟" if is_long else "𝗕𝗨𝗬"  # Bold Unicode
-            
-            markers.append({
-                "time": snapped_exit_ts,
-                "position": "aboveBar" if is_long else "belowBar",
-                "color": exit_color,
-                "shape": "arrowDown" if is_long else "arrowUp",
-                "text": f"{exit_label} ${trade.exit_price:.2f}",
-            })
-        
-        # Price lines for entry, exit, stop loss
-        price_lines = []
-        is_long = trade.direction.value == "long"
-        
-        # Entry price line (LONG=BUY=Green, SHORT=SELL=Red)
-        entry_line_color = "#26a69a" if is_long else "#ef5350"
-        price_lines.append({
-            "price": trade.entry_price,
-            "color": entry_line_color,
-            "lineWidth": 1,
-            "lineStyle": 2,  # Dashed (same as stop/target)
-            "title": "Entry",
-        })
-        
-        # Exit price line (only show when after entry is selected)
-        # LONG exit=SELL=Red, SHORT exit=BUY=Green
-        if show_after_entry and trade.exit_price:
-            exit_line_color = "#ef5350" if is_long else "#26a69a"
-            price_lines.append({
-                "price": trade.exit_price,
-                "color": exit_line_color,
-                "lineWidth": 1,
-                "lineStyle": 2,  # Dashed (same as stop/target)
-                "title": "Exit",
-            })
-        
-        # Stop loss line
-        if trade.effective_stop_loss:
-            price_lines.append({
-                "price": trade.effective_stop_loss,
-                "color": "#f97316",  # Orange
-                "lineWidth": 1,
-                "lineStyle": 2,  # Dashed
-                "title": "Stop",
-            })
-        
-        # Take profit line
-        if trade.effective_take_profit:
-            price_lines.append({
-                "price": trade.effective_take_profit,
-                "color": "#3b82f6",  # Blue
-                "lineWidth": 1,
-                "lineStyle": 2,  # Dashed
-                "title": "Target",
-            })
-        
-        # Debug info for timestamps
-        debug_info = {
-            "market_timezone": market_tz_str,
-            "entry_time_raw": str(trade.entry_time) if trade.entry_time else None,
-            "exit_time_raw": str(trade.exit_time) if trade.exit_time else None,
-            "candle_count": len(candles),
-            "first_candle_time": candles[0]['time'] if candles else None,
-            "last_candle_time": candles[-1]['time'] if candles else None,
-        }
-        
-        # Note if we fell back to daily timeframe
-        timeframe_note = None
-        if timeframe != original_timeframe:
-            days_old = (datetime.now().date() - trade.trade_date).days
-            timeframe_note = f"Intraday data not available (trade is {days_old} days old). Showing daily chart."
-        
-        return {
-            "success": True,
-            "ticker": trade.ticker,
-            "timeframe": timeframe,
-            "requested_timeframe": original_timeframe,
-            "timeframe_note": timeframe_note,
-            "rth_only": rth_only,
-            "show_after_entry": show_after_entry,
-            "candles": candles,
-            "markers": markers,
-            "price_lines": price_lines,
-            "trade_info": {
-                "entry_price": trade.entry_price,
-                "exit_price": trade.exit_price,
-                "stop_loss": trade.effective_stop_loss,
-                "take_profit": trade.effective_take_profit,
-                "direction": trade.direction.value,
-                "r_multiple": trade.r_multiple,
+        return templates.TemplateResponse(
+            request,
+            "trade_detail.html",
+            {
+                **base_context,
+                "trade": trade,
+                "review": None,  # Will be loaded via AJAX
+                "has_materials": has_materials(),
             },
-            "debug": debug_info,
-        }
-        
-    except Exception as e:
-        logger.error(f"Error fetching chart data: {e}")
-        import traceback
-        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
+        )
     finally:
         session.close()
 
 
 @app.get("/add-trade", response_class=HTMLResponse)
-async def add_trade_page(request: Request, user = Depends(require_login)):
+async def add_trade_page(request: Request, user=Depends(require_login)):
     """Add trade form page (includes single trade and bulk import)."""
     base_context = await get_template_context_with_user(request, user)
-    
+
     session = get_session()
     try:
         strategies = get_active_strategies_cached(session)
@@ -1488,15 +356,19 @@ async def add_trade_page(request: Request, user = Depends(require_login)):
         import_files = list(IMPORTS_DIR.glob("*.csv"))
         processed_dir = IMPORTS_DIR / "processed"
         processed_files = list(processed_dir.glob("*.csv")) if processed_dir.exists() else []
-        
-        return templates.TemplateResponse(request, "add_trade.html", {
-            **base_context,
-            "strategies": strategies,
-            "tickers": load_tickers_from_file(),
-            "imports_path": str(IMPORTS_DIR),
-            "import_files": import_files,
-            "processed_files": processed_files,
-        })
+
+        return templates.TemplateResponse(
+            request,
+            "add_trade.html",
+            {
+                **base_context,
+                "strategies": strategies,
+                "tickers": load_tickers_from_file(),
+                "imports_path": str(IMPORTS_DIR),
+                "import_files": import_files,
+                "processed_files": processed_files,
+            },
+        )
     finally:
         session.close()
 
@@ -1504,1729 +376,241 @@ async def add_trade_page(request: Request, user = Depends(require_login)):
 @app.get("/import")
 async def import_page():
     """Redirect to add-trade page with import tab."""
-    return RedirectResponse(url="/add-trade", status_code=302)
+    return RedirectResponse(url="/add-trade?tab=import", status_code=302)
 
 
 @app.get("/tickers", response_class=HTMLResponse)
-async def tickers_page(request: Request, user = Depends(require_login)):
+async def tickers_page(request: Request, user=Depends(require_login)):
     """Ticker management page."""
     base_context = await get_template_context_with_user(request, user)
     tickers = load_tickers_from_file()
-    return templates.TemplateResponse(request, "tickers.html", {
-        **base_context,
-        "tickers": tickers,
-    })
+    return templates.TemplateResponse(
+        request,
+        "tickers.html",
+        {
+            **base_context,
+            "tickers": tickers,
+        },
+    )
 
 
 @app.get("/reports", response_class=HTMLResponse)
-async def reports_page(request: Request, user = Depends(require_login)):
+async def reports_page(request: Request, user=Depends(require_login)):
     """Reports page."""
     base_context = await get_template_context_with_user(request, user)
-    
+
     # List available reports
     report_dirs = sorted(OUTPUTS_DIR.glob("*"), reverse=True)[:20]
-    
+
     reports = []
     for d in report_dirs:
         if d.is_dir():
-            reports.append({
-                "date": d.name,
-                "path": d,
-                "has_premarket": (d / "premarket").exists(),
-                "has_eod": (d / "eod_report.md").exists(),
-            })
-    
-    return templates.TemplateResponse(request, "reports.html", {
-        **base_context,
-        "reports": reports,
-        "tickers": load_tickers_from_file(),
-    })
+            reports.append(
+                {
+                    "date": d.name,
+                    "path": d,
+                    "has_premarket": (d / "premarket").exists(),
+                    "has_eod": (d / "eod_report.md").exists(),
+                }
+            )
+
+    return templates.TemplateResponse(
+        request,
+        "reports.html",
+        {
+            **base_context,
+            "reports": reports,
+            "tickers": load_tickers_from_file(),
+        },
+    )
 
 
 @app.get("/stats", response_class=HTMLResponse)
-async def stats_page(request: Request, user = Depends(require_login)):
+async def stats_page(request: Request, user=Depends(require_login)):
     """Statistics page."""
     base_context = await get_template_context_with_user(request, user)
     analytics = TradeAnalytics()
-    
+
     # Get stats for this user
     strategy_stats = analytics.get_all_strategy_stats(user_id=user.id)
     edge_analysis = analytics.analyze_edge()
     portfolio_stats = analytics.get_portfolio_stats(user_id=user.id)
-    
+
     # Get all trades for equity curve (filtered by user)
     trades = analytics.get_all_trades(user_id=user.id)
-    
+
+    # Total P&L in USD (matches Dashboard/Trades pages)
+    total_pnl_usd = 0.0
+    for t in trades:
+        if t.pnl_usd is not None:
+            total_pnl_usd += t.pnl_usd
+
     # Build equity curve with drawdown data
     equity_data = []
     drawdown_data = []
     cumulative = 0
     peak = 0
-    for t in sorted(trades, key=lambda x: (x.trade_date, x.exit_time or x.entry_time or x.trade_date)):
+    for t in sorted(
+        trades, key=lambda x: (x.trade_date, x.exit_time or x.entry_time or x.trade_date)
+    ):
         if t.r_multiple:
             cumulative += t.r_multiple
             if cumulative > peak:
                 peak = cumulative
             drawdown = peak - cumulative
-            equity_data.append({
-                "date": str(t.trade_date),
-                "r": round(cumulative, 2),
-                "pnl": round(t.pnl_dollars, 2) if t.pnl_dollars else 0
-            })
-            drawdown_data.append({
-                "date": str(t.trade_date),
-                "dd": round(drawdown, 2)
-            })
-    
-    return templates.TemplateResponse(request, "stats.html", {
-        **base_context,
-        "strategy_stats": strategy_stats,
-        "edge_analysis": edge_analysis,
-        "portfolio_stats": portfolio_stats,
-        "equity_data": equity_data,
-        "drawdown_data": drawdown_data,
-    })
+            equity_data.append(
+                {
+                    "date": str(t.trade_date),
+                    "r": round(cumulative, 2),
+                    "pnl": round(t.pnl_dollars, 2) if t.pnl_dollars else 0,
+                }
+            )
+            drawdown_data.append({"date": str(t.trade_date), "dd": round(drawdown, 2)})
+
+    return templates.TemplateResponse(
+        request,
+        "stats.html",
+        {
+            **base_context,
+            "strategy_stats": strategy_stats,
+            "edge_analysis": edge_analysis,
+            "portfolio_stats": portfolio_stats,
+            "total_pnl_usd": round(total_pnl_usd, 2),
+            "equity_data": equity_data,
+            "drawdown_data": drawdown_data,
+        },
+    )
 
 
 # ==================== API ENDPOINTS ====================
 
-@app.get("/api/trades/export")
-async def export_trades(
-    request: Request,
-    ticker: Optional[str] = None,
-    outcome: Optional[str] = None,
-    include_reviews: bool = False,
-):
-    """
-    Export trades to CSV format.
-    
-    Args:
-        ticker: Filter by ticker symbol
-        outcome: Filter by outcome (win, loss, breakeven)
-        include_reviews: Include AI review summaries in export
-    
-    Returns:
-        CSV file download
-    """
-    from fastapi.responses import StreamingResponse
-    import csv
-    import io
-    
-    # Get current user
-    user = await get_user_from_request(request)
-    if not user:
-        raise HTTPException(status_code=401, detail="Authentication required")
-    
-    session = get_session()
-    try:
-        # Build query with user filter
-        query = session.query(Trade).filter(Trade.user_id == user.id)
-        
-        if ticker:
-            query = query.filter(Trade.ticker.ilike(f"%{ticker}%"))
-        if outcome:
-            outcome_lower = outcome.lower()
-            if outcome_lower == "win":
-                query = query.filter(Trade.outcome == TradeOutcome.WIN)
-            elif outcome_lower == "loss":
-                query = query.filter(Trade.outcome == TradeOutcome.LOSS)
-            elif outcome_lower == "breakeven":
-                query = query.filter(Trade.outcome == TradeOutcome.BREAKEVEN)
-        
-        trades = query.order_by(Trade.trade_date.desc(), Trade.exit_time.desc()).all()
-        
-        # Create CSV in memory
-        output = io.StringIO()
-        writer = csv.writer(output)
-        
-        # Header row
-        headers = [
-            "Trade #", "Date", "Ticker", "Direction", "Size",
-            "Entry Price", "Exit Price", "Stop Loss", "Take Profit",
-            "Entry Time", "Exit Time", "Duration",
-            "P&L ($)", "R-Multiple", "Outcome",
-            "Strategy", "Setup Type", "Notes", "Entry Reason", "Exit Reason"
-        ]
-        if include_reviews:
-            headers.extend(["AI Grade", "AI Summary"])
-        writer.writerow(headers)
-        
-        # Data rows
-        for trade in trades:
-            # Format duration
-            duration_str = ""
-            if trade.entry_time and trade.exit_time:
-                duration = trade.exit_time - trade.entry_time
-                hours, remainder = divmod(int(duration.total_seconds()), 3600)
-                minutes, seconds = divmod(remainder, 60)
-                if hours > 0:
-                    duration_str = f"{hours}h {minutes}m"
-                else:
-                    duration_str = f"{minutes}m {seconds}s"
-            
-            row = [
-                trade.trade_number or trade.id,
-                trade.trade_date.strftime("%Y-%m-%d") if trade.trade_date else "",
-                trade.ticker,
-                trade.direction.value if trade.direction else "",
-                trade.size,
-                trade.entry_price,
-                trade.exit_price,
-                trade.stop_loss or "",
-                trade.take_profit or "",
-                trade.entry_time.strftime("%Y-%m-%d %H:%M:%S") if trade.entry_time else "",
-                trade.exit_time.strftime("%Y-%m-%d %H:%M:%S") if trade.exit_time else "",
-                duration_str,
-                round(trade.pnl_dollars, 2) if trade.pnl_dollars else "",
-                round(trade.r_multiple, 2) if trade.r_multiple else "",
-                trade.outcome.value if trade.outcome else "",
-                trade.strategy.name if trade.strategy else "",
-                trade.setup_type or "",
-                trade.notes or "",
-                trade.entry_reason or "",
-                trade.exit_reason or "",
-            ]
-            
-            if include_reviews:
-                grade = ""
-                summary = ""
-                if trade.cached_review:
-                    try:
-                        import json
-                        review = json.loads(trade.cached_review)
-                        grade = review.get("grade", "")
-                        # Get first sentence of summary
-                        summary_text = review.get("summary", "")
-                        if summary_text:
-                            summary = summary_text[:200] + "..." if len(summary_text) > 200 else summary_text
-                    except:
-                        pass
-                row.extend([grade, summary])
-            
-            writer.writerow(row)
-        
-        # Prepare response
-        output.seek(0)
-        
-        # Generate filename with date
-        from datetime import datetime
-        filename = f"trades_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-        
-        return StreamingResponse(
-            iter([output.getvalue()]),
-            media_type="text/csv",
-            headers={"Content-Disposition": f"attachment; filename={filename}"}
-        )
-    finally:
-        session.close()
-
-
-@app.post("/api/trades", dependencies=[require_write_auth])
-async def create_trade(
-    request: Request,
-    ticker: str = Form(...),
-    direction: str = Form(...),
-    entry_price: float = Form(...),
-    exit_price: float = Form(...),
-    stop_loss: float = Form(None),  # SL - optional
-    take_profit: float = Form(None),  # TP - optional
-    size: float = Form(1.0),
-    entry_time: str = Form(None),
-    exit_time: str = Form(None),
-    timeframe: str = Form("5m"),
-    strategy: str = Form(None),
-    notes: str = Form(None),
-    entry_reason: str = Form(None),
-):
-    """Create a new trade."""
-    # Get the current user for ownership
-    user = await get_user_from_request(request)
-    user_id = user.id if user else None
-    
-    ingester = TradeIngester()
-
-    # Parse entry/exit times if provided
-    parsed_entry_time = None
-    parsed_exit_time = None
-    
-    if entry_time:
-        try:
-            parsed_entry_time = datetime.fromisoformat(entry_time.replace('Z', '+00:00').replace('T', ' ').split('+')[0])
-        except ValueError:
-            try:
-                parsed_entry_time = datetime.strptime(entry_time, "%Y-%m-%dT%H:%M:%S")
-            except ValueError:
-                try:
-                    parsed_entry_time = datetime.strptime(entry_time, "%Y-%m-%dT%H:%M")
-                except ValueError:
-                    pass
-    
-    if exit_time:
-        try:
-            parsed_exit_time = datetime.fromisoformat(exit_time.replace('Z', '+00:00').replace('T', ' ').split('+')[0])
-        except ValueError:
-            try:
-                parsed_exit_time = datetime.strptime(exit_time, "%Y-%m-%dT%H:%M:%S")
-            except ValueError:
-                try:
-                    parsed_exit_time = datetime.strptime(exit_time, "%Y-%m-%dT%H:%M")
-                except ValueError:
-                    pass
-
-    # Derive trade_date from exit_time, entry_time, or today
-    if parsed_exit_time:
-        parsed_date = parsed_exit_time.date()
-    elif parsed_entry_time:
-        parsed_date = parsed_entry_time.date()
-    else:
-        parsed_date = date.today()
-
-    trade = ingester.add_trade_manual(
-        ticker=ticker,
-        trade_date=parsed_date,
-        direction=direction,
-        entry_price=entry_price,
-        exit_price=exit_price,
-        stop_loss=stop_loss,
-        take_profit=take_profit,
-        size=size,
-        timeframe=timeframe,
-        entry_time=parsed_entry_time,
-        exit_time=parsed_exit_time,
-        strategy_name=strategy if strategy else None,
-        notes=notes,
-        entry_reason=entry_reason,
-        user_id=user_id,
-    )
-
-    return RedirectResponse(url=f"/trades/{trade.id}", status_code=303)
-
-
-@app.post("/api/upload-csv", dependencies=[require_write_auth])
-async def upload_csv(file: UploadFile = File(...)):
-    """Upload a CSV file to imports folder."""
-    # Validate file type and size
-    content = await validate_upload_file(
-        file, 
-        ALLOWED_CSV_EXTENSIONS, 
-        MAX_CSV_SIZE,
-        "CSV file"
-    )
-    
-    # Sanitize filename and save
-    filename = sanitize_filename(file.filename)
-    file_path = IMPORTS_DIR / filename
-    
-    with open(file_path, "wb") as f:
-        f.write(content)
-    
-    return JSONResponse({"message": f"Uploaded {filename}", "path": str(file_path)})
-
-
-@app.post("/api/import-csv", dependencies=[require_write_auth])
-async def import_csv(
-    file: UploadFile = File(...),
-    format: str = Form("generic"),
-    balance_file: Optional[UploadFile] = File(None),
-    input_timezone: str = Form("America/New_York"),
-):
-    """Upload and import a CSV file (non-blocking)."""
-    import asyncio
-    import tempfile
-    import os
-
-    # Validate main CSV file
-    try:
-        content = await validate_upload_file(
-            file,
-            ALLOWED_CSV_EXTENSIONS,
-            MAX_CSV_SIZE,
-            "CSV file"
-        )
-    except HTTPException as e:
-        return JSONResponse({"error": e.detail, "imported": 0, "errors": 1}, status_code=e.status_code)
-
-    try:
-        # Save main file
-        with tempfile.NamedTemporaryFile(mode='wb', suffix='.csv', delete=False) as tmp:
-            tmp.write(content)
-            tmp_path = tmp.name
-        
-        # Save balance file if provided (also validate it)
-        balance_path = None
-        if balance_file and balance_file.filename:
-            with tempfile.NamedTemporaryFile(mode='wb', suffix='.csv', delete=False) as bal_tmp:
-                bal_content = await balance_file.read()
-                bal_tmp.write(bal_content)
-                balance_path = bal_tmp.name
-        
-        def _do_import():
-            ingester = TradeIngester()
-            if format == 'tv_order_history':
-                from pathlib import Path
-                return ingester._import_tv_order_history(
-                    Path(tmp_path), 
-                    skip_errors=True, 
-                    balance_file_path=Path(balance_path) if balance_path else None,
-                    input_timezone=input_timezone,
-                )
-            else:
-                return ingester.import_csv(tmp_path, format=format)
-        
-        # Run import in thread to not block event loop
-        imported, errors, messages = await asyncio.to_thread(_do_import)
-        
-        # Clean up temp files
-        os.unlink(tmp_path)
-        if balance_path:
-            os.unlink(balance_path)
-        
-        return JSONResponse({
-            "imported": imported,
-            "errors": errors,
-            "total_messages": len(messages),
-            "messages": messages[:50],  # Show up to 50 errors
-            "format": format,
-            "cross_validated": balance_path is not None,
-        })
-        
-    except Exception as e:
-        logger.error(f"Import error: {e}")
-        return JSONResponse({"error": str(e), "imported": 0, "errors": 1})
-
-
-@app.post("/api/bulk-import", dependencies=[require_write_auth])
-async def bulk_import():
-    """Import all CSVs from imports folder (non-blocking)."""
-    import asyncio
-    
-    def _do_import():
-        ingester = TradeIngester()
-        return ingester.bulk_import_from_folder()
-    
-    imported, errors, messages = await asyncio.to_thread(_do_import)
-    
-    return JSONResponse({
-        "imported": imported,
-        "errors": errors,
-        "total_messages": len(messages),
-        "messages": messages[:50],  # Show up to 50 errors
-    })
-
-
-@app.post("/api/tickers", dependencies=[require_write_auth])
-async def update_tickers(tickers: str = Form(...)):
-    """Update tickers list."""
-    ticker_list = [t.strip().upper() for t in tickers.split('\n') if t.strip() and not t.strip().startswith('#')]
-    save_tickers_to_file(ticker_list)
-    return RedirectResponse(url="/tickers", status_code=303)
-
-
-@app.post("/api/tickers/add", dependencies=[require_write_auth])
-async def add_ticker(ticker: str = Form(...)):
-    """Add a ticker."""
-    tickers = load_tickers_from_file()
-    ticker = ticker.upper().strip()
-    if ticker and ticker not in tickers:
-        tickers.append(ticker)
-        save_tickers_to_file(tickers)
-    return RedirectResponse(url="/tickers", status_code=303)
-
-
-@app.post("/api/tickers/remove/{ticker}", dependencies=[require_write_auth])
-async def remove_ticker(ticker: str):
-    """Remove a ticker."""
-    tickers = load_tickers_from_file()
-    ticker = ticker.upper()
-    if ticker in tickers:
-        tickers.remove(ticker)
-        save_tickers_to_file(tickers)
-    return RedirectResponse(url="/tickers", status_code=303)
-
-
-@app.post("/api/generate-premarket", dependencies=[require_write_auth])
-async def generate_premarket(ticker: str = Form(None)):
-    """Generate premarket report (non-blocking)."""
-    import asyncio
-    from app.reports.premarket import PremarketReport
-
-    def _generate():
-        generator = PremarketReport()
-        if ticker:
-            reports = [generator.generate_ticker_report(ticker)]
-        else:
-            reports = generator.generate_all_reports()
-        output_dir = generator.save_reports(reports, date.today())
-        return len(reports), str(output_dir)
-
-    count, output_dir = await asyncio.to_thread(_generate)
-
-    return JSONResponse({
-        "message": f"Generated {count} reports",
-        "path": output_dir,
-    })
-
-
-@app.post("/api/generate-eod", dependencies=[require_write_auth])
-async def generate_eod():
-    """Generate end-of-day report (non-blocking)."""
-    import asyncio
-    from app.reports.eod import EndOfDayReport
-
-    def _generate():
-        generator = EndOfDayReport()
-        report = generator.generate_report()
-        output_path = generator.save_report(report)
-        return str(output_path)
-
-    output_path = await asyncio.to_thread(_generate)
-
-    return JSONResponse({
-        "message": "Generated EOD report",
-        "path": output_path,
-    })
-
-
-@app.post("/api/recalculate-metrics", dependencies=[require_write_auth])
-async def recalculate_all_metrics():
-    """Recalculate R-multiple, P&L, and other metrics for all trades."""
-    with get_session() as session:
-        trades = session.query(Trade).all()
-        updated = 0
-        for trade in trades:
-            trade.compute_metrics()
-            updated += 1
-        session.commit()
-
-    return JSONResponse({
-        "updated": updated,
-        "message": f"Recalculated metrics for {updated} trades"
-    })
-
-
-@app.post("/api/analyze-all-trades", dependencies=[require_write_auth])
-async def analyze_all_trades(force: bool = False):
-    """Run AI Coaching Review on all unreviewed trades.
-
-    By default, only analyzes trades that don't have a cached_review.
-    Set force=true to re-analyze all trades.
-    
-    This runs the full AI Coaching Review which:
-    - Fetches OHLCV data
-    - Generates comprehensive analysis
-    - Sets the trade's strategy from the setup_classification
-    - Caches the review
-    """
-    import asyncio
-    from concurrent.futures import ThreadPoolExecutor
-    from app.journal.models import Strategy
-    import json as json_module
-
-    logger.info(f"🧠 Analyze all trades called with force={force}")
-
-    # Check if LLM is available
-    from app.llm.analyzer import LLMAnalyzer
-    analyzer = LLMAnalyzer()
-    if not analyzer.is_available:
-        logger.warning("LLM not available for analysis")
-        return JSONResponse({
-            "error": "LLM not available. Check your API key in settings.",
-            "analyzed": 0
-        })
-    
-    session = get_session()
-    try:
-        trades = session.query(Trade).all()
-        trade_ids = []
-        skipped = 0
-        
-        # Collect trade IDs that need analysis
-        for trade in trades:
-            # Skip trades that already have cached review unless force=true
-            if not force and trade.cached_review and trade.review_generated_at:
-                skipped += 1
-                continue
-            trade_ids.append(trade.id)
-        
-        logger.info(f"🧠 Processing {len(trade_ids)} trades for AI analysis (skipped {skipped} already reviewed)")
-        
-        if not trade_ids:
-            return JSONResponse({
-                "analyzed": 0,
-                "skipped": skipped,
-                "errors": 0,
-                "message": f"All {skipped} trades already have reviews"
-            })
-        
-        # Function to analyze a single trade (runs full AI Coaching Review)
-        def analyze_single(trade_id):
-            try:
-                coach = TradeCoach()
-                review = coach.review_trade(trade_id)
-                
-                if review:
-                    # Open a new session for this thread
-                    thread_session = get_session()
-                    try:
-                        trade = thread_session.query(Trade).get(trade_id)
-                        if not trade:
-                            return {"id": trade_id, "success": False, "error": "Trade not found"}
-                        
-                        ai_setup = review.setup_classification
-
-                        # Store original AI classification permanently (never overwrite if already set)
-                        if ai_setup and not trade.ai_setup_classification:
-                            trade.ai_setup_classification = ai_setup
-
-                        # Update trade's strategy from AI setup_classification (only if not manually set)
-                        if ai_setup and ai_setup.lower() not in ['unknown', 'unclassified', 'insufficient_information']:
-                            if not trade.strategy_id:
-                                strategy = thread_session.query(Strategy).filter(Strategy.name == ai_setup).first()
-                                if not strategy:
-                                    strategy = Strategy(name=ai_setup, description=f"Auto-created from AI coaching review")
-                                    thread_session.add(strategy)
-                                    thread_session.flush()
-                                trade.strategy_id = strategy.id
-
-                        current_strategy = trade.strategy.name if trade.strategy else ai_setup
-                        
-                        # Build review dict
-                        review_dict = {
-                            "grade": review.grade,
-                            "grade_explanation": review.grade_explanation,
-                            "regime": review.regime,
-                            "always_in": review.always_in,
-                            "context_description": review.context_description,
-                            "setup_classification": current_strategy or ai_setup or "Unknown",
-                            "ai_setup_classification": ai_setup,
-                            "setup_quality": review.setup_quality,
-                            "what_was_good": review.what_was_good or [],
-                            "what_was_flawed": review.what_was_flawed or [],
-                            "errors_detected": review.errors_detected or [],
-                            "rule_for_next_time": review.rule_for_next_time or [],
-                        }
-                        
-                        # Cache the review
-                        trade.cached_review = json_module.dumps(review_dict)
-                        trade.review_generated_at = datetime.now(timezone.utc)
-                        thread_session.commit()
-                        
-                        return {"id": trade_id, "success": True, "strategy": current_strategy}
-                    finally:
-                        thread_session.close()
-                else:
-                    return {"id": trade_id, "success": False, "error": "No review generated"}
-            except Exception as e:
-                logger.error(f"Error analyzing trade {trade_id}: {e}")
-                return {"id": trade_id, "success": False, "error": str(e)}
-        
-        # Run with concurrent workers for LLM calls (configurable via LLM_WORKERS env var)
-        from app.config import get_llm_workers
-        num_workers = get_llm_workers()
-        logger.info(f"🧠 Using {num_workers} concurrent LLM workers")
-        
-        loop = asyncio.get_event_loop()
-        with ThreadPoolExecutor(max_workers=num_workers) as executor:
-            results = await loop.run_in_executor(
-                None,
-                lambda: list(executor.map(analyze_single, trade_ids))
-            )
-        
-        # Count results
-        analyzed = sum(1 for r in results if r.get("success"))
-        errors = sum(1 for r in results if not r.get("success"))
-        
-        logger.info(f"✅ Analysis complete: {analyzed} analyzed, {skipped} skipped, {errors} errors")
-
-        return JSONResponse({
-            "analyzed": analyzed,
-            "skipped": skipped,
-            "errors": errors,
-            "message": f"Analyzed {analyzed} trades, {errors} errors"
-        })
-    except Exception as e:
-        logger.error(f"❌ Analysis failed: {e}")
-        return JSONResponse({
-            "error": str(e),
-            "analyzed": 0
-        })
-    finally:
-        session.close()
-
-
-@app.delete("/api/trades/{trade_id}", dependencies=[require_auth])
-async def delete_trade(trade_id: int):
-    """Delete a trade. Requires API key if APP_API_KEY is set."""
-    ingester = TradeIngester()
-    if ingester.delete_trade(trade_id):
-        return JSONResponse(success_response(message="Trade deleted"))
-    raise HTTPException(status_code=404, detail="Trade not found")
-
-
-@app.delete("/api/trades", dependencies=[require_auth])
-async def delete_all_trades():
-    """Delete ALL trades. Use with caution! Requires API key if APP_API_KEY is set."""
-    ingester = TradeIngester()
-    count = ingester.delete_all_trades()
-    return JSONResponse(success_response(
-        data={"count": count},
-        message=f"Deleted {count} trades"
-    ))
-
-
-@app.patch("/api/trades/{trade_id}", dependencies=[require_write_auth])
-async def update_trade(trade_id: int, request: Request):
-    """Update trade fields (size, prices, times, currency)."""
-    from datetime import datetime
-    data = await request.json()
-    
-    session = get_session()
-    try:
-        trade, _ = await verify_trade_ownership(trade_id, request, session)
-        if not trade:
-            raise HTTPException(status_code=404, detail="Trade not found")
-        
-        # Update fields if provided
-        if data.get("ticker") is not None:
-            trade.ticker = data["ticker"].upper()
-        if data.get("direction") is not None:
-            from app.journal.models import TradeDirection
-            direction_str = data["direction"].lower()
-            if direction_str == "long":
-                trade.direction = TradeDirection.LONG
-            elif direction_str == "short":
-                trade.direction = TradeDirection.SHORT
-        if data.get("size") is not None:
-            trade.size = float(data["size"])
-        if data.get("entry_price") is not None:
-            trade.entry_price = float(data["entry_price"])
-        if data.get("exit_price") is not None:
-            trade.exit_price = float(data["exit_price"])
-        
-        # Stop Loss (SL) - can be set to null
-        if "stop_loss" in data:
-            trade.stop_loss = float(data["stop_loss"]) if data["stop_loss"] else None
-        
-        # Take Profit (TP) - can be set to null
-        if "take_profit" in data:
-            trade.take_profit = float(data["take_profit"]) if data["take_profit"] else None
-        
-        if data.get("currency") is not None:
-            trade.currency = data["currency"]
-        if data.get("currency_rate") is not None:
-            trade.currency_rate = float(data["currency_rate"])
-        if data.get("timeframe") is not None:
-            trade.timeframe = data["timeframe"]
-        
-        # Update times if provided
-        if data.get("entry_time"):
-            try:
-                trade.entry_time = datetime.fromisoformat(data["entry_time"])
-            except ValueError:
-                pass
-        if data.get("exit_time"):
-            try:
-                trade.exit_time = datetime.fromisoformat(data["exit_time"])
-                # Also update trade_date to match exit date
-                trade.trade_date = trade.exit_time.date()
-            except ValueError:
-                pass
-        
-        # Recalculate metrics after update
-        trade.compute_metrics()
-        session.commit()
-        
-        return JSONResponse(success_response(
-            data={
-                "trade_id": trade_id,
-                "r_multiple": trade.r_multiple,
-                "pnl_dollars": trade.pnl_dollars,
-            },
-            message="Trade updated"
-        ))
-    finally:
-        session.close()
-
 
 @app.get("/settings")
-async def settings_page(request: Request, user = Depends(require_login)):
+async def settings_page(request: Request, user=Depends(require_login)):
     """Settings page for prompts and candle counts."""
-    from app.config_prompts import load_settings, SETTINGS_FILE, get_cache_settings
+    from app.config_prompts import load_settings, SETTINGS_FILE
 
     from app.config_prompts import get_editable_prompt
-    
+
     base_context = await get_template_context_with_user(request, user)
     current_settings = load_settings()
-    
+
     # Get editable prompts (without protected JSON schemas)
     system_prompts = {
-        'trade_analysis': get_editable_prompt('trade_analysis', is_user_prompt=False),
-        'market_context': get_editable_prompt('market_context', is_user_prompt=False),
+        "trade_analysis": get_editable_prompt("trade_analysis", is_user_prompt=False),
+        "market_context": get_editable_prompt("market_context", is_user_prompt=False),
     }
     user_prompts = {
-        'trade_analysis': get_editable_prompt('trade_analysis', is_user_prompt=True),
-        'market_context': get_editable_prompt('market_context', is_user_prompt=True),
+        "trade_analysis": get_editable_prompt("trade_analysis", is_user_prompt=True),
+        "market_context": get_editable_prompt("market_context", is_user_prompt=True),
     }
 
-    return templates.TemplateResponse(request, "settings.html", {
-        **base_context,
-        "candles": current_settings.get('candles', {}),
-        "system_prompts": system_prompts,
-        "user_prompts": user_prompts,
-        "cache_settings": get_cache_settings(),
-        "settings_file": str(SETTINGS_FILE),
-    })
-
-
-@app.post("/api/settings/candles", dependencies=[require_write_auth])
-async def update_candle_settings(request: Request):
-    """Update candle count settings."""
-    from app.config_prompts import update_candles
-    
-    data = await request.json()
-    success = update_candles(
-        daily=data.get('daily'),
-        hourly=data.get('hourly'),
-        five_min=data.get('5min')
+    return templates.TemplateResponse(
+        request,
+        "settings.html",
+        {
+            **base_context,
+            "candles": current_settings.get("candles", {}),
+            "system_prompts": system_prompts,
+            "user_prompts": user_prompts,
+            "cache_settings": get_cache_settings(),
+            "settings_file": str(SETTINGS_FILE),
+        },
     )
-    
-    if success:
-        return JSONResponse({"message": "Candle settings saved"})
-    raise HTTPException(status_code=500, detail="Failed to save settings")
-
-
-@app.post("/api/settings/prompts", dependencies=[require_write_auth])
-async def update_prompt_settings(request: Request):
-    """Update a specific prompt (system or user)."""
-    from app.config_prompts import update_prompt
-
-    data = await request.json()
-    prompt_type = data.get('prompt_type')
-    prompt_text = data.get('prompt_text')
-    is_user_prompt = data.get('is_user_prompt', False)
-
-    if not prompt_type or prompt_text is None:
-        raise HTTPException(status_code=400, detail="Missing prompt_type or prompt_text")
-
-    success = update_prompt(prompt_type, prompt_text, is_user_prompt=is_user_prompt)
-    
-    prompt_label = "User" if is_user_prompt else "System"
-    if success:
-        return JSONResponse({"message": f"{prompt_label} prompt '{prompt_type}' saved"})
-    raise HTTPException(status_code=500, detail="Failed to save prompt")
-
-
-@app.get("/api/settings/cache")
-async def get_cache_settings_api():
-    """Get cache settings."""
-    from app.config_prompts import get_cache_settings
-    return JSONResponse(get_cache_settings())
-
-
-@app.post("/api/settings/cache", dependencies=[require_write_auth])
-async def update_cache_settings_api(request: Request):
-    """Update cache settings."""
-    from app.config_prompts import update_cache_settings
-    
-    data = await request.json()
-    success = update_cache_settings(
-        enable_review_cache=data.get('enable_review_cache'),
-        auto_regenerate=data.get('auto_regenerate'),
-    )
-    
-    if success:
-        return JSONResponse({"message": "Cache settings saved"})
-    raise HTTPException(status_code=500, detail="Failed to save cache settings")
-
-
-@app.post("/api/settings/reset", dependencies=[require_write_auth])
-async def reset_settings():
-    """Reset all settings to defaults."""
-    from app.config_prompts import save_settings, DEFAULT_SETTINGS
-    
-    success = save_settings(DEFAULT_SETTINGS.copy())
-    
-    if success:
-        return JSONResponse({"message": "Settings reset to defaults"})
-    raise HTTPException(status_code=500, detail="Failed to reset settings")
 
 
 # ============== STRATEGIES MANAGEMENT ==============
 
-# Default categories
-DEFAULT_CATEGORIES = [
-    {"id": "trend", "name": "Trend"},
-    {"id": "trading_range", "name": "Trading Range"},
-    {"id": "reversal", "name": "Reversal"},
-    {"id": "special", "name": "Special"},
-    {"id": "unknown", "name": "Unknown"},
-]
-
-def get_categories() -> list:
-    """Get categories from settings or return defaults."""
-    from app.config_prompts import load_settings
-    settings = load_settings()
-    return settings.get('categories', DEFAULT_CATEGORIES)
-
-def save_categories(categories: list) -> bool:
-    """Save categories to settings."""
-    from app.config_prompts import load_settings, save_settings
-    settings = load_settings()
-    settings['categories'] = categories
-    return save_settings(settings)
-
 
 @app.get("/strategies", response_class=HTMLResponse)
-async def strategies_page(request: Request, user = Depends(require_login)):
+async def strategies_page(request: Request, user=Depends(require_login)):
     """Strategy management page - edit, merge, categorize strategies."""
-    from app.journal.models import Strategy
-    
+
     base_context = await get_template_context_with_user(request, user)
-    
+
     session = get_session()
     try:
         strategies = session.query(Strategy).order_by(Strategy.category, Strategy.name).all()
-        
+
         # Get trade counts per strategy
         strategy_stats = {}
         for strategy in strategies:
             trade_count = session.query(Trade).filter(Trade.strategy_id == strategy.id).count()
             strategy_stats[strategy.id] = trade_count
-        
+
         # Get custom categories
-        categories = get_categories()
-        
-        return templates.TemplateResponse(request, "strategies.html", {
-            **base_context,
-            "strategies": strategies,
-            "strategy_stats": strategy_stats,
-            "categories": categories,
-        })
-    finally:
-        session.close()
+        from app.web.routes.strategies import get_categories as get_categories_list
 
+        categories = get_categories_list()
 
-@app.get("/api/categories")
-async def get_categories_api():
-    """Get all categories."""
-    return JSONResponse({"categories": get_categories()})
-
-
-@app.post("/api/categories", dependencies=[require_write_auth])
-async def create_category(request: Request):
-    """Create a new category."""
-    data = await request.json()
-    name = data.get('name', '').strip()
-    
-    if not name:
-        raise HTTPException(status_code=400, detail="Category name required")
-    
-    # Generate ID from name (lowercase, replace spaces with underscores)
-    cat_id = name.lower().replace(' ', '_').replace('-', '_')
-    
-    categories = get_categories()
-    
-    # Check if already exists
-    if any(c['id'] == cat_id for c in categories):
-        raise HTTPException(status_code=400, detail="Category already exists")
-    
-    categories.append({"id": cat_id, "name": name})
-    
-    if save_categories(categories):
-        return JSONResponse({"message": f"Category '{name}' created", "id": cat_id})
-    raise HTTPException(status_code=500, detail="Failed to save category")
-
-
-@app.delete("/api/categories/{category_id}", dependencies=[require_write_auth])
-async def delete_category(category_id: str):
-    """Delete a category. Removes from strategies that use it."""
-    from app.journal.models import Strategy
-    
-    categories = get_categories()
-    
-    # Find and remove the category
-    new_categories = [c for c in categories if c['id'] != category_id]
-    
-    if len(new_categories) == len(categories):
-        raise HTTPException(status_code=404, detail="Category not found")
-    
-    # Remove this category from all strategies that use it
-    session = get_session()
-    try:
-        strategies = session.query(Strategy).all()
-        for strategy in strategies:
-            if strategy.category:
-                cats = [c.strip() for c in strategy.category.split(',') if c.strip() and c.strip() != category_id]
-                strategy.category = ','.join(cats) if cats else None
-        session.commit()
-        clear_cache("active_strategies")
-    finally:
-        session.close()
-    
-    if save_categories(new_categories):
-        return JSONResponse({"message": "Category deleted"})
-    raise HTTPException(status_code=500, detail="Failed to delete category")
-
-
-@app.get("/api/strategies")
-async def get_strategies():
-    """Get all strategies with trade counts."""
-    from app.journal.models import Strategy
-    
-    session = get_session()
-    try:
-        strategies = session.query(Strategy).order_by(Strategy.category, Strategy.name).all()
-        
-        result = []
-        for s in strategies:
-            trade_count = session.query(Trade).filter(Trade.strategy_id == s.id).count()
-            result.append({
-                "id": s.id,
-                "name": s.name,
-                "category": s.category,
-                "description": s.description,
-                "trade_count": trade_count,
-            })
-        
-        return JSONResponse({"strategies": result})
-    finally:
-        session.close()
-
-
-@app.patch("/api/strategies/{strategy_id}", dependencies=[require_write_auth])
-async def update_strategy(strategy_id: int, request: Request):
-    """Update a strategy's name, category, or description."""
-    from app.journal.models import Strategy
-    
-    data = await request.json()
-    session = get_session()
-    try:
-        strategy = session.query(Strategy).get(strategy_id)
-        if not strategy:
-            raise HTTPException(status_code=404, detail="Strategy not found")
-        
-        # Check for duplicate name before updating
-        if 'name' in data and data['name'] != strategy.name:
-            existing = session.query(Strategy).filter(
-                Strategy.name == data['name'],
-                Strategy.id != strategy_id
-            ).first()
-            if existing:
-                raise HTTPException(
-                    status_code=400, 
-                    detail=f"Strategy '{data['name']}' already exists. Use merge instead."
-                )
-            strategy.name = data['name']
-        
-        if 'category' in data:
-            strategy.category = data['category']
-        if 'description' in data:
-            strategy.description = data['description']
-        
-        session.commit()
-        return JSONResponse({"message": f"Strategy '{strategy.name}' updated"})
-    finally:
-        session.close()
-
-
-@app.post("/api/strategies/merge", dependencies=[require_write_auth])
-async def merge_strategies(request: Request):
-    """Merge multiple strategies into one (reassign all trades)."""
-    from app.journal.models import Strategy
-    
-    data = await request.json()
-    source_ids = data.get('source_ids', [])
-    target_id = data.get('target_id')
-    
-    if not source_ids or not target_id:
-        raise HTTPException(status_code=400, detail="source_ids and target_id required")
-    
-    session = get_session()
-    try:
-        target = session.query(Strategy).get(target_id)
-        if not target:
-            raise HTTPException(status_code=404, detail="Target strategy not found")
-        
-        merged_count = 0
-        for source_id in source_ids:
-            if source_id == target_id:
-                continue
-            
-            # Reassign all trades from source to target
-            trades = session.query(Trade).filter(Trade.strategy_id == source_id).all()
-            for trade in trades:
-                trade.strategy_id = target_id
-                merged_count += 1
-            
-            # Delete the source strategy
-            source = session.query(Strategy).get(source_id)
-            if source:
-                session.delete(source)
-        
-        session.commit()
-        clear_cache("active_strategies")  # Invalidate cache
-        
-        return JSONResponse({
-            "message": f"Merged {merged_count} trades into '{target.name}'",
-            "merged_count": merged_count
-        })
-    finally:
-        session.close()
-
-
-@app.post("/api/strategies", dependencies=[require_write_auth])
-async def create_strategy(request: Request):
-    """Create a new strategy."""
-    from app.journal.models import Strategy
-    
-    data = await request.json()
-    name = data.get('name')
-    category = data.get('category', 'unknown')
-    
-    if not name:
-        raise HTTPException(status_code=400, detail="Strategy name required")
-    
-    session = get_session()
-    try:
-        # Check if already exists
-        existing = session.query(Strategy).filter(Strategy.name == name).first()
-        if existing:
-            raise HTTPException(status_code=400, detail="Strategy already exists")
-        
-        strategy = Strategy(
-            name=name,
-            category=category,
-            description=data.get('description', '')
+        return templates.TemplateResponse(
+            request,
+            "strategies.html",
+            {
+                **base_context,
+                "strategies": strategies,
+                "strategy_stats": strategy_stats,
+                "categories": categories,
+            },
         )
-        session.add(strategy)
-        session.commit()
-        clear_cache("active_strategies")  # Invalidate cache
-        
-        return JSONResponse({"message": f"Strategy '{name}' created", "id": strategy.id})
     finally:
         session.close()
-
-
-@app.delete("/api/strategies/{strategy_id}", dependencies=[require_auth])
-async def delete_strategy(strategy_id: int):
-    """Delete a strategy (only if no trades are assigned). Requires API key if APP_API_KEY is set."""
-    from app.journal.models import Strategy
-    
-    session = get_session()
-    try:
-        strategy = session.query(Strategy).get(strategy_id)
-        if not strategy:
-            raise HTTPException(status_code=404, detail="Strategy not found")
-        
-        # Check if any trades use this strategy
-        trade_count = session.query(Trade).filter(Trade.strategy_id == strategy_id).count()
-        if trade_count > 0:
-            raise HTTPException(status_code=400, detail=f"Cannot delete: {trade_count} trades use this strategy")
-        
-        session.delete(strategy)
-        session.commit()
-        clear_cache("active_strategies")  # Invalidate cache
-        
-        return JSONResponse({"message": f"Strategy deleted"})
-    finally:
-        session.close()
-
-
-@app.patch("/api/trades/{trade_id}/strategy", dependencies=[require_write_auth])
-async def update_trade_strategy(trade_id: int, request: Request):
-    """Manually update a trade's strategy (override AI classification)."""
-    from app.journal.models import Strategy
-
-    data = await request.json()
-    strategy_name = data.get('strategy_name')
-
-    session = get_session()
-    try:
-        trade, _ = await verify_trade_ownership(trade_id, request, session)
-
-        # Find or create strategy
-        strategy = session.query(Strategy).filter(Strategy.name == strategy_name).first()
-        if not strategy:
-            strategy = Strategy(
-                name=strategy_name,
-                category=data.get('category', 'unknown'),
-                description="Manually created"
-            )
-            session.add(strategy)
-            session.flush()
-
-        trade.strategy_id = strategy.id
-        session.commit()
-
-        return JSONResponse({
-            "message": f"Trade strategy set to '{strategy_name}'",
-            "original_ai": trade.ai_setup_classification
-        })
-    finally:
-        session.close()
-
-
-@app.get("/api/status")
-async def get_status():
-    """Get current system status and configuration."""
-    return JSONResponse({
-        "data_provider": settings.data_provider,
-        "polygon_available": get_polygon_api_key() is not None,
-        "llm_available": get_llm_api_key() is not None,
-        "tickers": load_tickers_from_file(),
-        "outputs_dir": str(OUTPUTS_DIR),
-        "imports_dir": str(IMPORTS_DIR),
-    })
-
-
-@app.get("/api/exchange-rate")
-async def get_exchange_rate_api(currency: str, date: str = None):
-    """
-    Get historical exchange rate for a currency.
-    
-    Args:
-        currency: Target currency code (e.g., 'HKD')
-        date: Date in YYYY-MM-DD format (defaults to today)
-        
-    Returns:
-        Exchange rate (1 USD = X currency)
-    """
-    from app.data.currency import get_exchange_rate
-    from datetime import date as date_type, datetime
-    
-    trade_date = None
-    if date:
-        try:
-            trade_date = datetime.fromisoformat(date.replace('Z', '+00:00')).date()
-        except ValueError:
-            try:
-                trade_date = date_type.fromisoformat(date[:10])
-            except ValueError:
-                pass
-    
-    rate = get_exchange_rate(currency, trade_date)
-    
-    if rate is None:
-        # Return fallback rates if API fails
-        fallback_rates = {
-            'HKD': 7.78, 'EUR': 0.92, 'GBP': 0.79, 'JPY': 149.5,
-            'CNY': 7.24, 'CAD': 1.36, 'AUD': 1.53, 'CHF': 0.88,
-            'SGD': 1.34, 'KRW': 1320.0, 'TWD': 31.5,
-        }
-        rate = fallback_rates.get(currency, 1.0)
-        return JSONResponse({
-            "currency": currency,
-            "rate": rate,
-            "date": date or str(date_type.today()),
-            "source": "fallback",
-        })
-    
-    return JSONResponse({
-        "currency": currency,
-        "rate": rate,
-        "date": date or str(date_type.today()),
-        "source": "frankfurter",
-    })
 
 
 # ==================== ROBINHOOD API ====================
 
-@app.get("/api/robinhood/status")
-async def robinhood_status():
-    """Check Robinhood connection status."""
-    ingester = TradeIngester()
-    return JSONResponse({
-        "has_session": ingester.robinhood_has_session(),
-    })
-
-
-@app.post("/api/robinhood/import", dependencies=[require_write_auth])
-async def robinhood_import(request: Request):
-    """Import trades from Robinhood with login."""
-    try:
-        data = await request.json()
-        username = data.get('username')
-        password = data.get('password')
-        mfa_code = data.get('mfa_code')
-        days_back = data.get('days_back', 30)
-        
-        if not username or not password:
-            return JSONResponse({
-                "error": "Username and password required",
-                "imported": 0,
-                "errors": 1,
-                "needs_mfa": False,
-                "needs_device_approval": False,
-            })
-        
-        ingester = TradeIngester()
-        result = ingester.import_from_robinhood(
-            username=username,
-            password=password,
-            mfa_code=mfa_code,
-            days_back=days_back,
-        )
-        
-        return JSONResponse(result)
-        
-    except Exception as e:
-        return JSONResponse({
-            "error": str(e),
-            "imported": 0,
-            "errors": 1,
-            "needs_mfa": False,
-            "needs_device_approval": False,
-        })
-
-
-@app.post("/api/robinhood/import-session", dependencies=[require_write_auth])
-async def robinhood_import_session(request: Request):
-    """Import trades from Robinhood using stored session."""
-    import asyncio
-    
-    # Get current user for ownership
-    user = await get_user_from_request(request)
-    user_id = user.id if user else None
-    
-    try:
-        data = await request.json()
-        days_back = data.get('days_back', 30)
-        
-        ingester = TradeIngester()
-        
-        # Try to login with stored session
-        if not ingester.robinhood_login_with_session():
-            return JSONResponse({"error": "No stored session. Please login first.", "imported": 0, "errors": 1})
-        
-        from app.data.robinhood import get_robinhood_client
-        client = get_robinhood_client()
-        
-        # Get orders
-        orders = client.get_stock_orders(days_back=days_back)
-        
-        if not orders:
-            return JSONResponse({
-                "imported": 0,
-                "errors": 0,
-                "messages": [f"No filled orders found in the last {days_back} days."],
-            })
-        
-        messages = [f"Found {len(orders)} filled orders from Robinhood"]
-        imported = 0
-        errors = 0
-        
-        # Process orders using session
-        for order in orders:
-            try:
-                parsed = client.parse_stock_order_to_trade(order)
-                if parsed:
-                    trade = ingester.add_trade_manual(
-                        ticker=parsed['ticker'],
-                        trade_date=parsed['trade_date'],
-                        direction=parsed['direction'],
-                        entry_price=parsed['entry_price'],
-                        exit_price=parsed['exit_price'],
-                        size=parsed.get('size', 1),
-                        entry_time=parsed.get('entry_time'),
-                        exit_time=parsed.get('exit_time'),
-                        user_id=user_id,
-                        skip_duplicates=True,
-                    )
-                    if trade:
-                        imported += 1
-                    else:
-                        messages.append(f"Skipped duplicate: {parsed['ticker']}")
-            except Exception as e:
-                errors += 1
-                messages.append(f"Error processing order: {str(e)}")
-        
-        messages.append(f"Imported {imported} trades, {errors} errors")
-        
-        return JSONResponse({
-            "imported": imported,
-            "errors": errors,
-            "messages": messages[:20],
-        })
-        
-    except Exception as e:
-        return JSONResponse({"error": str(e), "imported": 0, "errors": 1})
-
-
-@app.post("/api/robinhood/disconnect", dependencies=[require_write_auth])
-async def robinhood_disconnect():
-    """Disconnect Robinhood (clear stored session)."""
-    ingester = TradeIngester()
-    ingester.robinhood_clear_session()
-    return JSONResponse({"message": "Disconnected"})
-
-
 # ==================== MATERIALS ====================
 
+
 @app.get("/materials", response_class=HTMLResponse)
-async def materials_page(request: Request, user = Depends(require_login)):
+async def materials_page(request: Request, user=Depends(require_login)):
     """Training materials management page."""
     base_context = await get_template_context_with_user(request, user)
     materials = []
-    
+
     if MATERIALS_DIR.exists():
         for f in sorted(MATERIALS_DIR.iterdir()):
-            if f.is_file() and not f.name.startswith('.'):
-                materials.append({
-                    "name": f.name,
-                    "path": str(f),
-                    "size_kb": round(f.stat().st_size / 1024, 1),
-                })
-    
-    return templates.TemplateResponse(request, "materials.html", {
-        **base_context,
-        "materials": materials,
-    })
+            if f.is_file() and not f.name.startswith("."):
+                materials.append(
+                    {
+                        "name": f.name,
+                        "path": str(f),
+                        "size_kb": round(f.stat().st_size / 1024, 1),
+                    }
+                )
 
-
-@app.post("/api/materials", dependencies=[require_write_auth])
-async def upload_materials(files: list[UploadFile] = File(...)):
-    """Upload training materials (PDFs, text files)."""
-    uploaded = 0
-    errors = 0
-    error_messages = []
-    total_size = 0
-
-    MATERIALS_DIR.mkdir(exist_ok=True)
-
-    for file in files:
-        try:
-            # Validate file type and size using our helper
-            content = await validate_upload_file(
-                file,
-                ALLOWED_MATERIAL_EXTENSIONS,
-                MAX_MATERIAL_SIZE,
-                f"Material '{file.filename}'"
-            )
-            
-            # Track total upload size
-            total_size += len(content)
-            if total_size > MAX_TOTAL_UPLOAD_SIZE:
-                max_mb = MAX_TOTAL_UPLOAD_SIZE / (1024 * 1024)
-                error_messages.append(f"Total upload size exceeds {max_mb:.0f} MB limit")
-                errors += 1
-                break
-
-            # Sanitize filename and save
-            filename = sanitize_filename(file.filename)
-            file_path = MATERIALS_DIR / filename
-
-            with open(file_path, 'wb') as f:
-                f.write(content)
-
-            uploaded += 1
-
-        except HTTPException as e:
-            error_messages.append(e.detail)
-            errors += 1
-        except Exception as e:
-            logger.error(f"Error uploading {file.filename}: {e}")
-            error_messages.append(f"Error uploading {file.filename}: {str(e)}")
-            errors += 1
-
-    # Trigger RAG indexing in background
-    if uploaded > 0:
-        try:
-            from app.materials_rag import get_materials_rag
-            import asyncio
-            
-            async def index_async():
-                rag = get_materials_rag()
-                await asyncio.to_thread(rag.index_materials, True)
-            
-            asyncio.create_task(index_async())
-            logger.info("📚 RAG indexing triggered after upload")
-        except Exception as e:
-            logger.warning(f"Could not trigger RAG indexing: {e}")
-
-    response_data = {
-        "success": errors == 0,
-        "uploaded": uploaded,
-        "errors": errors,
-        "message": f"Uploaded {uploaded} files" + (f" ({errors} errors)" if errors else "")
-    }
-    if error_messages:
-        response_data["error_details"] = error_messages
-    
-    return JSONResponse(response_data)
-
-
-@app.get("/api/materials/rag-status")
-async def get_rag_status():
-    """Get RAG indexing status."""
-    try:
-        from app.materials_rag import get_materials_rag
-        rag = get_materials_rag()
-        status = rag.get_status()
-        return JSONResponse(status)
-    except ImportError:
-        return JSONResponse({
-            "available": False,
-            "error": "RAG dependencies not installed. Run: pip install chromadb sentence-transformers"
-        })
-    except Exception as e:
-        return JSONResponse({
-            "available": False,
-            "error": str(e)
-        })
-
-
-@app.post("/api/materials/index", dependencies=[require_write_auth])
-async def index_materials(force: bool = False):
-    """Manually trigger RAG indexing of materials."""
-    import asyncio
-    
-    try:
-        from app.materials_rag import get_materials_rag
-        rag = get_materials_rag()
-        
-        # Run indexing in thread to not block
-        result = await asyncio.to_thread(rag.index_materials, force)
-        return JSONResponse(result)
-    except ImportError:
-        return JSONResponse({
-            "error": "RAG dependencies not installed. Run: pip install chromadb sentence-transformers"
-        })
-    except Exception as e:
-        return JSONResponse({
-            "error": str(e)
-        })
-
-
-@app.delete("/api/materials/{filename:path}", dependencies=[require_auth])
-async def delete_material(filename: str):
-    """Delete a training material file. Requires API key if APP_API_KEY is set."""
-    import urllib.parse
-    filename = urllib.parse.unquote(filename)
-    file_path = MATERIALS_DIR / filename
-    
-    if file_path.exists() and file_path.is_file():
-        file_path.unlink()
-        return JSONResponse({"message": f"Deleted {filename}"})
-    
-    raise HTTPException(status_code=404, detail="File not found")
-
-
-@app.delete("/api/materials", dependencies=[require_auth])
-async def delete_all_materials():
-    """Delete all training materials. Requires API key if APP_API_KEY is set."""
-    deleted = 0
-    
-    if MATERIALS_DIR.exists():
-        for f in MATERIALS_DIR.iterdir():
-            if f.is_file() and not f.name.startswith('.'):
-                f.unlink()
-                deleted += 1
-    
-    return JSONResponse({"deleted": deleted, "message": f"Deleted {deleted} files"})
+    return templates.TemplateResponse(
+        request,
+        "materials.html",
+        {
+            **base_context,
+            "materials": materials,
+        },
+    )
 
 
 # ==================== BULK ANALYSIS ====================
 
+
 @app.get("/analysis", response_class=HTMLResponse)
-async def analysis_page(request: Request, user = Depends(require_login)):
+async def analysis_page(request: Request, user=Depends(require_login)):
     """Bulk trade analysis page."""
     base_context = await get_template_context_with_user(request, user)
-    return templates.TemplateResponse(request, "analysis.html", {
-        **base_context,
-    })
-
-
-@app.post("/api/bulk-analysis", dependencies=[require_write_auth])
-async def bulk_analysis(request: Request):
-    """Analyze multiple trades using LLM."""
-    from datetime import timedelta
-    from app.llm.analyzer import LLMAnalyzer
-    from app.config_prompts import get_prompt
-    
-    analyzer = LLMAnalyzer()
-    
-    if not analyzer.is_available:
-        return JSONResponse({
-            "error": "LLM not available. Check your API key in settings.",
-            "trade_count": 0
-        })
-    
-    data = await request.json()
-    analysis_type = data.get('type', 'count')  # 'count' or 'days'
-    value = data.get('value', 10)
-    
-    session = get_session()
-    try:
-        # Get trades based on selection
-        if analysis_type == 'days':
-            cutoff_date = date.today() - timedelta(days=value)
-            trades = (
-                session.query(Trade)
-                .filter(Trade.trade_date >= cutoff_date)
-                .order_by(Trade.trade_number.desc())  # Newest by exit time first
-                .all()
-            )
-        else:  # count
-            trades = (
-                session.query(Trade)
-                .order_by(Trade.trade_number.desc())  # Newest by exit time first
-                .limit(value)
-                .all()
-            )
-        
-        if not trades:
-            return JSONResponse({
-                "error": "No trades found for the selected criteria.",
-                "trade_count": 0
-            })
-        
-        # Calculate stats
-        wins = sum(1 for t in trades if t.outcome and t.outcome.value == 'win')
-        losses = sum(1 for t in trades if t.outcome and t.outcome.value == 'loss')
-        r_values = [t.r_multiple for t in trades if t.r_multiple]
-        total_r = sum(r_values) if r_values else 0
-        avg_r = total_r / len(r_values) if r_values else 0
-        win_rate = (wins / len(trades) * 100) if trades else 0
-        
-        # Strategy breakdown
-        strategy_stats = {}
-        for trade in trades:
-            strategy_name = trade.strategy.name if trade.strategy else 'Unclassified'
-            if strategy_name not in strategy_stats:
-                strategy_stats[strategy_name] = {'count': 0, 'wins': 0, 'r_values': []}
-            strategy_stats[strategy_name]['count'] += 1
-            if trade.outcome and trade.outcome.value == 'win':
-                strategy_stats[strategy_name]['wins'] += 1
-            if trade.r_multiple:
-                strategy_stats[strategy_name]['r_values'].append(trade.r_multiple)
-        
-        strategy_breakdown = {}
-        for name, stats in strategy_stats.items():
-            strategy_breakdown[name] = {
-                'count': stats['count'],
-                'win_rate': (stats['wins'] / stats['count'] * 100) if stats['count'] > 0 else 0,
-                'total_r': sum(stats['r_values']) if stats['r_values'] else 0
-            }
-        
-        # Build trade summary for LLM
-        trade_summaries = []
-        for t in trades[:50]:  # Limit to 50 trades for LLM context
-            summary = (
-                f"#{t.id}: {t.ticker} {t.direction.value.upper()} "
-                f"Entry=${t.entry_price:.2f} Exit=${t.exit_price:.2f if t.exit_price else 0:.2f} "
-                f"R={t.r_multiple:.2f if t.r_multiple else 0:.2f} "
-                f"Result={t.outcome.value.upper() if t.outcome else 'UNKNOWN'} "
-                f"Strategy={t.strategy.name if t.strategy else 'unclassified'} "
-                f"Duration={t.duration_display}"
-            )
-            if t.notes:
-                summary += f" Notes: {t.notes[:100]}"
-            trade_summaries.append(summary)
-        
-        # Build LLM prompt
-        system_prompt = """You are an expert Al Brooks price action trading coach analyzing a trader's recent performance.
-
-Analyze the provided trades and identify:
-1. PATTERNS: Recurring patterns in wins and losses
-2. STRENGTHS: What the trader is doing well
-3. WEAKNESSES: Areas that need improvement
-4. RECOMMENDATIONS: Specific, actionable advice
-5. STRATEGY ANALYSIS: Which strategies are working and which aren't
-
-Be specific, use Brooks terminology, and provide actionable insights.
-
-Respond in JSON format:
-{
-    "patterns": ["list of patterns identified"],
-    "strengths": ["list of strengths"],
-    "weaknesses": ["list of weaknesses"],
-    "recommendations": ["list of specific recommendations"],
-    "full_analysis": "A detailed 2-3 paragraph analysis of the trader's performance"
-}"""
-        
-        user_prompt = f"""Analyze these {len(trades)} recent trades:
-
-SUMMARY STATS:
-- Win Rate: {win_rate:.1f}%
-- Total R: {total_r:.2f}R
-- Average R per trade: {avg_r:.2f}R
-- Wins: {wins}, Losses: {losses}
-
-TRADES:
-{chr(10).join(trade_summaries)}
-
-STRATEGY BREAKDOWN:
-{chr(10).join(f"- {name}: {stats['count']} trades, {stats['win_rate']:.0f}% win rate, {stats['total_r']:.2f}R" for name, stats in strategy_breakdown.items())}
-
-Provide a comprehensive analysis of this trader's performance with specific patterns, strengths, weaknesses, and recommendations."""
-
-        # Call LLM (non-blocking)
-        import json
-        import asyncio
-        result_text = await asyncio.to_thread(
-            analyzer._call_llm, system_prompt, user_prompt, 3000
-        )
-        
-        if not result_text:
-            return JSONResponse({
-                "error": "LLM analysis failed. Please try again.",
-                "trade_count": len(trades)
-            })
-        
-        # Parse LLM response
-        try:
-            # Try to extract JSON from response
-            json_start = result_text.find('{')
-            json_end = result_text.rfind('}') + 1
-            if json_start >= 0 and json_end > json_start:
-                analysis = json.loads(result_text[json_start:json_end])
-            else:
-                analysis = {
-                    "patterns": [],
-                    "strengths": [],
-                    "weaknesses": [],
-                    "recommendations": [],
-                    "full_analysis": result_text
-                }
-        except json.JSONDecodeError:
-            analysis = {
-                "patterns": [],
-                "strengths": [],
-                "weaknesses": [],
-                "recommendations": [],
-                "full_analysis": result_text
-            }
-        
-        # Add strategy breakdown to analysis
-        analysis['strategy_breakdown'] = strategy_breakdown
-        
-        return JSONResponse({
-            "trade_count": len(trades),
-            "stats": {
-                "win_rate": win_rate,
-                "total_r": total_r,
-                "avg_r": avg_r,
-                "wins": wins,
-                "losses": losses
-            },
-            "analysis": analysis
-        })
-        
-    except Exception as e:
-        logger.error(f"Bulk analysis error: {e}")
-        return JSONResponse({
-            "error": str(e),
-            "trade_count": 0
-        })
-    finally:
-        session.close()
+    return templates.TemplateResponse(
+        request,
+        "analysis.html",
+        {
+            **base_context,
+        },
+    )
 
 
 # ==================== RUN SERVER ====================
 
+
 def run_server(host: str = "127.0.0.1", port: int = 8000, reload: bool = True):
     """Run the web server.
-    
+
     Args:
         host: Host to bind to
         port: Port to bind to
@@ -3235,21 +619,21 @@ def run_server(host: str = "127.0.0.1", port: int = 8000, reload: bool = True):
     import uvicorn
     import signal
     import sys
-    
+
     # Handle Ctrl+C properly to kill the process (not just suspend)
     def signal_handler(sig, frame):
         print("\n\n👋 Shutting down server...")
         sys.exit(0)
-    
+
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-    
-    print(f"\n🚀 Brooks Trading Coach Web UI")
+
+    print("\n🚀 Brooks Trading Coach Web UI")
     print(f"   Open http://{host}:{port} in your browser")
     if reload:
-        print(f"   🔄 Auto-reload enabled - changes will apply automatically")
-    print(f"   Press Ctrl+C to stop\n")
-    
+        print("   🔄 Auto-reload enabled - changes will apply automatically")
+    print("   Press Ctrl+C to stop\n")
+
     if reload:
         # Use reload mode - requires passing app as string
         uvicorn.run(
@@ -3265,10 +649,11 @@ def run_server(host: str = "127.0.0.1", port: int = 8000, reload: bool = True):
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser(description="Run the trading coach web server")
     parser.add_argument("--host", default="127.0.0.1", help="Host to bind to")
     parser.add_argument("--port", type=int, default=8000, help="Port to bind to")
     parser.add_argument("--no-reload", action="store_true", help="Disable auto-reload")
     args = parser.parse_args()
-    
+
     run_server(host=args.host, port=args.port, reload=not args.no_reload)

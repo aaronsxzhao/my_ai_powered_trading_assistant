@@ -19,7 +19,6 @@ from enum import Enum
 from typing import Literal
 
 import numpy as np
-import pandas as pd
 
 from app.features.ohlc_features import OHLCFeatures, SwingPoint
 from app.config import settings
@@ -132,9 +131,7 @@ class BrooksPatternDetector:
             if "closes_above_ema_pct" in recent.columns
             else 0.5
         )
-        avg_overlap = (
-            recent["overlap_ratio"].mean() if "overlap_ratio" in recent.columns else 0.5
-        )
+        avg_overlap = recent["overlap_ratio"].mean() if "overlap_ratio" in recent.columns else 0.5
 
         # Swing structure
         swings = self.features.get_all_swings(lookback=3)
@@ -150,18 +147,16 @@ class BrooksPatternDetector:
 
         metrics = {
             "ema_slope": round(ema_slope, 4) if not np.isnan(ema_slope) else 0,
-            "closes_above_ema_pct": round(closes_above_pct, 2) if not np.isnan(closes_above_pct) else 0.5,
+            "closes_above_ema_pct": round(closes_above_pct, 2)
+            if not np.isnan(closes_above_pct)
+            else 0.5,
             "avg_overlap_ratio": round(avg_overlap, 2) if not np.isnan(avg_overlap) else 0.5,
             "higher_highs_lows": hh_hl,
             "lower_highs_lows": lh_ll,
         }
 
         # Strong uptrend
-        if (
-            ema_slope > slope_threshold
-            and closes_above_pct > closes_threshold
-            and hh_hl
-        ):
+        if ema_slope > slope_threshold and closes_above_pct > closes_threshold and hh_hl:
             regime = Regime.TREND_UP
             always_in = AlwaysIn.LONG
             confidence = Confidence.HIGH if avg_overlap < overlap_threshold else Confidence.MEDIUM
@@ -175,11 +170,7 @@ class BrooksPatternDetector:
             description = "Moderate uptrend, price above EMA"
 
         # Strong downtrend
-        elif (
-            ema_slope < -slope_threshold
-            and closes_above_pct < (1 - closes_threshold)
-            and lh_ll
-        ):
+        elif ema_slope < -slope_threshold and closes_above_pct < (1 - closes_threshold) and lh_ll:
             regime = Regime.TREND_DOWN
             always_in = AlwaysIn.SHORT
             confidence = Confidence.HIGH if avg_overlap < overlap_threshold else Confidence.MEDIUM
@@ -267,10 +258,7 @@ class BrooksPatternDetector:
         # Check for bull wedge (3 higher lows with diminishing momentum)
         if len(highs) >= 3:
             last_3_highs = highs[-3:]
-            if all(
-                last_3_highs[i].price > last_3_highs[i - 1].price
-                for i in range(1, 3)
-            ):
+            if all(last_3_highs[i].price > last_3_highs[i - 1].price for i in range(1, 3)):
                 # Check diminishing momentum (smaller range between pushes)
                 push1 = last_3_highs[1].price - last_3_highs[0].price
                 push2 = last_3_highs[2].price - last_3_highs[1].price
@@ -291,10 +279,7 @@ class BrooksPatternDetector:
         # Check for bear wedge (3 lower lows with diminishing momentum)
         if len(lows) >= 3:
             last_3_lows = lows[-3:]
-            if all(
-                last_3_lows[i].price < last_3_lows[i - 1].price
-                for i in range(1, 3)
-            ):
+            if all(last_3_lows[i].price < last_3_lows[i - 1].price for i in range(1, 3)):
                 push1 = last_3_lows[0].price - last_3_lows[1].price
                 push2 = last_3_lows[1].price - last_3_lows[2].price
 
@@ -307,13 +292,15 @@ class BrooksPatternDetector:
                         supporting_data={
                             "push1_size": round(push1, 2),
                             "push2_size": round(push2, 2),
-                            "lows": [l.price for l in last_3_lows],
+                            "lows": [low.price for low in last_3_lows],
                         },
                     )
 
         return None
 
-    def detect_second_entry(self, direction: Literal["long", "short"], lookback: int = 15) -> PatternDetection | None:
+    def detect_second_entry(
+        self, direction: Literal["long", "short"], lookback: int = 15
+    ) -> PatternDetection | None:
         """
         Detect 2nd entry pattern.
 
@@ -330,7 +317,6 @@ class BrooksPatternDetector:
         if len(self.df) < lookback:
             return None
 
-        recent = self.df.tail(lookback)
         swings = self.features.get_all_swings(lookback=2)
         recent_swings = [s for s in swings if s.index >= len(self.df) - lookback]
 

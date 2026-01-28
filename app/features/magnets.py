@@ -11,12 +11,11 @@ Magnets are price levels that attract price:
 """
 
 from dataclasses import dataclass
-from datetime import datetime as dt, timedelta
+from datetime import datetime as dt
 from typing import Literal, Optional
 
 import numpy as np
 import pandas as pd
-import pytz
 
 from app.features.ohlc_features import OHLCFeatures
 
@@ -147,7 +146,7 @@ class MagnetDetector:
                         Magnet(
                             price=gap_low,
                             type="gap_up_bottom",
-                            description=f"Gap Up Bottom (unfilled)",
+                            description="Gap Up Bottom (unfilled)",
                             strength="strong",
                             timestamp=current.get("datetime"),
                         )
@@ -164,7 +163,7 @@ class MagnetDetector:
                         Magnet(
                             price=gap_high,
                             type="gap_down_top",
-                            description=f"Gap Down Top (unfilled)",
+                            description="Gap Down Top (unfilled)",
                             strength="strong",
                             timestamp=current.get("datetime"),
                         )
@@ -197,7 +196,7 @@ class MagnetDetector:
                     Magnet(
                         price=swing.price,
                         type="swing_high",
-                        description=f"Swing High",
+                        description="Swing High",
                         strength="moderate",
                         timestamp=swing.datetime,
                     )
@@ -209,7 +208,7 @@ class MagnetDetector:
                     Magnet(
                         price=swing.price,
                         type="swing_low",
-                        description=f"Swing Low",
+                        description="Swing Low",
                         strength="moderate",
                         timestamp=swing.datetime,
                     )
@@ -301,7 +300,9 @@ class MagnetDetector:
                 high = highs_after[0]
 
                 # Find low2 after high
-                lows_after = [l for l in recent_lows if l.index > high.index]
+                lows_after = [
+                    low_swing for low_swing in recent_lows if low_swing.index > high.index
+                ]
                 if not lows_after:
                     continue
 
@@ -324,7 +325,9 @@ class MagnetDetector:
         # Look for down moves (high to low to high pattern)
         if len(recent_highs) >= 2 and len(recent_lows) >= 1:
             for i, high1 in enumerate(recent_highs[:-1]):
-                lows_after = [l for l in recent_lows if l.index > high1.index]
+                lows_after = [
+                    low_swing for low_swing in recent_lows if low_swing.index > high1.index
+                ]
                 if not lows_after:
                     continue
 
@@ -351,7 +354,9 @@ class MagnetDetector:
 
         return moves
 
-    def get_round_number_levels(self, current_price: float, range_pct: float = 0.05) -> list[Magnet]:
+    def get_round_number_levels(
+        self, current_price: float, range_pct: float = 0.05
+    ) -> list[Magnet]:
         """
         Get round number levels near current price.
 

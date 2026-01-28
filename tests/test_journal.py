@@ -1,6 +1,5 @@
 """Tests for trade journal functionality."""
 
-import pytest
 from datetime import date, datetime
 import tempfile
 import os
@@ -113,7 +112,7 @@ class TestTradeModel:
             stop_price=98.0,  # 1R = $2
             size=100,
             high_during_trade=106.0,  # MFE = 3R
-            low_during_trade=99.0,    # MAE = 0.5R
+            low_during_trade=99.0,  # MAE = 0.5R
         )
 
         trade.compute_metrics()
@@ -190,11 +189,9 @@ class TestTradeIngester:
     def test_add_trade_manual(self):
         """Test manual trade entry."""
         from app.journal.ingest import TradeIngester
-        from app.journal.models import init_db, Trade, get_session
+        from app.journal.models import init_db
 
         # Use temp database
-        import tempfile
-        from app.config import DATA_DIR
 
         # Initialize
         init_db()
@@ -224,11 +221,13 @@ class TestTradeIngester:
         init_db()
 
         # Create temp CSV
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
             writer = csv.writer(f)
-            writer.writerow(['ticker', 'direction', 'entry_price', 'exit_price', 'stop_price', 'size'])
-            writer.writerow(['SPY', 'long', '400', '405', '398', '100'])
-            writer.writerow(['QQQ', 'short', '350', '345', '352', '50'])
+            writer.writerow(
+                ["ticker", "direction", "entry_price", "exit_price", "stop_price", "size"]
+            )
+            writer.writerow(["SPY", "long", "400", "405", "398", "100"])
+            writer.writerow(["QQQ", "short", "350", "345", "352", "50"])
             csv_path = f.name
 
         try:

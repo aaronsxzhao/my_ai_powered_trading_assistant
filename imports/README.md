@@ -43,7 +43,7 @@ If you don't specify a `strategy` column, the system will use AI (Claude/GPT) to
 - `wedge_reversal_short`
 - etc.
 
-Make sure `OPENAI_API_KEY` is set in your `.env` file for this feature.
+Make sure `LLM_API_KEY` is set in your `.env` file for this feature.
 
 ## Broker-Specific Formats
 

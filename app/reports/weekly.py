@@ -16,52 +16,9 @@ import logging
 
 from app.config import OUTPUTS_DIR
 from app.journal.models import Trade, TradeOutcome, get_session
-from app.journal.analytics import TradeAnalytics, StrategyStats, EdgeAnalysis
+from app.journal.analytics import TradeAnalytics
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class WeeklyReport:
-    """Weekly report data."""
-
-    year: int
-    week: int
-    start_date: date
-    end_date: date
-
-    # Trade summary
-    total_trades: int
-    winning_trades: int
-    losing_trades: int
-    trading_days: int
-
-    # Performance
-    total_r: float
-    total_pnl: float
-    win_rate: float
-    profit_factor: float
-    expectancy: float
-    avg_r_per_trade: float
-    avg_r_per_day: float
-
-    # Strategy performance
-    strategy_leaderboard: list[dict]
-    best_strategy: Optional[str]
-    worst_strategy: Optional[str]
-
-    # Edge analysis
-    strengths: list[str]
-    weaknesses: list[str]
-    biggest_leaks: list[str]
-
-    # Coaching
-    top_rules: list[str]
-    stop_doing: list[str]
-    double_down: list[str]
-
-    # Daily breakdown
-    daily_breakdown: list[dict]
 
 
 class WeeklyReport:
@@ -73,7 +30,7 @@ class WeeklyReport:
         """Initialize weekly report generator."""
         self.analytics = TradeAnalytics()
 
-    def generate_report(self, year: int, week: int) -> 'WeeklyReportData':
+    def generate_report(self, year: int, week: int) -> "WeeklyReportData":
         """
         Generate weekly report.
 
@@ -181,7 +138,7 @@ class WeeklyReport:
         week: int,
         start_date: date,
         end_date: date,
-    ) -> 'WeeklyReportData':
+    ) -> "WeeklyReportData":
         """Return empty report for weeks with no trades."""
         return WeeklyReportData(
             year=year,
@@ -228,14 +185,16 @@ class WeeklyReport:
 
             winners = [t for t in strat_trades if t.outcome == TradeOutcome.WIN]
 
-            breakdown.append({
-                "strategy": strat_name,
-                "count": len(strat_trades),
-                "total_r": round(sum(r_vals), 2),
-                "avg_r": round(sum(r_vals) / len(r_vals), 3),
-                "win_rate": round(len(winners) / len(strat_trades), 3),
-                "pf": self.analytics.compute_profit_factor(strat_trades),
-            })
+            breakdown.append(
+                {
+                    "strategy": strat_name,
+                    "count": len(strat_trades),
+                    "total_r": round(sum(r_vals), 2),
+                    "avg_r": round(sum(r_vals) / len(r_vals), 3),
+                    "win_rate": round(len(winners) / len(strat_trades), 3),
+                    "pf": self.analytics.compute_profit_factor(strat_trades),
+                }
+            )
 
         return sorted(breakdown, key=lambda x: x["total_r"], reverse=True)
 
@@ -269,8 +228,7 @@ class WeeklyReport:
         win_rate = len(winners) / len(trades) if trades else 0
         if win_rate < 0.4:
             leaks.append(
-                f"Win rate only {win_rate:.0%} - be more selective or "
-                "improve entry timing"
+                f"Win rate only {win_rate:.0%} - be more selective or improve entry timing"
             )
 
         # Average winner smaller than average loser
@@ -345,27 +303,31 @@ class WeeklyReport:
                 total_r = sum(r_vals) if r_vals else 0
                 winners = len([t for t in day_trades if t.outcome == TradeOutcome.WIN])
 
-                breakdown.append({
-                    "date": current.strftime("%Y-%m-%d"),
-                    "day": current.strftime("%A"),
-                    "trades": len(day_trades),
-                    "winners": winners,
-                    "total_r": round(total_r, 2),
-                })
+                breakdown.append(
+                    {
+                        "date": current.strftime("%Y-%m-%d"),
+                        "day": current.strftime("%A"),
+                        "trades": len(day_trades),
+                        "winners": winners,
+                        "total_r": round(total_r, 2),
+                    }
+                )
             else:
-                breakdown.append({
-                    "date": current.strftime("%Y-%m-%d"),
-                    "day": current.strftime("%A"),
-                    "trades": 0,
-                    "winners": 0,
-                    "total_r": 0,
-                })
+                breakdown.append(
+                    {
+                        "date": current.strftime("%Y-%m-%d"),
+                        "day": current.strftime("%A"),
+                        "trades": 0,
+                        "winners": 0,
+                        "total_r": 0,
+                    }
+                )
 
             current += timedelta(days=1)
 
         return breakdown
 
-    def format_report(self, report: 'WeeklyReportData') -> str:
+    def format_report(self, report: "WeeklyReportData") -> str:
         """Format weekly report as markdown."""
         emoji = "🟢" if report.total_r >= 0 else "🔴"
 
@@ -402,18 +364,20 @@ class WeeklyReport:
                 f"{s['total_r']:+.2f}R | {s['win_rate']:.0%} | {s['pf']:.1f} |"
             )
 
-        lines.extend([
-            "",
-            f"🏆 **Best Strategy**: {report.best_strategy}" if report.best_strategy else "",
-            f"⚠️ **Worst Strategy**: {report.worst_strategy}" if report.worst_strategy else "",
-            "",
-            "---",
-            "",
-            "## Daily Breakdown",
-            "",
-            "| Date | Day | Trades | Winners | Total R |",
-            "|------|-----|--------|---------|---------|",
-        ])
+        lines.extend(
+            [
+                "",
+                f"🏆 **Best Strategy**: {report.best_strategy}" if report.best_strategy else "",
+                f"⚠️ **Worst Strategy**: {report.worst_strategy}" if report.worst_strategy else "",
+                "",
+                "---",
+                "",
+                "## Daily Breakdown",
+                "",
+                "| Date | Day | Trades | Winners | Total R |",
+                "|------|-----|--------|---------|---------|",
+            ]
+        )
 
         for d in report.daily_breakdown:
             if d["trades"] > 0:
@@ -423,60 +387,70 @@ class WeeklyReport:
                     f"{d['winners']} | {d['total_r']:+.2f}R {emoji} |"
                 )
             else:
-                lines.append(
-                    f"| {d['date']} | {d['day']} | - | - | - |"
-                )
+                lines.append(f"| {d['date']} | {d['day']} | - | - | - |")
 
-        lines.extend([
-            "",
-            "---",
-            "",
-            "## Edge Analysis",
-            "",
-            "### Strengths 💪",
-        ])
+        lines.extend(
+            [
+                "",
+                "---",
+                "",
+                "## Edge Analysis",
+                "",
+                "### Strengths 💪",
+            ]
+        )
         for s in report.strengths:
             lines.append(f"- {s}")
 
-        lines.extend([
-            "",
-            "### Weaknesses 📉",
-        ])
+        lines.extend(
+            [
+                "",
+                "### Weaknesses 📉",
+            ]
+        )
         for w in report.weaknesses:
             lines.append(f"- {w}")
 
         if report.biggest_leaks:
-            lines.extend([
-                "",
-                "### Biggest Leaks 🕳️",
-            ])
+            lines.extend(
+                [
+                    "",
+                    "### Biggest Leaks 🕳️",
+                ]
+            )
             for leak in report.biggest_leaks:
                 lines.append(f"- ❌ {leak}")
 
-        lines.extend([
-            "",
-            "---",
-            "",
-            "## Coaching for Next Week",
-            "",
-            "### Top 3 Rules 📌",
-        ])
+        lines.extend(
+            [
+                "",
+                "---",
+                "",
+                "## Coaching for Next Week",
+                "",
+                "### Top 3 Rules 📌",
+            ]
+        )
         for rule in report.top_rules:
             lines.append(f"- {rule}")
 
         if report.stop_doing:
-            lines.extend([
-                "",
-                "### Stop Doing 🛑",
-            ])
+            lines.extend(
+                [
+                    "",
+                    "### Stop Doing 🛑",
+                ]
+            )
             for item in report.stop_doing:
                 lines.append(f"- {item}")
 
         if report.double_down:
-            lines.extend([
-                "",
-                "### Double Down On ✅",
-            ])
+            lines.extend(
+                [
+                    "",
+                    "### Double Down On ✅",
+                ]
+            )
             for item in report.double_down:
                 lines.append(f"- {item}")
 
@@ -486,7 +460,7 @@ class WeeklyReport:
 
         return "\n".join(lines)
 
-    def save_report(self, report: 'WeeklyReportData') -> Path:
+    def save_report(self, report: "WeeklyReportData") -> Path:
         """
         Save weekly report to disk.
 
@@ -510,6 +484,7 @@ class WeeklyReport:
         # Save strategy stats as CSV
         if report.strategy_leaderboard:
             import pandas as pd
+
             stats_df = pd.DataFrame(report.strategy_leaderboard)
             csv_path = output_dir / "strategy_stats.csv"
             stats_df.to_csv(csv_path, index=False)

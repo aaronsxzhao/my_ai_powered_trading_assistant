@@ -29,7 +29,9 @@ TONE: Direct, confident, like a senior trader coaching a junior. No hedging or e
 
     def get_trade_review_prompt(self) -> str:
         """Get system prompt for trade review."""
-        return self.SYSTEM_BASE + """
+        return (
+            self.SYSTEM_BASE
+            + """
 You are reviewing a completed trade. The computed analysis has been provided.
 
 Your job:
@@ -46,10 +48,13 @@ Structure your response as:
 
 Keep total response under 200 words.
 """
+        )
 
     def get_premarket_prompt(self) -> str:
         """Get system prompt for premarket report."""
-        return self.SYSTEM_BASE + """
+        return (
+            self.SYSTEM_BASE
+            + """
 You are generating a premarket briefing for a day trader.
 
 The computed analysis includes:
@@ -73,10 +78,13 @@ Structure your response as:
 Be specific. Reference the computed levels and patterns.
 Keep total response under 300 words.
 """
+        )
 
     def get_eod_summary_prompt(self) -> str:
         """Get system prompt for end-of-day summary."""
-        return self.SYSTEM_BASE + """
+        return (
+            self.SYSTEM_BASE
+            + """
 You are summarizing a day's trading performance.
 
 The computed data includes:
@@ -100,10 +108,13 @@ Structure your response as:
 Be direct. If it was a bad day, say so. If good, acknowledge it.
 Keep total response under 150 words.
 """
+        )
 
     def get_weekly_summary_prompt(self) -> str:
         """Get system prompt for weekly summary."""
-        return self.SYSTEM_BASE + """
+        return (
+            self.SYSTEM_BASE
+            + """
 You are summarizing a week's trading performance.
 
 The computed data includes:
@@ -127,10 +138,13 @@ Structure your response as:
 Reference the strategy stats and metrics.
 Keep total response under 250 words.
 """
+        )
 
     def get_qa_prompt(self) -> str:
         """Get system prompt for Q&A."""
-        return self.SYSTEM_BASE + """
+        return (
+            self.SYSTEM_BASE
+            + """
 A trader is asking a question about their analysis or the market context.
 
 Answer based ONLY on the computed data provided. If you don't have the data to answer, say so.
@@ -138,10 +152,13 @@ Answer based ONLY on the computed data provided. If you don't have the data to a
 Be concise - aim for 2-3 sentences max unless a longer explanation is truly needed.
 Reference specific numbers from the context when possible.
 """
+        )
 
     def get_strategy_coach_prompt(self) -> str:
         """Get system prompt for strategy coaching."""
-        return self.SYSTEM_BASE + """
+        return (
+            self.SYSTEM_BASE
+            + """
 You are coaching on a specific strategy's performance.
 
 The computed data includes:
@@ -161,6 +178,7 @@ Structure your response as:
 
 Keep total response under 150 words.
 """
+        )
 
     def build_context_string(self, data: dict) -> str:
         """

@@ -51,8 +51,17 @@
         </div>
     </div>
 
+    <!-- Quick navigation -->
+    <div class="flex flex-wrap gap-2">
+        <a href="#chart" class="btn btn-ghost text-sm px-3 py-2">📈 Chart</a>
+        <a href="#details" class="btn btn-ghost text-sm px-3 py-2">📊 Details</a>
+        <a href="#ai-review" class="btn btn-ghost text-sm px-3 py-2">🧠 AI Review</a>
+        <a href="#journal" class="btn btn-ghost text-sm px-3 py-2">📋 Journal</a>
+        <a href="#notes" class="btn btn-ghost text-sm px-3 py-2">📝 Notes</a>
+    </div>
+
     <!-- TradingView Chart -->
-    <div class="card">
+    <div id="chart" class="card">
         <div class="flex items-center justify-between mb-4">
             <h2 class="text-xl font-bold text-white flex items-center gap-2">
                 📈 Price Chart
@@ -141,7 +150,7 @@
     </div>
 
     <!-- Trade Details (Full Width) -->
-    <div class="card mb-6">
+    <div id="details" class="card mb-6">
         <div class="flex items-center justify-between mb-4">
             <h2 class="text-lg font-bold text-white flex items-center gap-2">
                 📊 Trade Details
@@ -266,6 +275,7 @@
         {% endif %}
     </div>
 
+    <div id="ai-review"></div>
     <!-- AI Coaching Review (Full Width) -->
     <div class="card mb-6" id="review-card">
         <div class="flex justify-between items-center mb-4">
@@ -409,6 +419,7 @@
         </div>
     </div>
 
+    <div id="journal"></div>
     <!-- Trade Plan, Notes & Review (Merged Section) -->
     <div class="card">
         <div class="flex justify-between items-center mb-4">
@@ -575,6 +586,7 @@
         <hr class="border-dark-700 mb-6">
         
         <!-- Section: General Notes -->
+        <div id="notes"></div>
         <h3 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
             📝 Trade Notes
         </h3>

@@ -1,7 +1,7 @@
 """
 LLM client for narrative enhancement.
 
-Uses Claude via LiteLLM proxy (OpenAI-compatible API) to enhance 
+Uses Claude via LiteLLM proxy (OpenAI-compatible API) to enhance
 rule-based analysis with natural language coaching.
 """
 
@@ -40,6 +40,7 @@ class LLMClient:
         if self._client is None:
             try:
                 from openai import OpenAI
+
                 self._client = OpenAI(
                     api_key=self.api_key,
                     base_url=self.base_url,

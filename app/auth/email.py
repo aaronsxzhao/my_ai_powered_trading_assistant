@@ -35,13 +35,13 @@ def is_email_configured() -> bool:
 def send_email(to: str, subject: str, html_body: str, text_body: Optional[str] = None) -> bool:
     """
     Send an email using SMTP.
-    
+
     Args:
         to: Recipient email address
         subject: Email subject
         html_body: HTML content
         text_body: Plain text fallback (optional)
-    
+
     Returns:
         True if sent successfully
     """
@@ -49,30 +49,30 @@ def send_email(to: str, subject: str, html_body: str, text_body: Optional[str] =
         logger.warning("Email not configured - skipping send")
         logger.info(f"Would send email to {to}: {subject}")
         return False
-    
+
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
         msg["From"] = f"{APP_NAME} <{SMTP_FROM}>"
         msg["To"] = to
-        
+
         # Add plain text version
         if text_body:
             msg.attach(MIMEText(text_body, "plain"))
-        
+
         # Add HTML version
         msg.attach(MIMEText(html_body, "html"))
-        
+
         # Connect and send
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
             if SMTP_USE_TLS:
                 server.starttls()
             server.login(SMTP_USER, SMTP_PASSWORD)
             server.sendmail(SMTP_FROM, to, msg.as_string())
-        
+
         logger.info(f"Email sent to {to}: {subject}")
         return True
-        
+
     except Exception as e:
         logger.error(f"Failed to send email to {to}: {e}")
         return False
@@ -81,18 +81,18 @@ def send_email(to: str, subject: str, html_body: str, text_body: Optional[str] =
 def send_verification_email(email: str, token: str, name: Optional[str] = None) -> bool:
     """
     Send email verification link.
-    
+
     Args:
         email: User's email address
         token: Verification token
         name: User's name (optional)
-    
+
     Returns:
         True if sent successfully
     """
     verify_url = f"{APP_URL}/auth/verify?token={token}"
     greeting = f"Hi {name}," if name else "Hi,"
-    
+
     html_body = f"""
     <!DOCTYPE html>
     <html>
@@ -129,7 +129,7 @@ def send_verification_email(email: str, token: str, name: Optional[str] = None) 
     </body>
     </html>
     """
-    
+
     text_body = f"""
     Welcome to {APP_NAME}!
     
@@ -143,25 +143,25 @@ def send_verification_email(email: str, token: str, name: Optional[str] = None) 
     
     If you didn't create an account, you can safely ignore this email.
     """
-    
+
     return send_email(email, f"Verify your {APP_NAME} account", html_body, text_body)
 
 
 def send_password_reset_email(email: str, token: str, name: Optional[str] = None) -> bool:
     """
     Send password reset link.
-    
+
     Args:
         email: User's email address
         token: Reset token
         name: User's name (optional)
-    
+
     Returns:
         True if sent successfully
     """
     reset_url = f"{APP_URL}/auth/reset-password?token={token}"
     greeting = f"Hi {name}," if name else "Hi,"
-    
+
     html_body = f"""
     <!DOCTYPE html>
     <html>
@@ -199,7 +199,7 @@ def send_password_reset_email(email: str, token: str, name: Optional[str] = None
     </body>
     </html>
     """
-    
+
     text_body = f"""
     Password Reset Request
     
@@ -213,5 +213,5 @@ def send_password_reset_email(email: str, token: str, name: Optional[str] = None
     
     If you didn't request a password reset, you can safely ignore this email.
     """
-    
+
     return send_email(email, f"Reset your {APP_NAME} password", html_body, text_body)

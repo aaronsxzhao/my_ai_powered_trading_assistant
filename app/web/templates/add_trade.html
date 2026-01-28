@@ -27,7 +27,9 @@
 
     <!-- Single Trade Panel -->
     <div id="panel-single" class="trade-panel">
-        <div class="max-w-2xl">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Form -->
+            <div class="lg:col-span-2">
             <form action="/api/trades" method="POST" class="card space-y-6" id="add-trade-form" onsubmit="return validateTradeForm()">
                 <!-- Ticker -->
                 <div>
@@ -94,7 +96,7 @@
                     </div>
                 </div>
 
-                <div class="grid grid-cols-3 gap-4">
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <!-- Entry -->
                     <div>
                         <label class="label">Entry Price *</label>
@@ -172,80 +174,189 @@
                     <button type="submit" class="btn btn-primary">Add Trade</button>
                 </div>
             </form>
+            </div>
 
-            <!-- R Calculator -->
-            <div class="card mt-6">
-                <h3 class="font-bold mb-3 text-white">📊 R-Multiple Calculator</h3>
-                <p class="text-dark-400 text-sm mb-4">Enter your prices above to see the R-multiple.</p>
-                <div id="r-preview" class="text-2xl font-mono font-bold text-dark-500">--</div>
+            <!-- Live preview -->
+            <div class="lg:col-span-1">
+                <div class="card lg:sticky lg:top-24 space-y-4">
+                    <div class="flex items-center justify-between">
+                        <h3 class="font-bold text-white">📌 Live Preview</h3>
+                        <span class="text-xs text-dark-500">updates as you type</span>
+                    </div>
+
+                    <div class="bg-dark-900/40 border border-dark-700 rounded-xl p-4">
+                        <div class="text-xs text-dark-500 mb-2">R-Multiple</div>
+                        <div id="r-preview" class="text-3xl font-mono font-bold text-dark-500">--</div>
+                        <div class="text-xs text-dark-500 mt-2">
+                            R requires a Stop Loss. (Import is fine without SL/TP.)
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="bg-dark-900/40 border border-dark-700 rounded-xl p-3">
+                            <div class="text-xs text-dark-500 mb-1">Risk / Share</div>
+                            <div id="risk-preview" class="font-mono font-semibold text-dark-300">--</div>
+                        </div>
+                        <div class="bg-dark-900/40 border border-dark-700 rounded-xl p-3">
+                            <div class="text-xs text-dark-500 mb-1">P&L / Share</div>
+                            <div id="pnl-preview" class="font-mono font-semibold text-dark-300">--</div>
+                        </div>
+                        <div class="bg-dark-900/40 border border-dark-700 rounded-xl p-3">
+                            <div class="text-xs text-dark-500 mb-1">RR (to TP)</div>
+                            <div id="rr-preview" class="font-mono font-semibold text-dark-300">--</div>
+                        </div>
+                        <div class="bg-dark-900/40 border border-dark-700 rounded-xl p-3">
+                            <div class="text-xs text-dark-500 mb-1">Stop Valid?</div>
+                            <div id="stop-valid-preview" class="font-mono font-semibold text-dark-300">--</div>
+                        </div>
+                    </div>
+
+                    <div class="text-xs text-dark-500">
+                        Tip: After import, you can edit trades to add SL/TP for accurate Brooks-style review.
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 
     <!-- Bulk Import Panel -->
-    <div id="panel-import" class="trade-panel hidden">
-        <!-- Robinhood Auto-Import -->
-        <div class="card bg-gradient-to-br from-success-500/10 to-success-600/5 border-success-500/30 mb-6">
+    <div id="panel-import" class="trade-panel hidden space-y-6">
+        <!-- Auto-Import (Broker selector like CSV format) -->
+        <div class="card">
             <div class="flex items-center justify-between mb-4">
-                <h2 class="text-xl font-bold text-white">🤖 Robinhood Auto-Import</h2>
-                <span id="rh-status" class="badge bg-dark-700 text-dark-300 border-dark-600">Not Connected</span>
+                <h2 class="text-xl font-bold text-white">⚡ Auto-Import</h2>
+                <div class="flex items-center gap-2">
+                    <span id="rh-status" class="badge bg-dark-700 text-dark-300 border-dark-600">Not Connected</span>
+                    <span id="ibkr-status" class="badge bg-dark-700 text-dark-300 border-dark-600 hidden">Not Configured</span>
+                </div>
             </div>
-            
-            <div id="rh-login-form">
-                <div class="bg-accent-500/10 border border-accent-500/30 rounded-xl p-3 mb-4">
-                    <p class="text-sm text-accent-300">
-                        <strong>📱 How it works:</strong> After clicking Connect, check your <strong class="text-white">Robinhood app</strong> 
-                        to approve the login. No MFA code needed if you use app approval.
-                    </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                <div>
+                    <label class="label">Broker</label>
+                    <select id="auto-import-broker" class="select" onchange="updateAutoImportBroker()">
+                        <option value="robinhood" selected>🤖 Robinhood</option>
+                        <option value="ibkr_flex">🏦 Interactive Brokers (Flex)</option>
+                    </select>
+                    <p id="auto-import-hint" class="text-xs text-dark-500 mt-1"></p>
                 </div>
-                
-                <div class="space-y-3">
-                    <input type="email" id="rh-username" placeholder="Robinhood Email" class="input">
-                    <input type="password" id="rh-password" placeholder="Password" class="input">
-                    
-                    <details class="text-sm">
-                        <summary class="text-dark-400 cursor-pointer hover:text-dark-200">
-                            Using SMS/Authenticator instead of app approval? Click here
-                        </summary>
-                        <input type="text" id="rh-mfa" placeholder="6-digit MFA Code" class="input mt-2">
-                    </details>
-                    
-                    <div class="flex items-center gap-3">
-                        <select id="rh-days" class="select flex-shrink-0">
-                            <option value="7">Last 7 days</option>
-                            <option value="30" selected>Last 30 days</option>
-                            <option value="90">Last 90 days</option>
-                            <option value="365">Last year</option>
-                        </select>
-                        <button onclick="startRobinhoodConnect()" class="btn btn-success flex-1">
-                            🔗 Connect & Import
-                        </button>
+                <div class="text-xs text-dark-500 md:text-right">
+                    Auto-import is read-only. You can add SL/TP later for accurate R.
+                </div>
+            </div>
+
+            <!-- Broker panels -->
+            <div class="mt-6">
+                <!-- Robinhood panel -->
+                <div id="auto-import-panel-robinhood" class="space-y-4">
+                    <div class="bg-accent-500/10 border border-accent-500/30 rounded-xl p-3">
+                        <p class="text-sm text-accent-300">
+                            <strong>📱 Robinhood:</strong> Click Connect, then approve in the Robinhood app. Use MFA only if required.
+                        </p>
                     </div>
-                </div>
-                
-                <div id="rh-instructions" class="hidden mt-4 p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl">
-                    <div class="flex items-start gap-3">
-                        <div class="text-2xl animate-pulse">📱</div>
-                        <div>
-                            <p class="font-medium text-amber-400">Waiting for approval...</p>
-                            <p class="text-sm text-amber-300" id="rh-instruction-text">
-                                Check your Robinhood app and tap "Approve" to continue.
-                            </p>
+
+                    <div id="rh-login-form" class="space-y-3">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <input type="email" id="rh-username" placeholder="Robinhood Email" class="input">
+                            <input type="password" id="rh-password" placeholder="Password" class="input">
+                        </div>
+
+                        <details class="text-sm">
+                            <summary class="text-dark-400 cursor-pointer hover:text-dark-200">
+                                Using SMS/Authenticator instead of app approval? Click here
+                            </summary>
+                            <input type="text" id="rh-mfa" placeholder="6-digit MFA Code" class="input mt-2">
+                        </details>
+
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+                            <div>
+                                <label class="label">Lookback</label>
+                                <select id="rh-days" class="select">
+                                    <option value="7">Last 7 days</option>
+                                    <option value="30" selected>Last 30 days</option>
+                                    <option value="90">Last 90 days</option>
+                                    <option value="365">Last year</option>
+                                </select>
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="label opacity-0">Action</label>
+                                <button onclick="startRobinhoodConnect()" class="btn btn-success w-full">
+                                    🔗 Connect & Import
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="rh-instructions" class="hidden mt-2 p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl">
+                            <div class="flex items-start gap-3">
+                                <div class="text-2xl animate-pulse">📱</div>
+                                <div>
+                                    <p class="font-medium text-amber-400">Waiting for approval...</p>
+                                    <p class="text-sm text-amber-300" id="rh-instruction-text">
+                                        Check your Robinhood app and tap "Approve" to continue.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="rh-connected" class="hidden">
+                        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 bg-dark-900/40 border border-dark-700 rounded-xl p-4">
+                            <span class="text-success-400">✓ Session stored</span>
+                            <div class="flex flex-wrap gap-2">
+                                <button onclick="importFromRobinhoodSession()" class="btn btn-primary">
+                                    📥 Import New Trades
+                                </button>
+                                <button onclick="disconnectRobinhood()" class="btn btn-secondary">
+                                    Disconnect
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
-            
-            <div id="rh-connected" class="hidden">
-                <div class="flex items-center justify-between">
-                    <span class="text-success-400">✓ Connected to Robinhood</span>
-                    <div class="flex gap-2">
-                        <button onclick="importFromRobinhoodSession()" class="btn btn-primary">
-                            📥 Import New Trades
-                        </button>
-                        <button onclick="disconnectRobinhood()" class="btn btn-secondary">
-                            Disconnect
-                        </button>
+
+                <!-- IBKR panel -->
+                <div id="auto-import-panel-ibkr" class="space-y-4 hidden">
+                    <div class="bg-dark-900/50 border border-dark-700 rounded-xl p-3 text-sm text-dark-300">
+                        <strong>IBKR Flex (read-only):</strong> Provide a Flex Web Service token + Flex Query ID, or leave blank to use <code class="text-accent-400">IBKR_FLEX_TOKEN</code> / <code class="text-accent-400">IBKR_FLEX_QUERY_ID</code> from your <code class="text-accent-400">.env</code>.
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <input type="password" id="ibkr-token" placeholder="Flex Token (optional)" class="input">
+                        <input type="text" id="ibkr-query-id" placeholder="Flex Query ID (optional)" class="input">
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+                        <div>
+                            <label class="label">Lookback</label>
+                            <select id="ibkr-days" class="select">
+                                <option value="7">Last 7 days</option>
+                                <option value="30" selected>Last 30 days</option>
+                                <option value="90">Last 90 days</option>
+                                <option value="365">Last year</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="label">Timezone (your Flex times)</label>
+                            <select id="ibkr-timezone" class="select">
+                                <option value="America/New_York" selected>America/New_York</option>
+                                <option value="America/Chicago">America/Chicago</option>
+                                <option value="America/Los_Angeles">America/Los_Angeles</option>
+                                <option value="Asia/Hong_Kong">Asia/Hong_Kong</option>
+                                <option value="Asia/Shanghai">Asia/Shanghai</option>
+                                <option value="Europe/London">Europe/London</option>
+                                <option value="UTC">UTC</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="label opacity-0">Action</label>
+                            <button onclick="importFromIbkrFlex()" class="btn btn-primary w-full">
+                                📥 Import
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="text-xs text-dark-500">
+                        We do not store your token. Trades are aggregated flat-to-flat (round trips).
                     </div>
                 </div>
             </div>
@@ -304,7 +415,7 @@
                         </div>
                     </div>
                     
-                    <div class="border-2 border-dashed border-dark-600 rounded-xl p-8 text-center hover:border-accent-500 transition cursor-pointer bg-dark-900/50"
+                    <div id="csv-dropzone" class="border-2 border-dashed border-dark-600 rounded-xl p-8 text-center hover:border-accent-500 transition cursor-pointer bg-dark-900/50"
                          onclick="document.getElementById('file-input').click()">
                         <input type="file" id="file-input" accept=".csv" class="hidden" onchange="handleFileSelect(this)">
                         <div class="text-4xl mb-2">📁</div>
@@ -511,12 +622,22 @@ function showTab(tab) {
     const tabEl = document.getElementById('tab-' + tab);
     tabEl.classList.add('border-accent-500', 'text-accent-400');
     tabEl.classList.remove('border-transparent', 'text-dark-400');
+
+    // Persist tab in URL for refresh/back navigation
+    try {
+        const url = new URL(window.location.href);
+        if (tab === 'import') url.searchParams.set('tab', 'import');
+        else url.searchParams.delete('tab');
+        window.history.replaceState({}, '', url);
+    } catch (e) {}
 }
 
-// Check URL for tab parameter
-if (window.location.pathname === '/import') {
-    showTab('import');
-}
+// Initial tab: honor ?tab=import or #import
+try {
+    const url = new URL(window.location.href);
+    const tab = url.searchParams.get('tab') || (window.location.hash || '').replace('#', '');
+    if (tab === 'import') showTab('import');
+} catch (e) {}
 
 // ===== SINGLE TRADE FORM =====
 const entryInput = document.querySelector('input[name="entry_price"]');
@@ -524,16 +645,77 @@ const exitInput = document.querySelector('input[name="exit_price"]');
 const stopInput = document.querySelector('input[name="stop_loss"]');
 const directionSelect = document.querySelector('select[name="direction"]');
 const rPreview = document.getElementById('r-preview');
+const riskPreview = document.getElementById('risk-preview');
+const pnlPreview = document.getElementById('pnl-preview');
+const rrPreview = document.getElementById('rr-preview');
+const stopValidPreview = document.getElementById('stop-valid-preview');
+const tpInput = document.querySelector('input[name="take_profit"]');
 
 function calculateR() {
     const entry = parseFloat(entryInput.value);
     const exit = parseFloat(exitInput.value);
     const stop = parseFloat(stopInput.value);
     const direction = directionSelect.value;
+    const tp = tpInput ? parseFloat(tpInput.value) : NaN;
     
+    // P&L per share preview (no SL required)
+    if (entry && exit && pnlPreview) {
+        const pnlPerShare = direction === 'long' ? (exit - entry) : (entry - exit);
+        pnlPreview.textContent = pnlPerShare.toFixed(4);
+        pnlPreview.className = 'font-mono font-semibold ' + (pnlPerShare >= 0 ? 'positive' : 'negative');
+    } else if (pnlPreview) {
+        pnlPreview.textContent = '--';
+        pnlPreview.className = 'font-mono font-semibold text-dark-300';
+    }
+
+    // Stop validity preview
+    if (stopValidPreview) {
+        if (!entry || !stop) {
+            stopValidPreview.textContent = '--';
+            stopValidPreview.className = 'font-mono font-semibold text-dark-300';
+        } else {
+            const ok = direction === 'long' ? stop < entry : stop > entry;
+            stopValidPreview.textContent = ok ? 'OK' : 'CHECK';
+            stopValidPreview.className = 'font-mono font-semibold ' + (ok ? 'positive' : 'negative');
+        }
+    }
+
+    // Risk / share and RR to TP preview (needs SL; TP optional)
+    if (entry && stop && riskPreview) {
+        const riskPerShare = Math.abs(entry - stop);
+        riskPreview.textContent = riskPerShare.toFixed(4);
+        riskPreview.className = 'font-mono font-semibold ' + (riskPerShare > 0 ? 'text-dark-200' : 'negative');
+
+        if (rrPreview) {
+            if (tp && riskPerShare > 0) {
+                const rewardPerShare = direction === 'long' ? (tp - entry) : (entry - tp);
+                const rr = rewardPerShare / riskPerShare;
+                if (Number.isFinite(rr)) {
+                    rrPreview.textContent = rr.toFixed(2);
+                    rrPreview.className = 'font-mono font-semibold ' + (rr >= 1 ? 'positive' : 'text-dark-200');
+                } else {
+                    rrPreview.textContent = '--';
+                    rrPreview.className = 'font-mono font-semibold text-dark-300';
+                }
+            } else {
+                rrPreview.textContent = '--';
+                rrPreview.className = 'font-mono font-semibold text-dark-300';
+            }
+        }
+    } else {
+        if (riskPreview) {
+            riskPreview.textContent = '--';
+            riskPreview.className = 'font-mono font-semibold text-dark-300';
+        }
+        if (rrPreview) {
+            rrPreview.textContent = '--';
+            rrPreview.className = 'font-mono font-semibold text-dark-300';
+        }
+    }
+
     if (!entry || !exit || !stop) {
         rPreview.textContent = '--';
-        rPreview.className = 'text-2xl font-mono font-bold text-dark-500';
+        rPreview.className = 'text-3xl font-mono font-bold text-dark-500';
         return;
     }
     
@@ -555,13 +737,14 @@ function calculateR() {
     }
     
     rPreview.textContent = r.toFixed(2) + 'R';
-    rPreview.className = 'text-2xl font-mono font-bold ' + (r >= 0 ? 'positive' : 'negative');
+    rPreview.className = 'text-3xl font-mono font-bold ' + (r >= 0 ? 'positive' : 'negative');
 }
 
 entryInput.addEventListener('input', calculateR);
 exitInput.addEventListener('input', calculateR);
 stopInput.addEventListener('input', calculateR);
 directionSelect.addEventListener('change', calculateR);
+if (tpInput) tpInput.addEventListener('input', calculateR);
 
 // Trade date is derived from entry/exit time, no separate field needed
 
@@ -575,17 +758,134 @@ const balanceFileInput = document.getElementById('balance-file-input');
 const balanceFileName = document.getElementById('balance-file-name');
 const balanceFileSection = document.getElementById('balance-file-section');
 
+// ===== AUTO-IMPORT (BROKER SELECTOR) =====
+function updateAutoImportBroker() {
+    const brokerSelect = document.getElementById('auto-import-broker');
+    const hint = document.getElementById('auto-import-hint');
+    const rhPanel = document.getElementById('auto-import-panel-robinhood');
+    const ibkrPanel = document.getElementById('auto-import-panel-ibkr');
+    const rhStatus = document.getElementById('rh-status');
+    const ibkrStatus = document.getElementById('ibkr-status');
+
+    if (!brokerSelect || !rhPanel || !ibkrPanel) return;
+    const broker = brokerSelect.value || 'robinhood';
+
+    const showRobinhood = broker === 'robinhood';
+    rhPanel.classList.toggle('hidden', !showRobinhood);
+    ibkrPanel.classList.toggle('hidden', showRobinhood);
+
+    if (rhStatus) rhStatus.classList.toggle('hidden', !showRobinhood);
+    if (ibkrStatus) ibkrStatus.classList.toggle('hidden', showRobinhood);
+
+    if (hint) {
+        hint.textContent = showRobinhood
+            ? 'Robinhood: enter credentials, approve in app. MFA only if prompted.'
+            : 'IBKR: uses Flex Web Service (read-only). Provide token/query, or set env vars.';
+    }
+}
+
+// Initialize broker UI on load
+updateAutoImportBroker();
+
 checkRobinhoodSession();
+checkIbkrStatus();
 
 async function checkRobinhoodSession() {
     try {
         const response = await fetch('/api/robinhood/status');
         const data = await response.json();
+        const loginPanel = document.getElementById('rh-login-form');
+        const connectedPanel = document.getElementById('rh-connected');
+
         if (data.has_session) {
-            document.getElementById('rh-status').textContent = 'Session Stored';
-            document.getElementById('rh-status').className = 'badge bg-amber-500/20 text-amber-400 border-amber-500/30';
+            const badge = document.getElementById('rh-status');
+            if (badge) {
+                const wasHidden = badge.classList.contains('hidden');
+                badge.textContent = 'Session Stored';
+                badge.className = 'badge bg-amber-500/20 text-amber-400 border-amber-500/30' + (wasHidden ? ' hidden' : '');
+            }
+            if (loginPanel) loginPanel.classList.add('hidden');
+            if (connectedPanel) connectedPanel.classList.remove('hidden');
+        } else {
+            if (loginPanel) loginPanel.classList.remove('hidden');
+            if (connectedPanel) connectedPanel.classList.add('hidden');
         }
     } catch (e) {}
+}
+
+async function checkIbkrStatus() {
+    const badge = document.getElementById('ibkr-status');
+    if (!badge) return;
+    try {
+        const response = await fetch('/api/ibkr/status');
+        const data = await response.json();
+
+        if (data.configured) {
+            const wasHidden = badge.classList.contains('hidden');
+            badge.textContent = 'Configured';
+            badge.className = 'badge bg-success-500/20 text-success-400 border-success-500/30' + (wasHidden ? ' hidden' : '');
+        } else if (data.has_token || data.has_query_id) {
+            const wasHidden = badge.classList.contains('hidden');
+            badge.textContent = 'Partial';
+            badge.className = 'badge bg-amber-500/20 text-amber-400 border-amber-500/30' + (wasHidden ? ' hidden' : '');
+        } else {
+            const wasHidden = badge.classList.contains('hidden');
+            badge.textContent = 'Not Configured';
+            badge.className = 'badge bg-dark-700 text-dark-300 border-dark-600' + (wasHidden ? ' hidden' : '');
+        }
+    } catch (e) {
+        // Leave as default if status check fails.
+    }
+}
+
+async function importFromIbkrFlex() {
+    showStartToast('IBKR import');
+
+    const tokenEl = document.getElementById('ibkr-token');
+    const queryEl = document.getElementById('ibkr-query-id');
+    const daysEl = document.getElementById('ibkr-days');
+    const tzEl = document.getElementById('ibkr-timezone');
+
+    const token = tokenEl && tokenEl.value.trim() ? tokenEl.value.trim() : null;
+    const query_id = queryEl && queryEl.value.trim() ? queryEl.value.trim() : null;
+    const days_back = daysEl ? parseInt(daysEl.value) : 30;
+    const input_timezone = tzEl ? tzEl.value : 'America/New_York';
+
+    try {
+        const response = await fetch('/api/ibkr/import', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ token, query_id, days_back, input_timezone })
+        });
+        const data = await response.json();
+
+        // Clear token field for safety
+        if (tokenEl) tokenEl.value = '';
+
+        if (data.error) {
+            showToast('Error: ' + data.error, 'error');
+            return;
+        }
+
+        const imported = data.imported || 0;
+        const errors = data.errors || 0;
+        const msg = (data.messages && data.messages.length) ? data.messages[0] : '';
+
+        if (errors > 0 && imported === 0) {
+            showToast(msg || 'IBKR import failed', 'error', 6000);
+            return;
+        }
+
+        if (imported === 0) {
+            showToast(msg || 'No new IBKR trades found', 'info', 5000);
+            return;
+        }
+
+        showFinishToast('IBKR import', `${imported} trades`);
+        setTimeout(() => window.location.reload(), 2000);
+    } catch (err) {
+        showToast('IBKR import failed: ' + err.message, 'error', 6000);
+    }
 }
 
 function startRobinhoodConnect() {
@@ -660,8 +960,22 @@ async function importFromRobinhoodSession() {
 
 async function disconnectRobinhood() {
     await fetch('/api/robinhood/disconnect', {method: 'POST'});
-    document.getElementById('rh-status').textContent = 'Not Connected';
-    document.getElementById('rh-status').className = 'badge bg-dark-700 text-dark-300 border-dark-600';
+    const badge = document.getElementById('rh-status');
+    if (badge) {
+        const wasHidden = badge.classList.contains('hidden');
+        badge.textContent = 'Not Connected';
+        badge.className = 'badge bg-dark-700 text-dark-300 border-dark-600' + (wasHidden ? ' hidden' : '');
+    }
+    const loginPanel = document.getElementById('rh-login-form');
+    const connectedPanel = document.getElementById('rh-connected');
+    if (loginPanel) loginPanel.classList.remove('hidden');
+    if (connectedPanel) connectedPanel.classList.add('hidden');
+
+    // Clear sensitive fields
+    const pw = document.getElementById('rh-password');
+    const mfa = document.getElementById('rh-mfa');
+    if (pw) pw.value = '';
+    if (mfa) mfa.value = '';
     showToast('Disconnected');
 }
 
@@ -694,15 +1008,14 @@ function updateFormatInfo() {
     const infoEl = document.getElementById('format-info-' + selected);
     if (infoEl) infoEl.classList.remove('hidden');
     
-    // Show timezone selector and balance file section for TV order history
+    // Show timezone selector for formats that include timestamps
     const timezoneSection = document.getElementById('timezone-section');
-    if (selected === 'tv_order_history') {
-        balanceFileSection.classList.remove('hidden');
-        if (timezoneSection) timezoneSection.classList.remove('hidden');
-    } else {
-        balanceFileSection.classList.add('hidden');
-        if (timezoneSection) timezoneSection.classList.add('hidden');
-    }
+    const needsTimezone = (selected === 'tv_order_history' || selected === 'interactive_brokers');
+    if (timezoneSection) timezoneSection.classList.toggle('hidden', !needsTimezone);
+
+    // Balance-history cross-validation only applies to TradingView order history
+    if (selected === 'tv_order_history') balanceFileSection.classList.remove('hidden');
+    else balanceFileSection.classList.add('hidden');
 }
 
 formatSelect.addEventListener('change', updateFormatInfo);
@@ -718,7 +1031,7 @@ uploadForm.addEventListener('submit', async (e) => {
     
     // Include timezone if TV order history format
     const timezoneSelect = document.getElementById('timezone-select');
-    if (timezoneSelect && formatSelect.value === 'tv_order_history') {
+    if (timezoneSelect && (formatSelect.value === 'tv_order_history' || formatSelect.value === 'interactive_brokers')) {
         formData.append('input_timezone', timezoneSelect.value);
     }
     
@@ -751,7 +1064,7 @@ async function bulkImport() {
 }
 
 // Drag and drop
-const dropZone = document.querySelector('.border-dashed');
+const dropZone = document.getElementById('csv-dropzone');
 if (dropZone) {
     dropZone.addEventListener('dragover', (e) => {
         e.preventDefault();

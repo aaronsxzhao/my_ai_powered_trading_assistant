@@ -15,7 +15,7 @@ from typing import Optional
 import logging
 
 from app.config import settings, OUTPUTS_DIR
-from app.journal.models import Trade, DailySummary, TradeOutcome, get_session
+from app.journal.models import Trade, TradeOutcome, get_session
 from app.journal.analytics import TradeAnalytics
 from app.journal.coach import TradeCoach
 
@@ -259,38 +259,38 @@ class EndOfDayReport:
     def _get_trade_reviews_parallel(self, trades: list[Trade]) -> dict:
         """Get reviews for all trades in parallel. Returns dict of trade_id -> review."""
         from concurrent.futures import ThreadPoolExecutor, as_completed
-        
+
         reviews = {}
         max_workers = min(4, len(trades))  # Limit concurrency
-        
+
         if not trades:
             return reviews
-        
+
         logger.info(f"📊 Reviewing {len(trades)} trades in parallel ({max_workers} workers)")
-        
+
         def review_trade_safe(trade_id):
             try:
                 return trade_id, self.coach.review_trade(trade_id)
             except Exception as e:
                 logger.warning(f"Failed to review trade {trade_id}: {e}")
                 return trade_id, None
-        
+
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [executor.submit(review_trade_safe, t.id) for t in trades]
-            
+
             for future in as_completed(futures):
                 try:
                     trade_id, review = future.result()
                     reviews[trade_id] = review
                 except Exception as e:
                     logger.warning(f"Error getting review result: {e}")
-        
+
         return reviews
 
     def _detect_rule_violations(self, trades: list[Trade], reviews: dict = None) -> list[str]:
         """Detect rule violations in trades."""
         violations = []
-        
+
         # Use provided reviews or fetch them
         if reviews is None:
             reviews = self._get_trade_reviews_parallel(trades)
@@ -308,7 +308,7 @@ class EndOfDayReport:
     def _identify_top_mistake(self, trades: list[Trade], reviews: dict = None) -> str:
         """Identify the biggest mistake of the day."""
         mistake_counts: dict[str, int] = {}
-        
+
         # Use provided reviews or fetch them
         if reviews is None:
             reviews = self._get_trade_reviews_parallel(trades)
@@ -376,8 +376,8 @@ class EndOfDayReport:
             "",
             f"## Performance Summary {emoji}",
             "",
-            f"| Metric | Value |",
-            f"|--------|-------|",
+            "| Metric | Value |",
+            "|--------|-------|",
             f"| Total Trades | {report.total_trades} |",
             f"| Winners | {report.winning_trades} |",
             f"| Losers | {report.losing_trades} |",
@@ -390,61 +390,73 @@ class EndOfDayReport:
         ]
 
         if report.best_trade:
-            lines.extend([
-                "## Best Trade 🏆",
-                f"- **{report.best_trade['ticker']}**: +{report.best_trade['r_multiple']:.2f}R",
-                f"- Strategy: {report.best_trade['strategy']}",
-                "",
-            ])
+            lines.extend(
+                [
+                    "## Best Trade 🏆",
+                    f"- **{report.best_trade['ticker']}**: +{report.best_trade['r_multiple']:.2f}R",
+                    f"- Strategy: {report.best_trade['strategy']}",
+                    "",
+                ]
+            )
 
         if report.worst_trade:
-            lines.extend([
-                "## Worst Trade ⚠️",
-                f"- **{report.worst_trade['ticker']}**: {report.worst_trade['r_multiple']:.2f}R",
-                f"- Strategy: {report.worst_trade['strategy']}",
-                "",
-            ])
+            lines.extend(
+                [
+                    "## Worst Trade ⚠️",
+                    f"- **{report.worst_trade['ticker']}**: {report.worst_trade['r_multiple']:.2f}R",
+                    f"- Strategy: {report.worst_trade['strategy']}",
+                    "",
+                ]
+            )
 
         if report.daily_loss_limit_hit:
-            lines.extend([
-                "## ⛔ DAILY LOSS LIMIT HIT",
-                f"Lost more than {settings.max_daily_loss_r}R today. Stop trading.",
-                "",
-            ])
+            lines.extend(
+                [
+                    "## ⛔ DAILY LOSS LIMIT HIT",
+                    f"Lost more than {settings.max_daily_loss_r}R today. Stop trading.",
+                    "",
+                ]
+            )
 
         if report.consecutive_losses >= settings.get("risk.warn_after_consecutive_losses", 2):
-            lines.extend([
-                f"## ⚠️ Consecutive Losses: {report.consecutive_losses}",
-                "Consider taking a break or reducing size.",
-                "",
-            ])
+            lines.extend(
+                [
+                    f"## ⚠️ Consecutive Losses: {report.consecutive_losses}",
+                    "Consider taking a break or reducing size.",
+                    "",
+                ]
+            )
 
         if report.rule_violations:
-            lines.extend([
-                "## Rule Violations",
-            ])
+            lines.extend(
+                [
+                    "## Rule Violations",
+                ]
+            )
             for v in report.rule_violations:
                 lines.append(f"- ❌ {v}")
             lines.append("")
 
-        lines.extend([
-            "## Top Mistake",
-            f"📌 {report.top_mistake}",
-            "",
-            "## Tomorrow's Focus",
-            f"🎯 {report.improvement_focus}",
-            "",
-            "---",
-            "",
-            "## All Trades",
-            "",
-            "| # | Ticker | Direction | R | PnL | Strategy | Outcome |",
-            "|---|--------|-----------|---|-----|----------|---------|",
-        ])
+        lines.extend(
+            [
+                "## Top Mistake",
+                f"📌 {report.top_mistake}",
+                "",
+                "## Tomorrow's Focus",
+                f"🎯 {report.improvement_focus}",
+                "",
+                "---",
+                "",
+                "## All Trades",
+                "",
+                "| # | Ticker | Direction | R | PnL | Strategy | Outcome |",
+                "|---|--------|-----------|---|-----|----------|---------|",
+            ]
+        )
 
         for i, t in enumerate(report.trades, 1):
-            r_str = f"{t['r_multiple']:+.2f}" if t['r_multiple'] else "N/A"
-            pnl_str = f"${t['pnl']:+.0f}" if t['pnl'] else "N/A"
+            r_str = f"{t['r_multiple']:+.2f}" if t["r_multiple"] else "N/A"
+            pnl_str = f"${t['pnl']:+.0f}" if t["pnl"] else "N/A"
             lines.append(
                 f"| {i} | {t['ticker']} | {t['direction']} | {r_str} | {pnl_str} | {t['strategy']} | {t['outcome']} |"
             )
@@ -479,6 +491,7 @@ class EndOfDayReport:
         # Also save trades as CSV
         if report.trades:
             import pandas as pd
+
             trades_df = pd.DataFrame(report.trades)
             csv_path = output_dir / "trades.csv"
             trades_df.to_csv(csv_path, index=False)

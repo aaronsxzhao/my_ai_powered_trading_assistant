@@ -7,14 +7,13 @@ Handles:
 - File output
 """
 
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 from typing import Optional
 import logging
 
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
-import numpy as np
 import pandas as pd
 
 from app.config import OUTPUTS_DIR

@@ -95,13 +95,13 @@ def save_config(config: dict[str, Any]) -> None:
 def load_tickers_from_file() -> list[str]:
     """
     Load tickers from tickers.txt file.
-    
+
     Returns:
         List of ticker symbols
     """
     if not TICKERS_FILE.exists():
         return ["SPY", "QQQ"]
-    
+
     tickers = []
     with open(TICKERS_FILE, "r") as f:
         for line in f:
@@ -109,14 +109,14 @@ def load_tickers_from_file() -> list[str]:
             # Skip empty lines and comments
             if line and not line.startswith("#"):
                 tickers.append(line.upper())
-    
+
     return tickers if tickers else ["SPY", "QQQ"]
 
 
 def save_tickers_to_file(tickers: list[str]) -> None:
     """
     Save tickers to tickers.txt file.
-    
+
     Args:
         tickers: List of ticker symbols
     """
@@ -254,9 +254,16 @@ def get_env(key: str, default: str = "") -> str:
 
 
 # LLM API Configuration (LiteLLM Proxy - OpenAI compatible)
-def get_llm_api_key() -> str:
-    """Get LLM API key."""
-    return os.getenv("LLM_API_KEY", "sk-6Of0ucpvQGsCCGZuRA6GNA")
+def get_llm_api_key() -> str | None:
+    """
+    Get LLM API key.
+
+    No default/fallback key is provided. For backwards compatibility, this
+    also checks common alternate env var names.
+    """
+    key = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+    key = key.strip() if key else None
+    return key or None
 
 
 def get_llm_base_url() -> str:
@@ -302,10 +309,10 @@ def get_llm_workers() -> int:
 def get_app_api_key() -> str | None:
     """
     Get application API key for authentication.
-    
-    When set, destructive API endpoints (DELETE, sensitive POST/PATCH) 
+
+    When set, destructive API endpoints (DELETE, sensitive POST/PATCH)
     require this key in the X-API-Key header.
-    
+
     Returns None if no key is configured (auth disabled).
     """
     key = os.getenv("APP_API_KEY", "").strip()

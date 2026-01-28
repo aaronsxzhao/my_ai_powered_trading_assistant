@@ -1,6 +1,5 @@
 """Tests for data providers."""
 
-import pytest
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -62,19 +61,20 @@ class TestDataProviderInterface:
     def test_normalize_dataframe(self):
         """Test DataFrame normalization."""
         from app.data.providers import YFinanceProvider
-        import pytz
 
         provider = YFinanceProvider()
 
         # Create a sample DataFrame with non-standard columns
-        df = pd.DataFrame({
-            "Date": pd.date_range("2024-01-01", periods=5, tz="UTC"),
-            "Open": [100, 101, 102, 103, 104],
-            "High": [101, 102, 103, 104, 105],
-            "Low": [99, 100, 101, 102, 103],
-            "Close": [100.5, 101.5, 102.5, 103.5, 104.5],
-            "Volume": [1000, 1100, 1200, 1300, 1400],
-        })
+        df = pd.DataFrame(
+            {
+                "Date": pd.date_range("2024-01-01", periods=5, tz="UTC"),
+                "Open": [100, 101, 102, 103, 104],
+                "High": [101, 102, 103, 104, 105],
+                "Low": [99, 100, 101, 102, 103],
+                "Close": [100.5, 101.5, 102.5, 103.5, 104.5],
+                "Volume": [1000, 1100, 1200, 1300, 1400],
+            }
+        )
 
         normalized = provider._normalize_dataframe(df)
 

@@ -10,10 +10,9 @@ Uses Claude via LiteLLM proxy (OpenAI-compatible API) to perform intelligent ana
 
 import json
 import logging
-from datetime import datetime
-from typing import Optional, Literal
+from typing import Optional
 
-from app.config import settings, get_llm_api_key, get_llm_base_url, get_llm_model
+from app.config import get_llm_api_key, get_llm_base_url, get_llm_model
 
 logger = logging.getLogger(__name__)
 
@@ -31,14 +30,14 @@ def _get_materials_for_trade(
     if cancellation_check and cancellation_check():
         logger.debug("📚 Materials retrieval cancelled")
         return ""
-    
+
     try:
         # Try RAG first (smarter retrieval)
         from app.materials_rag import get_relevant_materials, get_materials_rag
-        
+
         rag = get_materials_rag()
         status = rag.get_status()
-        
+
         if status.get("available") and status.get("total_chunks", 0) > 0:
             materials = get_relevant_materials(
                 ticker=ticker,
@@ -47,15 +46,16 @@ def _get_materials_for_trade(
                 entry_reason=entry_reason,
                 setup_type=setup_type,
                 n_chunks=50,
-                max_chars=50000
+                max_chars=50000,
             )
             if materials:
-                logger.debug(f"📚 Retrieved relevant materials via RAG")
+                logger.debug("📚 Retrieved relevant materials via RAG")
                 return materials
-        
+
         # If RAG not ready but materials exist, try to index them
         if status.get("needs_reindex") or status.get("total_chunks", 0) == 0:
             from app.materials_reader import has_materials
+
             if has_materials():
                 logger.info("📚 Indexing materials for RAG...")
                 rag.index_materials()
@@ -67,29 +67,31 @@ def _get_materials_for_trade(
                     entry_reason=entry_reason,
                     setup_type=setup_type,
                     n_chunks=50,
-                    max_chars=50000
+                    max_chars=50000,
                 )
                 if materials:
                     return materials
-        
+
     except ImportError:
         logger.debug("RAG dependencies not available, using simple reader")
     except Exception as e:
         logger.warning(f"RAG retrieval failed: {e}, falling back to simple reader")
-    
+
     # Fallback to simple materials reader
     try:
         from app.materials_reader import get_materials_context, has_materials
+
         if has_materials():
             return get_materials_context(max_chars=15000)
     except Exception as e:
         logger.warning(f"Simple materials reader failed: {e}")
-    
+
     return ""
 
 
 class SafeFormatDict(dict):
     """Dict that returns placeholder name for missing keys (avoids KeyError in format())."""
+
     def __missing__(self, key):
         return f"{{{key}}}"  # Return {key} for missing placeholders
 
@@ -97,7 +99,7 @@ class SafeFormatDict(dict):
 class LLMAnalyzer:
     """
     LLM-powered analyzer for trades and market context.
-    
+
     Uses Claude via LiteLLM proxy - no hardcoded pattern matching.
     """
 
@@ -118,6 +120,7 @@ class LLMAnalyzer:
         if self._client is None:
             try:
                 from openai import OpenAI
+
                 self._client = OpenAI(
                     api_key=self.api_key,
                     base_url=self.base_url,
@@ -176,6 +179,7 @@ class LLMAnalyzer:
     ) -> Optional[str]:
         """Make an LLM API call asynchronously (non-blocking)."""
         import asyncio
+
         return await asyncio.to_thread(
             self._call_llm, system_prompt, user_prompt, max_tokens, temperature
         )
@@ -195,10 +199,10 @@ class LLMAnalyzer:
     ) -> dict:
         """
         Use LLM to classify the trade setup/strategy.
-        
+
         Args:
             stop_price: Stop Loss level (where trade is wrong). Legacy name, represents SL.
-        
+
         Returns dict with:
         - strategy_name: The classified strategy (or 'needs_info' if more data needed)
         - strategy_category: with_trend, countertrend, trading_range, special
@@ -208,8 +212,9 @@ class LLMAnalyzer:
         """
         # Load configurable prompts
         from app.config_prompts import get_system_prompt, get_user_prompt
-        system_prompt = get_system_prompt('trade_classification')
-        
+
+        system_prompt = get_system_prompt("trade_classification")
+
         # Get relevant training materials using RAG
         materials_context = _get_materials_for_trade(
             direction=direction,
@@ -225,7 +230,7 @@ class LLMAnalyzer:
         stop_loss = stop_price  # Use clearer name internally
         r_mult = 0.0
         r_mult_str = "N/A (no SL)"
-        
+
         if stop_loss is not None:
             if direction == "long":
                 risk = entry_price - stop_loss
@@ -233,18 +238,18 @@ class LLMAnalyzer:
             else:
                 risk = stop_loss - entry_price
                 reward = entry_price - exit_price
-            
+
             if abs(risk) < 0.0001:
                 r_mult = reward / (entry_price * 0.02) if entry_price > 0 else 0
             else:
                 r_mult = reward / risk
-            
+
             r_mult_str = f"{'+' if r_mult > 0 else ''}{r_mult:.2f}R"
-        
+
         stop_loss_str = f"${stop_loss:.4f}" if stop_loss else "Not set"
 
         # Build user prompt from template (using SafeFormatDict to avoid KeyError)
-        user_template = get_user_prompt('trade_classification')
+        user_template = get_user_prompt("trade_classification")
         format_vars = SafeFormatDict(
             ticker=ticker,
             direction=direction.upper(),
@@ -255,36 +260,41 @@ class LLMAnalyzer:
             r_multiple=r_mult_str,
             entry_reason=entry_reason or "Not provided",
             notes=notes or "Not provided",
-            ohlcv_context=f"MARKET CONTEXT (OHLCV):\n{ohlcv_context}" if ohlcv_context else "No market context available.",
+            ohlcv_context=f"MARKET CONTEXT (OHLCV):\n{ohlcv_context}"
+            if ohlcv_context
+            else "No market context available.",
             timeframe=timeframe or "5m",
             trade_type=trade_type or "Not specified",
         )
         user_prompt = user_template.format_map(format_vars)
 
         response = self._call_llm(system_prompt, user_prompt)
-        
+
         if response:
-            try:
-                # Extract JSON from response
-                json_str = response
-                if "```json" in response:
-                    json_str = response.split("```json")[1].split("```")[0]
-                elif "```" in response:
-                    json_str = response.split("```")[1].split("```")[0]
-                
-                return json.loads(json_str.strip())
-            except json.JSONDecodeError:
-                logger.warning(f"Failed to parse LLM response as JSON: {response}")
-                return {
-                    "strategy_name": "unclassified",
-                    "strategy_category": "unknown",
-                    "confidence": "low",
-                    "reasoning": response,
-                }
-        
+            parsed = self._parse_json_response(response) or {}
+
+            # Normalize key names (older/newer prompt variants).
+            if "strategy_name" not in parsed:
+                parsed["strategy_name"] = (
+                    parsed.get("primary_setup")
+                    or parsed.get("primary_label")
+                    or parsed.get("setup")
+                    or "unclassified"
+                )
+            if "strategy_category" not in parsed:
+                parsed["strategy_category"] = (
+                    parsed.get("setup_category") or parsed.get("category") or "unknown"
+                )
+            if "confidence" not in parsed:
+                parsed["confidence"] = "low"
+            if "reasoning" not in parsed:
+                parsed["reasoning"] = response
+
+            return parsed
+
         return {
             "strategy_name": "unclassified",
-            "strategy_category": "unknown", 
+            "strategy_category": "unknown",
             "confidence": "low",
             "reasoning": "LLM analysis unavailable",
         }
@@ -320,7 +330,7 @@ class LLMAnalyzer:
         followed_plan: Optional[bool] = None,
         account_type: Optional[str] = None,
         mistakes: Optional[str] = None,  # Legacy
-        lessons: Optional[str] = None,   # Legacy
+        lessons: Optional[str] = None,  # Legacy
         mistakes_and_lessons: Optional[str] = None,  # Combined field
         # New extended fields
         trade_date: Optional[str] = None,
@@ -350,30 +360,32 @@ class LLMAnalyzer:
     ) -> dict:
         """
         Comprehensive Brooks Audit of a completed trade.
-        
+
         Args:
             stop_price: Stop Loss (SL) level - where trade is considered wrong
             target_price: Take Profit (TP) level - intended target
             cancellation_check: Optional function that returns True if generation should stop
-        
+
         Returns detailed Brooks-style review with coaching.
         """
         # Check for cancellation at the start
         if cancellation_check and cancellation_check():
             logger.info("⏹️ Trade analysis cancelled before start")
             return {"error": "Cancelled"}
-        
+
         # Log received OHLCV data
         ohlcv_len = len(ohlcv_context) if ohlcv_context else 0
-        logger.info(f"📊 analyze_trade received - OHLCV context: {ohlcv_len} chars, daily_bars: {len(daily_bars) if daily_bars else 0} chars")
+        logger.info(
+            f"📊 analyze_trade received - OHLCV context: {ohlcv_len} chars, daily_bars: {len(daily_bars) if daily_bars else 0} chars"
+        )
         if ohlcv_context and ohlcv_len > 0:
             # Log first 200 chars of OHLCV for debugging
             logger.debug(f"📊 OHLCV preview: {ohlcv_context[:200]}...")
-        
+
         # Use clearer internal names
         stop_loss = stop_price
         take_profit = target_price
-        
+
         # Use passed r_multiple if available, otherwise calculate
         if r_multiple is None:
             r_multiple = 0.0
@@ -384,10 +396,12 @@ class LLMAnalyzer:
                 else:
                     risk = stop_loss - entry_price
                     reward = entry_price - exit_price
-                
+
                 # Handle edge case where stop == entry (zero risk)
                 if abs(risk) < 0.0001:
-                    r_multiple = reward / (entry_price * 0.02) if entry_price > 0 else 0  # Assume 2% risk
+                    r_multiple = (
+                        reward / (entry_price * 0.02) if entry_price > 0 else 0
+                    )  # Assume 2% risk
                 else:
                     r_multiple = reward / risk
             else:
@@ -400,11 +414,12 @@ class LLMAnalyzer:
         # Check for cancellation before loading prompts and materials
         if cancellation_check and cancellation_check():
             return {"error": "Cancelled"}
-        
+
         # Load configurable prompts
         from app.config_prompts import get_system_prompt, get_user_prompt
-        system_prompt = get_system_prompt('trade_analysis')
-        
+
+        system_prompt = get_system_prompt("trade_analysis")
+
         # Get relevant training materials using RAG (with cancellation support)
         materials_context = _get_materials_for_trade(
             direction=direction,
@@ -414,11 +429,11 @@ class LLMAnalyzer:
             ticker=ticker,
             cancellation_check=cancellation_check,
         )
-        
+
         # Check for cancellation after RAG retrieval
         if cancellation_check and cancellation_check():
             return {"error": "Cancelled"}
-        
+
         if materials_context:
             system_prompt = f"{system_prompt}\n\n{materials_context}"
             logger.debug(f"📚 Added {len(materials_context)} chars of relevant training materials")
@@ -439,31 +454,32 @@ class LLMAnalyzer:
 
         # Build user prompt from template
         outcome_str = "WINNER" if r_multiple > 0 else "LOSER" if r_multiple < 0 else "BREAKEVEN"
-        user_template = get_user_prompt('trade_analysis')
-        
+        user_template = get_user_prompt("trade_analysis")
+
         # Format entry/exit times
         entry_time_str = str(entry_time) if entry_time else "Not recorded"
         exit_time_str = str(exit_time) if exit_time else "Not recorded"
-        
+
         # Parse OHLCV context into separate sections if provided as combined string
         daily_section = daily_bars or ""
         twohour_section = twohour_bars or ""
         fivemin_section = fivemin_bars or ""
-        
+
         if ohlcv_context and not daily_bars:
             # Parse combined context into sections
             # Format is: "=== DAILY (...) ===\n...data...\n\n=== 2-HOUR (...) ===\n...data..."
             import re
+
             # Split by section headers (=== ... ===)
-            section_pattern = r'(===\s*[^=]+\s*===)'
+            section_pattern = r"(===\s*[^=]+\s*===)"
             parts = re.split(section_pattern, ohlcv_context)
-            
+
             current_header = None
             for part in parts:
                 part = part.strip()
                 if not part:
                     continue
-                if part.startswith('===') and part.endswith('==='):
+                if part.startswith("===") and part.endswith("==="):
                     current_header = part
                 elif current_header:
                     # Combine header with content
@@ -472,17 +488,23 @@ class LLMAnalyzer:
                         daily_section = full_section
                     elif "2-HOUR" in current_header.upper() or "TWOHOUR" in current_header.upper():
                         twohour_section = full_section
-                    elif "5-MINUTE" in current_header.upper() or "5-MIN" in current_header.upper() or "FIVEMIN" in current_header.upper():
+                    elif (
+                        "5-MINUTE" in current_header.upper()
+                        or "5-MIN" in current_header.upper()
+                        or "FIVEMIN" in current_header.upper()
+                    ):
                         fivemin_section = full_section
                     current_header = None
-            
+
             # Debug log what was parsed
-            logger.debug(f"📊 OHLCV parsed - Daily: {len(daily_section)} chars, 2H: {len(twohour_section)} chars, 5M: {len(fivemin_section)} chars")
-        
+            logger.debug(
+                f"📊 OHLCV parsed - Daily: {len(daily_section)} chars, 2H: {len(twohour_section)} chars, 5M: {len(fivemin_section)} chars"
+            )
+
         # Format MAE/MFE
         mae_str = f"{mae:.2f}R" if mae else "not recorded"
         mfe_str = f"{mfe:.2f}R" if mfe else "not recorded"
-        
+
         # Build format variables (using SafeFormatDict to avoid KeyError for missing placeholders)
         format_vars = SafeFormatDict(
             # Trade identity
@@ -548,14 +570,18 @@ class LLMAnalyzer:
             target_reason=target_reason or "Not provided",
             confidence=f"{confidence_level}/5" if confidence_level else "Not rated",
             emotional_state=emotional_state or "Not recorded",
-            followed_plan="Yes" if followed_plan else ("No" if followed_plan is False else "Not recorded"),
+            followed_plan="Yes"
+            if followed_plan
+            else ("No" if followed_plan is False else "Not recorded"),
             notes=notes or "None",
             # Combined mistakes & lessons (prefer combined field, fall back to separate)
-            mistakes_and_lessons=mistakes_and_lessons or (
-                ((mistakes or "") + ("\n" if mistakes and lessons else "") + (lessons or "")) or "None noted"
+            mistakes_and_lessons=mistakes_and_lessons
+            or (
+                ((mistakes or "") + ("\n" if mistakes and lessons else "") + (lessons or ""))
+                or "None noted"
             ),
             mistakes=mistakes or "None noted",  # Legacy compatibility
-            lessons=lessons or "None noted",    # Legacy compatibility
+            lessons=lessons or "None noted",  # Legacy compatibility
             ohlcv_context=ohlcv_context if ohlcv_context else "No market context data provided.",
             # Extended Brooks analysis fields
             trend_assessment=trend_assessment or "Not provided",
@@ -566,18 +592,22 @@ class LLMAnalyzer:
             entry_tp_distance=entry_tp_distance or "Not provided",
         )
         user_prompt = user_template.format_map(format_vars)
-        
+
         # Log OHLCV sections that will be sent to LLM
-        logger.info(f"📊 LLM prompt sections - Daily: {len(daily_section)} chars, 2H: {len(twohour_section)} chars, 5M: {len(fivemin_section)} chars")
+        logger.info(
+            f"📊 LLM prompt sections - Daily: {len(daily_section)} chars, 2H: {len(twohour_section)} chars, 5M: {len(fivemin_section)} chars"
+        )
         if daily_section and len(daily_section) > 50:
             logger.debug(f"📊 Daily bars preview: {daily_section[:150]}...")
         else:
-            logger.warning(f"⚠️ Daily section is empty or too short: '{daily_section[:100] if daily_section else 'EMPTY'}'")
+            logger.warning(
+                f"⚠️ Daily section is empty or too short: '{daily_section[:100] if daily_section else 'EMPTY'}'"
+            )
 
         # Check for cancellation before expensive LLM call
         if cancellation_check and cancellation_check():
             return {"error": "Cancelled"}
-        
+
         response = self._call_llm(system_prompt, user_prompt, max_tokens=20000)
 
         if response:
@@ -586,14 +616,14 @@ class LLMAnalyzer:
                 if result:
                     return result
                 else:
-                    logger.warning(f"Failed to parse trade analysis as JSON, returning raw")
+                    logger.warning("Failed to parse trade analysis as JSON, returning raw")
                     return {"raw_analysis": response}
             except Exception as e:
                 logger.warning(f"Error parsing trade analysis: {e}")
                 return {"raw_analysis": response}
 
         return {"error": "LLM analysis unavailable"}
-    
+
     def _parse_json_response(self, response: str) -> Optional[dict]:
         """Robustly parse JSON from LLM response, handling various formats."""
         import re
@@ -607,7 +637,7 @@ class LLMAnalyzer:
             if not json_str or not json_str.strip():
                 return None
             json_str = json_str.strip()
-            
+
             # Try direct parse
             try:
                 result = json.loads(json_str)
@@ -615,29 +645,29 @@ class LLMAnalyzer:
                     return result
             except json.JSONDecodeError:
                 pass
-            
+
             # Fix common issues: trailing commas before } or ]
-            fixed = re.sub(r',\s*}', '}', json_str)
-            fixed = re.sub(r',\s*]', ']', fixed)
+            fixed = re.sub(r",\s*}", "}", json_str)
+            fixed = re.sub(r",\s*]", "]", fixed)
             try:
                 result = json.loads(fixed)
                 if isinstance(result, dict):
                     return result
             except json.JSONDecodeError:
                 pass
-            
+
             # Try to fix truncated JSON by closing open braces/brackets
             # Count open vs close braces
-            open_braces = json_str.count('{') - json_str.count('}')
-            open_brackets = json_str.count('[') - json_str.count(']')
-            
+            open_braces = json_str.count("{") - json_str.count("}")
+            open_brackets = json_str.count("[") - json_str.count("]")
+
             if open_braces > 0 or open_brackets > 0:
                 # Try to close the JSON - remove trailing comma first
-                fixed = re.sub(r',\s*$', '', json_str)
+                fixed = re.sub(r",\s*$", "", json_str)
                 # Remove incomplete string values
                 fixed = re.sub(r':\s*"[^"]*$', ': ""', fixed)
                 # Add closing brackets and braces
-                fixed += ']' * open_brackets + '}' * open_braces
+                fixed += "]" * open_brackets + "}" * open_braces
                 try:
                     result = json.loads(fixed)
                     if isinstance(result, dict):
@@ -645,7 +675,7 @@ class LLMAnalyzer:
                         return result
                 except json.JSONDecodeError:
                     pass
-            
+
             return None
 
         # Try direct parse first
@@ -655,8 +685,8 @@ class LLMAnalyzer:
 
         # Try extracting from markdown code blocks
         patterns = [
-            r'```json\s*([\s\S]*?)\s*```',  # ```json ... ```
-            r'```\s*([\s\S]*?)\s*```',       # ``` ... ```
+            r"```json\s*([\s\S]*?)\s*```",  # ```json ... ```
+            r"```\s*([\s\S]*?)\s*```",  # ``` ... ```
         ]
 
         for pattern in patterns:
@@ -668,10 +698,10 @@ class LLMAnalyzer:
                     return result
 
         # Try to find JSON object anywhere in the response
-        start = response.find('{')
-        end = response.rfind('}')
+        start = response.find("{")
+        end = response.rfind("}")
         if start != -1 and end != -1 and end > start:
-            json_str = response[start:end+1]
+            json_str = response[start : end + 1]
             result = try_parse(json_str)
             if result:
                 logger.debug("Parsed JSON by finding braces")
@@ -688,12 +718,13 @@ class LLMAnalyzer:
     ) -> dict:
         """
         LLM analysis of market context for premarket reports.
-        
+
         Returns regime, always-in, key levels, and trading plan.
         """
         # Load configurable prompt
         from app.config_prompts import get_prompt
-        system_prompt = get_prompt('market_context')
+
+        system_prompt = get_prompt("market_context")
 
         user_prompt = f"""Analyze this market data for {ticker}:
 
@@ -705,13 +736,13 @@ DAILY OHLCV (recent bars, newest last):
 Provide your Brooks-style premarket analysis."""
 
         response = self._call_llm(system_prompt, user_prompt, max_tokens=2000)
-        
+
         if response:
             result = self._parse_json_response(response)
             if result:
                 return result
             return {"raw_analysis": response}
-        
+
         return {"error": "LLM analysis unavailable"}
 
     def analyze_weekly_performance(
@@ -721,7 +752,7 @@ Provide your Brooks-style premarket analysis."""
     ) -> dict:
         """
         LLM analysis of weekly trading performance.
-        
+
         Returns edge analysis, leaks, and coaching recommendations.
         """
         system_prompt = """You are a trading coach analyzing a trader's weekly performance using Al Brooks methodology.
@@ -761,13 +792,13 @@ STRATEGY STATISTICS:
 Provide your coaching analysis."""
 
         response = self._call_llm(system_prompt, user_prompt, max_tokens=1500)
-        
+
         if response:
             result = self._parse_json_response(response)
             if result:
                 return result
             return {"raw_analysis": response}
-        
+
         return {"error": "LLM analysis unavailable"}
 
     def suggest_strategy_from_description(
@@ -776,7 +807,7 @@ Provide your coaching analysis."""
     ) -> dict:
         """
         Given a free-form trade description, suggest the strategy.
-        
+
         Useful for bulk imports where trades don't have strategy tags.
         """
         system_prompt = """You are an Al Brooks price action expert. 
@@ -791,7 +822,7 @@ Respond in JSON:
 }"""
 
         response = self._call_llm(system_prompt, trade_description, max_tokens=500)
-        
+
         if response:
             try:
                 json_str = response
@@ -802,7 +833,7 @@ Respond in JSON:
                 return json.loads(json_str.strip())
             except (json.JSONDecodeError, IndexError, ValueError):
                 pass  # Fall through to default response
-        
+
         return {
             "strategy_name": "unclassified",
             "category": "unknown",

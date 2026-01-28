@@ -24,16 +24,16 @@ from .service import (
 from .email import send_verification_email, send_password_reset_email
 
 __all__ = [
-    'hash_password',
-    'verify_password',
-    'create_access_token',
-    'decode_access_token',
-    'generate_verification_token',
-    'create_user',
-    'authenticate_user',
-    'verify_email',
-    'get_current_user',
-    'get_current_user_optional',
-    'send_verification_email',
-    'send_password_reset_email',
+    "hash_password",
+    "verify_password",
+    "create_access_token",
+    "decode_access_token",
+    "generate_verification_token",
+    "create_user",
+    "authenticate_user",
+    "verify_email",
+    "get_current_user",
+    "get_current_user_optional",
+    "send_verification_email",
+    "send_password_reset_email",
 ]

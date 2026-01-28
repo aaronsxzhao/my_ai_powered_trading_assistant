@@ -14,7 +14,6 @@ from datetime import date, datetime, timedelta
 from typing import Optional
 import logging
 
-import pandas as pd
 import numpy as np
 
 from app.journal.models import (
@@ -70,13 +69,13 @@ class PortfolioStats:
     loss_count: int
     breakeven_count: int
     win_rate: float
-    
+
     # P&L metrics
     total_r: float
     total_pnl_dollars: float
     avg_r: float
     avg_pnl_dollars: float
-    
+
     # Winner/Loser analysis
     avg_winner_r: float
     avg_loser_r: float
@@ -86,7 +85,7 @@ class PortfolioStats:
     largest_loser_r: float
     largest_winner_dollars: float
     largest_loser_dollars: float
-    
+
     # Risk metrics
     expectancy: float
     profit_factor: float
@@ -94,20 +93,20 @@ class PortfolioStats:
     max_drawdown_dollars: float
     max_drawdown_pct: float
     current_drawdown_r: float
-    
+
     # Streak analysis
     current_streak: int  # Positive for wins, negative for losses
     max_win_streak: int
     max_loss_streak: int
-    
+
     # Time analysis
     avg_trade_duration_minutes: float
     best_time_of_day: Optional[str]
     best_day_of_week: Optional[str]
-    
+
     # Recent performance
     recent_20_avg_r: float
-    
+
     # MAE/MFE
     avg_mae: float
     avg_mfe: float
@@ -193,19 +192,17 @@ class TradeAnalytics:
         if not trades:
             return 0.0
 
-        gross_profit = sum(
-            t.r_multiple for t in trades if t.r_multiple and t.r_multiple > 0
-        )
-        gross_loss = abs(
-            sum(t.r_multiple for t in trades if t.r_multiple and t.r_multiple < 0)
-        )
+        gross_profit = sum(t.r_multiple for t in trades if t.r_multiple and t.r_multiple > 0)
+        gross_loss = abs(sum(t.r_multiple for t in trades if t.r_multiple and t.r_multiple < 0))
 
         if gross_loss == 0:
             return float("inf") if gross_profit > 0 else 0.0
 
         return round(gross_profit / gross_loss, 2)
 
-    def compute_strategy_stats(self, strategy_name: str, user_id: Optional[int] = None) -> Optional[StrategyStats]:
+    def compute_strategy_stats(
+        self, strategy_name: str, user_id: Optional[int] = None
+    ) -> Optional[StrategyStats]:
         """
         Compute statistics for a specific strategy.
 
@@ -218,16 +215,12 @@ class TradeAnalytics:
         """
         session = get_session()
         try:
-            query = (
-                session.query(Trade)
-                .join(Strategy)
-                .filter(Strategy.name == strategy_name)
-            )
-            
+            query = session.query(Trade).join(Strategy).filter(Strategy.name == strategy_name)
+
             # Filter by user if provided
             if user_id is not None:
                 query = query.filter(Trade.user_id == user_id)
-            
+
             trades = query.all()
 
             if not trades:
@@ -235,7 +228,9 @@ class TradeAnalytics:
 
             strategy = session.query(Strategy).filter(Strategy.name == strategy_name).first()
 
-            return self._compute_stats_for_trades(trades, strategy_name, strategy.category if strategy else "unknown")
+            return self._compute_stats_for_trades(
+                trades, strategy_name, strategy.category if strategy else "unknown"
+            )
 
         finally:
             session.close()
@@ -297,18 +292,32 @@ class TradeAnalytics:
     def _find_best_time_of_day(self, trades: list[Trade]) -> Optional[str]:
         """Find best performing time of day."""
         time_buckets = {
-            "open_30min": (datetime.strptime("09:30", "%H:%M").time(), datetime.strptime("10:00", "%H:%M").time()),
-            "morning": (datetime.strptime("10:00", "%H:%M").time(), datetime.strptime("12:00", "%H:%M").time()),
-            "midday": (datetime.strptime("12:00", "%H:%M").time(), datetime.strptime("14:00", "%H:%M").time()),
-            "afternoon": (datetime.strptime("14:00", "%H:%M").time(), datetime.strptime("15:30", "%H:%M").time()),
-            "close_30min": (datetime.strptime("15:30", "%H:%M").time(), datetime.strptime("16:00", "%H:%M").time()),
+            "open_30min": (
+                datetime.strptime("09:30", "%H:%M").time(),
+                datetime.strptime("10:00", "%H:%M").time(),
+            ),
+            "morning": (
+                datetime.strptime("10:00", "%H:%M").time(),
+                datetime.strptime("12:00", "%H:%M").time(),
+            ),
+            "midday": (
+                datetime.strptime("12:00", "%H:%M").time(),
+                datetime.strptime("14:00", "%H:%M").time(),
+            ),
+            "afternoon": (
+                datetime.strptime("14:00", "%H:%M").time(),
+                datetime.strptime("15:30", "%H:%M").time(),
+            ),
+            "close_30min": (
+                datetime.strptime("15:30", "%H:%M").time(),
+                datetime.strptime("16:00", "%H:%M").time(),
+            ),
         }
 
         bucket_stats = {}
         for bucket_name, (start, end) in time_buckets.items():
             bucket_trades = [
-                t for t in trades
-                if t.entry_time and start <= t.entry_time.time() < end
+                t for t in trades if t.entry_time and start <= t.entry_time.time() < end
             ]
             if bucket_trades:
                 r_vals = [t.r_multiple for t in bucket_trades if t.r_multiple]
@@ -329,7 +338,7 @@ class TradeAnalytics:
             query = session.query(Strategy).join(Trade)
             if user_id is not None:
                 query = query.filter(Trade.user_id == user_id)
-            
+
             strategies = query.distinct().all()
 
             stats = []
@@ -346,65 +355,67 @@ class TradeAnalytics:
     def get_portfolio_stats(self, user_id: Optional[int] = None) -> Optional[PortfolioStats]:
         """
         Calculate overall portfolio statistics including drawdown.
-        
+
         Args:
             user_id: Optional user ID to filter trades by
-            
+
         Returns:
             PortfolioStats object or None if no trades
         """
         trades = self.get_all_trades(user_id=user_id)
-        
+
         if not trades:
             return None
-        
+
         # Sort trades by date for sequential analysis
-        trades_sorted = sorted(trades, key=lambda t: (t.trade_date, t.exit_time or t.entry_time or t.trade_date))
-        
+        trades_sorted = sorted(
+            trades, key=lambda t: (t.trade_date, t.exit_time or t.entry_time or t.trade_date)
+        )
+
         # Basic counts
         total_trades = len(trades)
         winners = [t for t in trades if t.outcome == TradeOutcome.WIN]
         losers = [t for t in trades if t.outcome == TradeOutcome.LOSS]
         breakevens = [t for t in trades if t.outcome == TradeOutcome.BREAKEVEN]
-        
+
         win_count = len(winners)
         loss_count = len(losers)
         breakeven_count = len(breakevens)
         win_rate = win_count / total_trades if total_trades > 0 else 0
-        
+
         # R-multiple metrics
         r_values = [t.r_multiple for t in trades if t.r_multiple is not None]
         total_r = sum(r_values) if r_values else 0
         avg_r = np.mean(r_values) if r_values else 0
-        
+
         winner_r = [t.r_multiple for t in winners if t.r_multiple]
         loser_r = [t.r_multiple for t in losers if t.r_multiple]
         avg_winner_r = np.mean(winner_r) if winner_r else 0
         avg_loser_r = np.mean(loser_r) if loser_r else 0
         largest_winner_r = max(winner_r) if winner_r else 0
         largest_loser_r = min(loser_r) if loser_r else 0
-        
+
         # Dollar metrics
         pnl_values = [t.pnl_dollars for t in trades if t.pnl_dollars is not None]
         total_pnl = sum(pnl_values) if pnl_values else 0
         avg_pnl = np.mean(pnl_values) if pnl_values else 0
-        
+
         winner_pnl = [t.pnl_dollars for t in winners if t.pnl_dollars]
         loser_pnl = [t.pnl_dollars for t in losers if t.pnl_dollars]
         avg_winner_dollars = np.mean(winner_pnl) if winner_pnl else 0
         avg_loser_dollars = np.mean(loser_pnl) if loser_pnl else 0
         largest_winner_dollars = max(winner_pnl) if winner_pnl else 0
         largest_loser_dollars = min(loser_pnl) if loser_pnl else 0
-        
+
         # Calculate drawdown (both R and dollars)
         cumulative_r = 0
         peak_r = 0
         max_dd_r = 0
-        
+
         cumulative_pnl = 0
         peak_pnl = 0
         max_dd_pnl = 0
-        
+
         for trade in trades_sorted:
             if trade.r_multiple:
                 cumulative_r += trade.r_multiple
@@ -413,7 +424,7 @@ class TradeAnalytics:
                 dd_r = peak_r - cumulative_r
                 if dd_r > max_dd_r:
                     max_dd_r = dd_r
-            
+
             if trade.pnl_dollars:
                 cumulative_pnl += trade.pnl_dollars
                 if cumulative_pnl > peak_pnl:
@@ -421,17 +432,17 @@ class TradeAnalytics:
                 dd_pnl = peak_pnl - cumulative_pnl
                 if dd_pnl > max_dd_pnl:
                     max_dd_pnl = dd_pnl
-        
+
         current_dd_r = peak_r - cumulative_r
         max_dd_pct = (max_dd_pnl / peak_pnl * 100) if peak_pnl > 0 else 0
-        
+
         # Streak analysis
         current_streak = 0
         max_win_streak = 0
         max_loss_streak = 0
         win_streak = 0
         loss_streak = 0
-        
+
         for trade in trades_sorted:
             if trade.outcome == TradeOutcome.WIN:
                 win_streak += 1
@@ -443,7 +454,7 @@ class TradeAnalytics:
                 max_loss_streak = max(max_loss_streak, loss_streak)
             else:  # Breakeven doesn't break streak
                 pass
-        
+
         # Current streak
         for trade in reversed(trades_sorted):
             if trade.outcome == TradeOutcome.WIN:
@@ -458,7 +469,7 @@ class TradeAnalytics:
                     break
             else:
                 break
-        
+
         # Duration analysis
         durations = []
         for trade in trades:
@@ -467,10 +478,10 @@ class TradeAnalytics:
                 if duration > 0:
                     durations.append(duration)
         avg_duration = np.mean(durations) if durations else 0
-        
+
         # Time of day analysis
         best_time = self._find_best_time_of_day(trades)
-        
+
         # Day of week analysis
         day_performance = {}
         for trade in trades:
@@ -479,24 +490,24 @@ class TradeAnalytics:
                 if day not in day_performance:
                     day_performance[day] = []
                 day_performance[day].append(trade.r_multiple)
-        
+
         best_day = None
         if day_performance:
             day_avg = {day: np.mean(rs) for day, rs in day_performance.items() if len(rs) >= 3}
             if day_avg:
                 best_day = max(day_avg.keys(), key=lambda d: day_avg[d])
-        
+
         # Recent 20 performance
         recent_trades = trades_sorted[-20:] if len(trades_sorted) >= 20 else trades_sorted
         recent_r = [t.r_multiple for t in recent_trades if t.r_multiple]
         recent_20_avg = np.mean(recent_r) if recent_r else 0
-        
+
         # MAE/MFE
         maes = [t.mae for t in trades if t.mae is not None]
         mfes = [t.mfe for t in trades if t.mfe is not None]
         avg_mae = np.mean(maes) if maes else 0
         avg_mfe = np.mean(mfes) if mfes else 0
-        
+
         return PortfolioStats(
             total_trades=total_trades,
             win_count=win_count,
@@ -593,7 +604,9 @@ class TradeAnalytics:
             if overall_exp > 0:
                 strengths.insert(0, f"Overall edge is positive: {overall_exp:.2f}R per trade")
             else:
-                weaknesses.insert(0, f"Overall expectancy is negative: {overall_exp:.2f}R per trade")
+                weaknesses.insert(
+                    0, f"Overall expectancy is negative: {overall_exp:.2f}R per trade"
+                )
 
         coaching_focus = []
         if stop_doing:
@@ -621,11 +634,7 @@ class TradeAnalytics:
         """
         session = get_session()
         try:
-            trades = (
-                session.query(Trade)
-                .filter(Trade.trade_date == summary_date)
-                .all()
-            )
+            trades = session.query(Trade).filter(Trade.trade_date == summary_date).all()
 
             # Check for existing summary
             summary = (
@@ -642,7 +651,9 @@ class TradeAnalytics:
             summary.total_trades = len(trades)
             summary.winning_trades = len([t for t in trades if t.outcome == TradeOutcome.WIN])
             summary.losing_trades = len([t for t in trades if t.outcome == TradeOutcome.LOSS])
-            summary.breakeven_trades = len([t for t in trades if t.outcome == TradeOutcome.BREAKEVEN])
+            summary.breakeven_trades = len(
+                [t for t in trades if t.outcome == TradeOutcome.BREAKEVEN]
+            )
 
             # R and PnL
             r_vals = [t.r_multiple for t in trades if t.r_multiple is not None]
@@ -750,15 +761,20 @@ class TradeAnalytics:
         breakdown = []
         for strat_name, strat_trades in by_strategy.items():
             r_vals = [t.r_multiple for t in strat_trades if t.r_multiple]
-            breakdown.append({
-                "strategy": strat_name,
-                "count": len(strat_trades),
-                "total_r": round(sum(r_vals), 2) if r_vals else 0,
-                "win_rate": round(
-                    len([t for t in strat_trades if t.outcome == TradeOutcome.WIN]) / len(strat_trades),
-                    2,
-                ) if strat_trades else 0,
-            })
+            breakdown.append(
+                {
+                    "strategy": strat_name,
+                    "count": len(strat_trades),
+                    "total_r": round(sum(r_vals), 2) if r_vals else 0,
+                    "win_rate": round(
+                        len([t for t in strat_trades if t.outcome == TradeOutcome.WIN])
+                        / len(strat_trades),
+                        2,
+                    )
+                    if strat_trades
+                    else 0,
+                }
+            )
 
         return sorted(breakdown, key=lambda x: x["total_r"], reverse=True)
 

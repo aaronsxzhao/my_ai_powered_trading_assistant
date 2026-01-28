@@ -12,7 +12,7 @@ from pathlib import Path
 import pandas as pd
 
 from app.config import CACHE_DIR, settings
-from app.data.providers import DataProvider, Timeframe, get_provider
+from app.data.providers import DataProvider, Timeframe, get_provider_for_ticker
 
 logger = logging.getLogger(__name__)
 
@@ -82,9 +82,9 @@ class OHLCVCache:
         # Check for cancellation early
         if cancellation_check and cancellation_check():
             return pd.DataFrame()
-        
+
         if not settings.cache_enabled:
-            provider = provider or get_provider()
+            provider = provider or get_provider_for_ticker(ticker)
             return provider.get_ohlcv(ticker, timeframe, start, end, cancellation_check)
 
         cache_key = self._get_cache_key(ticker, timeframe, start, end)
@@ -104,7 +104,7 @@ class OHLCVCache:
             return pd.DataFrame()
 
         # Fetch from provider
-        provider = provider or get_provider()
+        provider = provider or get_provider_for_ticker(ticker)
         df = provider.get_ohlcv(ticker, timeframe, start, end, cancellation_check)
 
         # Save to cache (only if not cancelled and not empty)

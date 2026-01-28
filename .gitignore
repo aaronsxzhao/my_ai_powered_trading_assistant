@@ -61,3 +61,13 @@ outputs/*
 # Temporary files
 *.tmp
 *.temp
+
+# Local dev dependencies/cache (Cursor sandbox)
+_deps/
+_pip_cache/
+_shell_write_test
+
+# Local data artifacts
+data/chroma_db/
+data/databento/
+data/llm_logs/

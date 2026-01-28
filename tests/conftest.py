@@ -37,14 +37,16 @@ def sample_ohlcv_df():
     base = 100
     closes = [base + i * 0.3 + np.random.uniform(-0.1, 0.1) for i in range(50)]
 
-    df = pd.DataFrame({
-        "datetime": dates,
-        "open": [c - 0.2 for c in closes],
-        "high": [c + 0.5 for c in closes],
-        "low": [c - 0.5 for c in closes],
-        "close": closes,
-        "volume": [1000000 + i * 10000 for i in range(50)],
-    })
+    df = pd.DataFrame(
+        {
+            "datetime": dates,
+            "open": [c - 0.2 for c in closes],
+            "high": [c + 0.5 for c in closes],
+            "low": [c - 0.5 for c in closes],
+            "close": closes,
+            "volume": [1000000 + i * 10000 for i in range(50)],
+        }
+    )
 
     return df
 
