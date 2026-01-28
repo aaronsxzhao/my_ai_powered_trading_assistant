@@ -53,7 +53,7 @@ services:
         sync: false  # Set to your Render URL
     
     # Health check
-    healthCheckPath: /api/health
+    healthCheckPath: /health
     
     # Auto-deploy on push to main branch
     autoDeploy: true
