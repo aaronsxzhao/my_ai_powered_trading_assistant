@@ -66,8 +66,9 @@ def get_supabase_client() -> "Client":
     if _supabase_client is None:
         url = get_supabase_url()
         key = get_supabase_anon_key()
+        logger.info(f"Initializing Supabase client with URL: {url[:30]}...")
         _supabase_client = create_client(url, key)
-        logger.info("Supabase client initialized")
+        logger.info("Supabase client initialized successfully")
     
     return _supabase_client
 

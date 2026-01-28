@@ -98,13 +98,21 @@ async def sign_up(
                 "message": "Please check your email to verify your account."
             }
         
+        # Safely extract expires_at (handle both int and string formats)
+        expires_at = result.session.expires_at
+        if isinstance(expires_at, str):
+            try:
+                expires_at = int(expires_at)
+            except (ValueError, TypeError):
+                expires_at = None
+        
         logger.info(f"User registered and logged in: {email}")
         return {
             "user": _parse_user(result.user),
             "session": {
                 "access_token": result.session.access_token,
                 "refresh_token": result.session.refresh_token,
-                "expires_at": result.session.expires_at
+                "expires_at": expires_at
             }
         }
         
@@ -161,9 +169,17 @@ async def sign_in(email: str, password: str) -> dict:
             service = _get_service_client()
             service.table("profiles").update({
                 "last_login": datetime.utcnow().isoformat()
-            }).eq("id", result.user.id).execute()
+            }).eq("id", str(result.user.id)).execute()
         except Exception as e:
             logger.warning(f"Failed to update last_login: {e}")
+        
+        # Safely extract expires_at (handle both int and string formats)
+        expires_at = result.session.expires_at
+        if isinstance(expires_at, str):
+            try:
+                expires_at = int(expires_at)
+            except (ValueError, TypeError):
+                expires_at = None
         
         logger.info(f"User signed in: {email}")
         return {
@@ -171,7 +187,7 @@ async def sign_in(email: str, password: str) -> dict:
             "session": {
                 "access_token": result.session.access_token,
                 "refresh_token": result.session.refresh_token,
-                "expires_at": result.session.expires_at
+                "expires_at": expires_at
             }
         }
         
@@ -179,7 +195,7 @@ async def sign_in(email: str, password: str) -> dict:
         raise
     except Exception as e:
         error_msg = str(e)
-        logger.error(f"Sign in error: {error_msg}")
+        logger.error(f"Sign in error: {error_msg}", exc_info=True)
         
         if "invalid" in error_msg.lower() or "credentials" in error_msg.lower():
             raise HTTPException(
@@ -332,10 +348,18 @@ async def refresh_session(refresh_token: str) -> Optional[dict]:
         if result.session is None:
             return None
         
+        # Safely extract expires_at (handle both int and string formats)
+        expires_at = result.session.expires_at
+        if isinstance(expires_at, str):
+            try:
+                expires_at = int(expires_at)
+            except (ValueError, TypeError):
+                expires_at = None
+        
         return {
             "access_token": result.session.access_token,
             "refresh_token": result.session.refresh_token,
-            "expires_at": result.session.expires_at
+            "expires_at": expires_at
         }
         
     except Exception as e:
