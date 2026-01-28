@@ -3,6 +3,49 @@
 {% block title %}Add Trades - Brooks Trading Coach{% endblock %}
 
 {% block content %}
+<style>
+    /* Override browser autofill styling for ticker input */
+    input[name="ticker"],
+    input[name="ticker"]:-webkit-autofill,
+    input[name="ticker"]:-webkit-autofill:hover,
+    input[name="ticker"]:-webkit-autofill:focus,
+    input[name="ticker"]:-webkit-autofill:active {
+        background-color: transparent !important;
+        background: transparent !important;
+        -webkit-box-shadow: 0 0 0 1000px transparent inset !important;
+        box-shadow: 0 0 0 1000px transparent inset !important;
+        transition: background-color 5000s ease-in-out 0s !important;
+        -webkit-text-fill-color: inherit !important;
+    }
+    /* Light mode specific fix for ticker */
+    :root:not(.dark) input[name="ticker"],
+    :root:not(.dark) input[name="ticker"]:-webkit-autofill,
+    :root:not(.dark) input[name="ticker"]:-webkit-autofill:hover,
+    :root:not(.dark) input[name="ticker"]:-webkit-autofill:focus {
+        background-color: transparent !important;
+        -webkit-box-shadow: 0 0 0 1000px transparent inset !important;
+        -webkit-text-fill-color: #0f172a !important;
+        color: #0f172a !important;
+    }
+    /* Dark mode ticker text color */
+    .dark input[name="ticker"],
+    .dark input[name="ticker"]:-webkit-autofill {
+        -webkit-text-fill-color: #ffffff !important;
+        color: #ffffff !important;
+    }
+    
+    /* Live Preview boxes - light mode */
+    :root:not(.dark) .bg-white\/5 {
+        background-color: #f8fafc !important;
+    }
+    :root:not(.dark) #r-preview,
+    :root:not(.dark) #risk-preview,
+    :root:not(.dark) #pnl-preview,
+    :root:not(.dark) #rr-preview,
+    :root:not(.dark) #stop-valid-preview {
+        color: #334155 !important;
+    }
+</style>
 <div class="space-y-6">
     <div class="mb-6">
         <h1 class="text-3xl font-bold bg-gradient-to-r from-white to-dark-300 bg-clip-text text-transparent">
@@ -35,7 +78,7 @@
                 <div>
                     <label class="label">Ticker *</label>
                     <input type="text" name="ticker" required 
-                        class="input uppercase" placeholder="SPY" list="ticker-list">
+                        class="input uppercase" style="background-color: transparent !important; background: transparent !important;" placeholder="SPY" list="ticker-list">
                     <datalist id="ticker-list">
                         {% for ticker in tickers %}
                         <option value="{{ ticker }}">
@@ -184,30 +227,30 @@
                         <span class="text-xs text-dark-500">updates as you type</span>
                     </div>
 
-                    <div class="bg-dark-900/40 border border-dark-700 rounded-xl p-4">
-                        <div class="text-xs text-dark-500 mb-2">R-Multiple</div>
-                        <div id="r-preview" class="text-3xl font-mono font-bold text-dark-500">--</div>
-                        <div class="text-xs text-dark-500 mt-2">
+                    <div class="bg-white/5 border border-dark-600 rounded-xl p-4">
+                        <div class="text-xs text-dark-400 mb-2">R-Multiple</div>
+                        <div id="r-preview" class="text-3xl font-mono font-bold text-dark-400">--</div>
+                        <div class="text-xs text-dark-400 mt-2">
                             R requires a Stop Loss. (Import is fine without SL/TP.)
                         </div>
                     </div>
 
                     <div class="grid grid-cols-2 gap-3">
-                        <div class="bg-dark-900/40 border border-dark-700 rounded-xl p-3">
-                            <div class="text-xs text-dark-500 mb-1">Risk / Share</div>
-                            <div id="risk-preview" class="font-mono font-semibold text-dark-300">--</div>
+                        <div class="bg-white/5 border border-dark-600 rounded-xl p-3">
+                            <div class="text-xs text-dark-400 mb-1">Risk / Share</div>
+                            <div id="risk-preview" class="font-mono font-semibold text-dark-200">--</div>
                         </div>
-                        <div class="bg-dark-900/40 border border-dark-700 rounded-xl p-3">
-                            <div class="text-xs text-dark-500 mb-1">P&L / Share</div>
-                            <div id="pnl-preview" class="font-mono font-semibold text-dark-300">--</div>
+                        <div class="bg-white/5 border border-dark-600 rounded-xl p-3">
+                            <div class="text-xs text-dark-400 mb-1">P&L / Share</div>
+                            <div id="pnl-preview" class="font-mono font-semibold text-dark-200">--</div>
                         </div>
-                        <div class="bg-dark-900/40 border border-dark-700 rounded-xl p-3">
-                            <div class="text-xs text-dark-500 mb-1">RR (to TP)</div>
-                            <div id="rr-preview" class="font-mono font-semibold text-dark-300">--</div>
+                        <div class="bg-white/5 border border-dark-600 rounded-xl p-3">
+                            <div class="text-xs text-dark-400 mb-1">RR (to TP)</div>
+                            <div id="rr-preview" class="font-mono font-semibold text-dark-200">--</div>
                         </div>
-                        <div class="bg-dark-900/40 border border-dark-700 rounded-xl p-3">
-                            <div class="text-xs text-dark-500 mb-1">Stop Valid?</div>
-                            <div id="stop-valid-preview" class="font-mono font-semibold text-dark-300">--</div>
+                        <div class="bg-white/5 border border-dark-600 rounded-xl p-3">
+                            <div class="text-xs text-dark-400 mb-1">Stop Valid?</div>
+                            <div id="stop-valid-preview" class="font-mono font-semibold text-dark-200">--</div>
                         </div>
                     </div>
 
@@ -665,14 +708,14 @@ function calculateR() {
         pnlPreview.className = 'font-mono font-semibold ' + (pnlPerShare >= 0 ? 'positive' : 'negative');
     } else if (pnlPreview) {
         pnlPreview.textContent = '--';
-        pnlPreview.className = 'font-mono font-semibold text-dark-300';
+        pnlPreview.className = 'font-mono font-semibold text-dark-200';
     }
 
     // Stop validity preview
     if (stopValidPreview) {
         if (!entry || !stop) {
             stopValidPreview.textContent = '--';
-            stopValidPreview.className = 'font-mono font-semibold text-dark-300';
+            stopValidPreview.className = 'font-mono font-semibold text-dark-200';
         } else {
             const ok = direction === 'long' ? stop < entry : stop > entry;
             stopValidPreview.textContent = ok ? 'OK' : 'CHECK';
@@ -695,27 +738,27 @@ function calculateR() {
                     rrPreview.className = 'font-mono font-semibold ' + (rr >= 1 ? 'positive' : 'text-dark-200');
                 } else {
                     rrPreview.textContent = '--';
-                    rrPreview.className = 'font-mono font-semibold text-dark-300';
+                    rrPreview.className = 'font-mono font-semibold text-dark-200';
                 }
             } else {
                 rrPreview.textContent = '--';
-                rrPreview.className = 'font-mono font-semibold text-dark-300';
+                rrPreview.className = 'font-mono font-semibold text-dark-200';
             }
         }
     } else {
         if (riskPreview) {
             riskPreview.textContent = '--';
-            riskPreview.className = 'font-mono font-semibold text-dark-300';
+            riskPreview.className = 'font-mono font-semibold text-dark-200';
         }
         if (rrPreview) {
             rrPreview.textContent = '--';
-            rrPreview.className = 'font-mono font-semibold text-dark-300';
+            rrPreview.className = 'font-mono font-semibold text-dark-200';
         }
     }
 
     if (!entry || !exit || !stop) {
         rPreview.textContent = '--';
-        rPreview.className = 'text-3xl font-mono font-bold text-dark-500';
+        rPreview.className = 'text-3xl font-mono font-bold text-dark-400';
         return;
     }
     

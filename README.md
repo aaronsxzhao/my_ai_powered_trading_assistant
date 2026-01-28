@@ -1,492 +1,277 @@
 # Brooks Price Action Trading Coach
 
-A decision-support, journaling, analytics, and premarket briefing system for discretionary day traders, grounded in Al Brooks price action concepts.
+An AI-powered trading journal and coaching system grounded in Al Brooks price action methodology.
 
-**ADVISORY ONLY**: This system does NOT auto-trade. It provides read-only market data + AI-powered analysis.
+> **Advisory Only** — This tool does NOT auto-trade. It provides decision-support, journaling, and analysis.
 
-## Quick Start
+---
+
+## Features
+
+| Feature | Description |
+|---------|-------------|
+| **Trade Journal** | Log trades with automatic P&L, R-multiple, and duration tracking |
+| **AI Coaching** | Brooks-style trade review with setup classification and coaching |
+| **Multi-Timeframe Analysis** | Daily, 2H, and 5-minute market context |
+| **Strategy Tracking** | Categorize trades, track performance, discover your edge |
+| **Training Materials (RAG)** | Upload your trading books; AI finds relevant sections per trade |
+| **Bulk Import** | CSV import from TradingView, Robinhood, IBKR, or generic format |
+| **Multi-User** | Secure accounts with private, isolated data |
+
+---
+
+## Quick Start (Local Development)
 
 ```bash
-# 1. Create virtual environment (recommended)
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+# 1. Clone and setup
+git clone <your-repo-url>
+cd my_ai_powered_trading_assistant
 
-# 2. Install dependencies
+# 2. Create virtual environment
+python3 -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+
+# 3. Install dependencies
 pip install -r requirements.txt
 
-# 3. Set up .env file
+# 4. Configure environment
 cp env.example .env
-# Edit .env with your API keys (see below)
+# Edit .env with your LLM API key (see Configuration below)
 
-# 4. Start the web interface
+# 5. Start the app
 python -m app.main web
 
-# 5. Open http://localhost:8000 in your browser
-#    - Register a new account or sign in
-#    - All your trades are private to your account
-
-# 6. To stop the application:
-#    Press Ctrl+C in the terminal, or run:
-pkill -f "python -m app.main web"
-or
-lsof -ti:8000 | xargs kill -9 2>/dev/null && echo "✅ Application stopped" || echo "No application running on port 8000"   
+# 6. Open http://localhost:8000
+#    Create an account and start logging trades!
 ```
 
-### Environment Variables (.env)
+**To stop:** Press `Ctrl+C` in the terminal.
 
-Create a `.env` file in the project root:
+---
+
+## Configuration
+
+### Required: LLM API Key
+
+The AI coaching feature requires an LLM API. Add to your `.env`:
 
 ```bash
-# LLM Configuration (REQUIRED for AI analysis)
-LLM_API_KEY=your_api_key_here
-LLM_BASE_URL=https://your-llm-proxy.com/v1
+LLM_API_KEY=your-api-key
+LLM_BASE_URL=https://your-llm-endpoint.com/v1
 LLM_MODEL=claude-sonnet-4.5
-LLM_WORKERS=20  # Concurrent LLM calls (default: 20)
-
-# Authentication (REQUIRED - generate a secure random string)
-JWT_SECRET=your-super-secret-jwt-key-change-this
-JWT_EXPIRATION_HOURS=24  # Optional, defaults to 24 hours
-
-# Data Provider (optional - defaults to yfinance)
-DATA_PROVIDER=polygon  # or yfinance
-POLYGON_API_KEY=your_polygon_key_here
-
-# Robinhood Integration (optional)
-ROBINHOOD_USERNAME=your_username
-ROBINHOOD_PASSWORD=your_password
-
-# API Key for external scripts (optional)
-APP_API_KEY=your-api-key-for-scripts
 ```
+
+### Optional: Market Data
+
+```bash
+# Default: yfinance (free, no key needed)
+DATA_PROVIDER=yfinance
+
+# Better: Polygon.io (faster, free tier available)
+DATA_PROVIDER=polygon
+POLYGON_API_KEY=your-polygon-key
+```
+
+### Optional: Futures Data
+
+```bash
+DATABENTO_API_KEY=your-databento-key
+```
+
+---
 
 ## Web Interface
 
-Start the web UI:
-```bash
-python -m app.main web
-# Or with custom port:
-python -m app.main web --port 3000
-```
+### Pages
 
-> **Note**: After activating the virtual environment, `python` works. Before activation, use `python3`.
-
-Open http://localhost:8000 in your browser.
-
-**Stop the application:**
-```bash
-# Option 1: Press Ctrl+C in the terminal
-# Option 2: Kill from another terminal
-pkill -f "app.main web"
-```
-
-### Features
-
-- **User Authentication** - Secure email/password login with JWT sessions
-- **Multi-User Support** - Each user's trades are private and isolated
-- **Dashboard** - Stats, recent trades, strategy performance
-- **Trade Journal** - Add/edit trades with automatic P&L calculation
-- **AI Coaching Review** - Brooks-style trade analysis with manual trigger and cancel button
-- **Bulk Import** - CSV upload with timezone support (TradingView, Robinhood, generic)
-- **Strategy Management** - Categorize, merge, and track strategies with multi-select categories
-- **Settings** - Customize prompts, manage tickers, upload training materials
-- **Dark/Light Mode** - Toggle theme preference
-- **Smooth Transitions** - Fast page navigation with prefetching and fade transitions
-- **Keyboard Shortcuts** - Power user navigation (press `?` to see all shortcuts)
-
-### Recent Updates
-
-- **Editable Categories** - Add or delete strategy categories inline in Manage Strategies
-- **Multi-Select Categories** - Strategies can now belong to multiple categories (tag-based UI)
-- **Smooth Page Transitions** - Eliminated flash on navigation with CSS preloading and fade effects
-- **Link Prefetching** - Pages are prefetched on hover for faster perceived load times
-- **Complete Placeholder Reference** - Settings now shows all 45+ available placeholders for prompt customization organized in 8 categories
-
-## Key Features
+| Page | Description |
+|------|-------------|
+| **Dashboard** | Overview with stats, recent trades, P&L chart |
+| **Trade Journal** | Full trade list with search, filter, and AI reviews |
+| **Add Trade** | Manual trade entry or bulk CSV import |
+| **Statistics** | Strategy performance, win rates, edge analysis |
+| **Settings** | Manage tickers, prompts, strategies, training materials |
 
 ### Keyboard Shortcuts
 
-Press `?` or `Ctrl/Cmd + /` anywhere to see all shortcuts:
+Press `?` anywhere to see all shortcuts.
 
 | Shortcut | Action |
 |----------|--------|
 | `g d` | Go to Dashboard |
 | `g t` | Go to Trades |
-| `g s` | Go to Stats |
-| `g a` | Go to Add Trade |
+| `g s` | Go to Statistics |
 | `Ctrl/Cmd + N` | New Trade |
-| `Ctrl/Cmd + E` | Export Trades (on trades page) |
 | `Esc` | Close modal |
 
-### User Authentication & Data Privacy
+---
 
-The system provides secure multi-user support:
+## AI Trade Review
 
-- **Account Registration** - Create an account with email and password
-- **Secure Sessions** - JWT-based authentication with HTTP-only cookies
-- **Data Isolation** - Each user only sees their own trades and analytics
-- **Protected Routes** - All pages require login; unauthenticated users are redirected to sign in
-- **API Protection** - Write operations require authentication (login or API key)
+Click **"Generate Review"** on any trade to get:
 
-To get started:
-1. Visit `http://localhost:8000`
-2. Click "Register" to create an account
-3. Sign in with your credentials
-4. All your trades are private to your account
-
-### AI-Powered Trade Analysis
-
-Click "Generate Review" on any trade to get:
-- **Setup Classification** - AI identifies Brooks-style setups
-- **Context Analysis** - Daily/2H/5min regime and always-in direction
-- **Entry Quality** - Signal bar analysis, entry location
-- **Coaching** - What was good, areas to improve, rules for next time
-- **Grade** - A through F with explanation
-
-Features:
-- **Manual Trigger** - AI review only runs when you click the button
-- **Cancel Button** - Stop generation mid-process
-- **Caching** - Reviews are cached and reused
-- **No Look-Ahead Bias** - Only uses data available at entry time
-
-### Trade Journal
-
-- **Stop Loss (SL) & Take Profit (TP)** - Separate fields for risk management
-- **Timezone Support** - Import trades in any timezone, displays in market timezone
-- **Multi-leg Trade Matching** - Position Accumulator algorithm for complex trades
-- **Currency Conversion** - Automatic USD conversion with historical rates
-- **Duration Tracking** - Human-readable hold time display
+- **Setup Classification** — Identifies Brooks-style patterns (2nd entry, breakout pullback, wedge, etc.)
+- **Context Analysis** — Daily/2H/5min market regime and always-in direction
+- **Entry Quality** — Signal bar analysis, entry location evaluation
+- **Coaching Feedback** — What was good, areas to improve, specific rules
+- **Grade** — A through F with explanation
 
 ### Training Materials (RAG)
 
-Upload your trading books and rules - the AI uses **Retrieval-Augmented Generation** to find relevant sections for each trade:
+Upload your trading books and rules in **Settings → Training Materials**:
 
-- **Smart Retrieval** - Chunks materials and finds relevant sections per trade
-- **Full Book Support** - Upload entire Al Brooks books; RAG finds relevant pages
-- **Vector Search** - Uses ChromaDB + sentence-transformers for semantic matching
-- **Auto-Indexing** - Materials are indexed on upload
-- **Prioritizes Text** - Your `.txt` rules files are weighted higher than PDFs
+- Supports PDF and TXT files
+- AI automatically finds relevant sections for each trade
+- Your rules files are prioritized over general content
 
-### Bulk Import
+---
 
-Supports multiple formats:
-- **TradingView Order History** - Auto-detects from CSV headers
-- **Robinhood** - Direct API integration
-- **Generic CSV** - Flexible column mapping
+## Bulk Import
 
-### Hong Kong Stocks (AllTick API)
+### Supported Formats
 
-For better HK stock data, we support [AllTick API](https://alltick.co):
-- Real-time and historical K-line data
-- 10-level order book
-- Free tier available
+| Format | Description |
+|--------|-------------|
+| **Generic CSV** | Flexible column mapping (see below) |
+| **TradingView** | Auto-detected from export headers |
+| **Robinhood** | Direct API integration |
+| **IBKR Flex** | Auto-import via Flex Web Service |
 
-To use AllTick for HK stocks, add to your `.env`:
-```bash
-ALLTICK_TOKEN=your_alltick_token
-```
+### Generic CSV Format
 
-Get a free token at [alltick.co](https://alltick.co)
-
-The system automatically uses AllTick for HK stocks when the token is configured, falling back to yfinance otherwise.
-
-### International Stocks
-
-- Hong Kong (HKEX:0700 → 0700.HK)
-- China (SSE, SZSE)
-- UK, Japan, and more
-- Automatic fallback to yfinance for non-US stocks
-
-## CSV Import Format
-
-### Generic CSV
 ```csv
 ticker,direction,entry_price,exit_price,size,trade_date,sl,tp,notes
 SPY,long,475.50,478.00,100,2024-01-15,474.00,480.00,Strong pullback
-AAPL,short,185.00,182.50,50,2024-01-15,187.00,180.00,Failed breakout
 ```
 
 | Column | Required | Description |
 |--------|----------|-------------|
-| ticker/symbol | Yes | Stock symbol |
-| entry_price | Yes | Entry price |
-| exit_price | Yes | Exit price |
-| direction/side | No | "long" or "short" (default: long) |
-| size/qty/shares | No | Position size (default: 1) |
-| trade_date/date | No | Trade date (default: today) |
-| sl/stop_loss | No | Stop Loss level |
-| tp/take_profit | No | Take Profit level |
-| strategy | No | Strategy name |
-| notes | No | Trade notes |
+| `ticker` or `symbol` | Yes | Stock symbol |
+| `entry_price` | Yes | Entry price |
+| `exit_price` | Yes | Exit price |
+| `direction` or `side` | No | "long" or "short" (default: long) |
+| `size` or `qty` | No | Position size (default: 1) |
+| `trade_date` | No | Trade date (default: today) |
+| `sl` or `stop_loss` | No | Stop loss level |
+| `tp` or `take_profit` | No | Take profit level |
+| `strategy` | No | Strategy name |
+| `notes` | No | Trade notes |
 
-### TradingView Order History
-
-Upload directly from TradingView's export. The system auto-detects:
-- Order matching using Position Accumulator algorithm
-- Timezone conversion (select your local timezone on upload)
-- Multi-leg trade consolidation
+---
 
 ## CLI Commands
 
-### Trade Management
-
 ```bash
-# Add a trade manually
-python -m app.main trade add \
-  --ticker AAPL \
-  --direction long \
-  --entry 150.00 \
-  --exit 152.00 \
-  --sl 148.50 \
-  --tp 154.00 \
-  --size 100
+# Add a trade
+python -m app.main trade add --ticker AAPL --direction long --entry 150 --exit 152 --size 100
 
-# List recent trades
+# List trades
 python -m app.main trade list --limit 20
-```
 
-### Reports
-
-```bash
 # Generate premarket report
-python -m app.main report premarket --date 2024-01-15
+python -m app.main report premarket
 
-# Generate end-of-day report
-python -m app.main report eod --date 2024-01-15
-
-# Generate weekly report
-python -m app.main report weekly --week 2024-W03
-```
-
-### Statistics
-
-```bash
-# View strategy leaderboard
+# View strategy stats
 python -m app.main stats strategies
-
-# Analyze your edge
-python -m app.main stats edge
-
-# Get performance summary
-python -m app.main stats summary --days 30
 ```
 
-## Configuration
-
-### config.yaml
-
-```yaml
-# Favorite tickers for premarket reports
-tickers:
-  - SPY
-  - QQQ
-  - AAPL
-  - NVDA
-
-# Risk controls
-risk:
-  max_daily_loss_r: 3.0
-  max_losing_streak: 3
-  default_risk_per_trade_pct: 1.0
-
-# Data provider
-data_provider: polygon  # or yfinance
-```
-
-### Settings Page
-
-The web interface Settings page allows you to:
-- **Manage Tickers** - Add/remove favorite tickers
-- **AI Prompts** - Customize system and user prompts for trade analysis with 45+ available placeholders
-- **Cache Settings** - Enable/disable review caching
-- **Training Materials (RAG)** - Upload PDFs and documents; smart retrieval finds relevant sections per trade
-- **Strategy Management** - Edit, merge, and categorize strategies with editable categories and multi-select support
-
-## Project Structure
-
-```
-my_ai_powered_trading_assistant/
-├── tickers.txt              # Your favorite tickers
-├── imports/                 # Drop CSVs here for bulk import
-├── .env                     # API keys and secrets
-├── config.yaml              # Settings
-├── app/
-│   ├── main.py              # CLI entry point
-│   ├── config.py            # Configuration management
-│   ├── config_prompts.py    # LLM prompt templates
-│   ├── auth/                # Authentication module
-│   │   ├── service.py       # JWT, password hashing, user management
-│   │   └── email.py         # Email service (optional)
-│   ├── data/
-│   │   ├── providers.py     # Market data (yfinance/Polygon)
-│   │   ├── cache.py         # OHLCV caching
-│   │   ├── currency.py      # Currency conversion
-│   │   └── robinhood.py     # Robinhood integration
-│   ├── features/
-│   │   ├── ohlc_features.py # Technical indicators
-│   │   ├── brooks_patterns.py # Pattern detection
-│   │   └── magnets.py       # Key level detection
-│   ├── journal/
-│   │   ├── models.py        # SQLAlchemy models (User, Trade, Strategy)
-│   │   ├── ingest.py        # Trade import
-│   │   ├── analytics.py     # Statistics
-│   │   └── coach.py         # AI trade review
-│   ├── reports/
-│   │   ├── premarket.py     # Premarket reports
-│   │   ├── eod.py           # End-of-day report
-│   │   └── weekly.py        # Weekly summary
-│   ├── web/
-│   │   ├── server.py        # FastAPI web server
-│   │   ├── routes/          # API route handlers
-│   │   │   └── auth.py      # Authentication routes
-│   │   └── templates/       # HTML templates
-│   └── llm/
-│       ├── analyzer.py      # LLM analysis engine
-│       └── prompts.py       # Prompt templates
-├── outputs/                 # Generated reports
-├── data/                    # SQLite database
-└── materials/               # Training materials for LLM
-```
-
-## Brooks Price Action Concepts
-
-This system implements Al Brooks price action methodology:
-
-- **Trend vs Trading Range** - Market regime classification
-- **Always-In** - Direction you should be if forced to hold
-- **2nd Entry** - Second attempt after failed first entry
-- **Breakout Pullback** - Pullback to retest breakout level
-- **Wedge/3-Push** - Three pushes with diminishing momentum
-- **Failed Breakout** - Break that fails to follow through
-- **Trader's Equation** - Probability × Reward must exceed Risk
-- **Magnets** - Key levels that attract price
-
-## Troubleshooting
-
-### Common Issues
-
-**"Authentication required" or redirect to login**
-- Ensure you're logged in - all pages require authentication
-- Check that `JWT_SECRET` is set in `.env`
-- Clear cookies and try logging in again
-
-**"LLM analysis unavailable"**
-- Check your `LLM_API_KEY` in `.env`
-- Verify `LLM_BASE_URL` is correct
-
-**Rate limiting on data fetch**
-- The system includes automatic retry with exponential backoff
-- For Polygon, ensure you have sufficient API credits
-- yfinance is free but slower
-
-**International stocks not loading**
-- Use format `HKEX:0700` or `0700.HK` for Hong Kong
-- System auto-converts to yfinance format
-
-**Cached review showing old data**
-- Click "Regenerate Review" to force a fresh analysis
-
-**Can't see my trades after login**
-- Trades are scoped per user - you only see trades you created
-- If migrating from single-user mode, run the migration script
+---
 
 ## Deployment (Production)
 
 ### Deploy to Render with Supabase
 
-This application supports deployment to Render (free tier) with Supabase as the backend.
+For production deployment with user accounts and cloud storage:
 
 #### 1. Create Supabase Project
 
-1. Go to [supabase.com](https://supabase.com) and create a new project
-2. Note your project credentials from Settings > API:
-   - `SUPABASE_URL` (e.g., `https://xxxxx.supabase.co`)
-   - `SUPABASE_ANON_KEY` (public anon key)
-   - `SUPABASE_SERVICE_KEY` (service role key)
-3. Get the database connection string from Settings > Database > Connection string
+1. Create project at [supabase.com](https://supabase.com)
+2. Get credentials from **Settings → API**:
+   - `SUPABASE_URL`
+   - `SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_KEY`
+3. Get database URL from **Settings → Database → Connection string**
 
-#### 2. Run Database Migrations
+#### 2. Run Migrations
 
-In Supabase SQL Editor, run the migration files in order:
-
-```sql
--- Run: supabase/migrations/001_initial_schema.sql
--- Run: supabase/migrations/002_storage_policies.sql
-```
+In Supabase **SQL Editor**, run:
+- `supabase/migrations/001_initial_schema.sql`
+- `supabase/migrations/002_storage_policies.sql`
 
 #### 3. Create Storage Bucket
 
-In Supabase Dashboard > Storage:
-1. Create new bucket named `materials`
-2. Set to Private (RLS policies control access)
+In **Storage**, create a private bucket named `materials`
 
-#### 4. Configure Supabase Auth
+#### 4. Deploy to Render
 
-In Authentication > Providers:
-1. Enable Email/Password provider
-2. Configure email templates in Authentication > Email Templates
-3. Set Site URL to your Render domain (e.g., `https://your-app.onrender.com`)
-
-#### 5. Deploy to Render
-
-Option A: Use the Blueprint (recommended):
-```bash
-# Fork or push this repo to GitHub
-# In Render Dashboard, click "New" > "Blueprint"
-# Connect your GitHub repo
-# Render will use render.yaml to configure the service
-```
-
-Option B: Manual deployment:
-```bash
-# In Render Dashboard, click "New" > "Web Service"
-# Connect your GitHub repo
-# Configure:
-#   - Build Command: pip install -r requirements.txt
-#   - Start Command: uvicorn app.web.server:app --host 0.0.0.0 --port $PORT
-```
-
-#### 6. Set Environment Variables in Render
-
-In your Render service > Environment:
+1. Push code to GitHub
+2. In Render, create **New → Web Service**
+3. Connect your repo
+4. Set environment variables:
 
 ```
-DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT].supabase.co:5432/postgres
-SUPABASE_URL=https://[PROJECT].supabase.co
+DATABASE_URL=postgresql://postgres.PROJECT:PASSWORD@aws-0-REGION.pooler.supabase.co:6543/postgres
+SUPABASE_URL=https://PROJECT.supabase.co
 SUPABASE_ANON_KEY=your-anon-key
-SUPABASE_SERVICE_KEY=your-service-role-key
-LLM_API_KEY=your-llm-api-key
-LLM_BASE_URL=https://your-llm-proxy.com/v1
+SUPABASE_SERVICE_KEY=your-service-key
+LLM_API_KEY=your-llm-key
+LLM_BASE_URL=https://your-llm-endpoint/v1
 LLM_MODEL=claude-sonnet-4.5
 APP_URL=https://your-app.onrender.com
 ```
 
-#### What Supabase Provides
+---
 
-- **PostgreSQL Database** - All trades, strategies, settings stored securely
-- **Authentication** - Email/password auth with email verification
-- **Storage** - Per-user training materials (PDFs, text files)
-- **pgvector** - Vector embeddings for semantic search in training materials
-- **Row Level Security** - Each user only sees their own data
+## Troubleshooting
 
-### Local Development with Supabase
+| Issue | Solution |
+|-------|----------|
+| **"Invalid email or password"** | Create an account first (click "Create an Account") |
+| **"LLM analysis unavailable"** | Check `LLM_API_KEY` and `LLM_BASE_URL` in `.env` |
+| **Slow data fetching** | Switch from yfinance to Polygon for faster data |
+| **Database connection failed** | For local dev, ensure Supabase keys are commented out in `.env` |
 
-You can also use Supabase during local development:
+---
 
-```bash
-# Set environment variables
-export SUPABASE_URL=https://your-project.supabase.co
-export SUPABASE_ANON_KEY=your-anon-key
-export SUPABASE_SERVICE_KEY=your-service-key
-export DATABASE_URL=postgresql://...
+## Project Structure
 
-# Run locally
-python -m app.main web
 ```
+my_ai_powered_trading_assistant/
+├── app/
+│   ├── main.py           # CLI entry point
+│   ├── auth/             # Authentication
+│   ├── data/             # Market data providers
+│   ├── journal/          # Trade models & analytics
+│   ├── llm/              # AI analysis engine
+│   └── web/              # FastAPI server & templates
+├── supabase/migrations/  # Database schema
+├── materials/            # Training materials (local)
+├── data/                 # SQLite database (local)
+└── .env                  # Configuration
+```
+
+---
+
+## Brooks Price Action Concepts
+
+This system implements Al Brooks methodology:
+
+- **Trend vs Trading Range** — Market regime classification
+- **Always-In** — Direction you should hold if forced
+- **2nd Entry** — Second attempt after failed first
+- **Breakout Pullback** — Pullback to retest breakout
+- **Wedge/3-Push** — Three pushes with diminishing momentum
+- **Failed Breakout** — Break that fails to follow through
+- **Trader's Equation** — Probability × Reward > Risk
+
+---
 
 ## Disclaimer
 
-This software is for educational and informational purposes only. It is not financial advice. Trading involves substantial risk of loss. Past performance is not indicative of future results. Always do your own research and consider your financial situation before trading.
+This software is for educational purposes only. It is not financial advice. Trading involves substantial risk of loss. Past performance is not indicative of future results.
+
+---
 
 ## License
 
-MIT License - see LICENSE file for details.
+MIT License — see [LICENSE](LICENSE) for details.

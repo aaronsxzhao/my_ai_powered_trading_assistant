@@ -25,7 +25,7 @@ from app.auth.service import hash_password
 
 # Configuration
 TARGET_EMAIL = "aaronsxzhao@gmail.com"
-TEMP_PASSWORD = "ChangeMeNow123!"  # User should change this immediately
+TEMP_PASSWORD = "Trading123!"  # User's chosen password
 
 
 def migrate_data():
