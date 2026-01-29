@@ -36,33 +36,34 @@ _cancelled_reviews: dict[int, bool] = {}
 @router.post("/{trade_id}/recalculate")
 async def recalculate_trade_metrics(trade_id: int):
     """Recalculate metrics for a single trade."""
-    session = get_session()
-    try:
-        trade = session.query(Trade).filter(Trade.id == trade_id).first()
-        if not trade:
-            raise HTTPException(status_code=404, detail="Trade not found")
-
-        trade.compute_metrics()
-        session.commit()
-
-        return JSONResponse(
-            success_response(
-                data={
-                    "trade_id": trade_id,
-                    "r_multiple": trade.r_multiple,
-                    "pnl_dollars": trade.pnl_dollars,
-                    "outcome": trade.outcome.value if trade.outcome else None,
-                },
-                message="Metrics recalculated",
-            )
-        )
-    finally:
-        session.close()
+    
+    def _do_recalculate():
+        session = get_session()
+        try:
+            trade = session.query(Trade).filter(Trade.id == trade_id).first()
+            if not trade:
+                return None
+            trade.compute_metrics()
+            session.commit()
+            return {
+                "trade_id": trade_id,
+                "r_multiple": trade.r_multiple,
+                "pnl_dollars": trade.pnl_dollars,
+                "outcome": trade.outcome.value if trade.outcome else None,
+            }
+        finally:
+            session.close()
+    
+    result = await asyncio.to_thread(_do_recalculate)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Trade not found")
+    
+    return JSONResponse(success_response(data=result, message="Metrics recalculated"))
 
 
 @router.patch("/{trade_id}/notes", dependencies=[require_write_auth])
 async def update_trade_notes(trade_id: int, request: Request):
-    """Update trade notes, personal review, and Brooks intent fields."""
+    """Update trade notes, personal review, and trade intent fields."""
     data = await request.json()
 
     session = get_session()
@@ -80,7 +81,7 @@ async def update_trade_notes(trade_id: int, request: Request):
             "mistakes",
             "lessons",
             "mistakes_and_lessons",
-            # Brooks intent
+            # Trade intent
             "trade_type",
             "confidence_level",
             "emotional_state",
@@ -97,16 +98,17 @@ async def update_trade_notes(trade_id: int, request: Request):
             "entry_tp_distance",
         }
 
-        # Update all provided fields
-        for field in allowed_fields:
-            if field in data:
-                setattr(trade, field, data[field])
+        def _do_update():
+            # Update all provided fields
+            for field in allowed_fields:
+                if field in data:
+                    setattr(trade, field, data[field])
+            # Clear cached review when trade intent is updated (to force re-analysis)
+            trade.cached_review = None
+            trade.review_generated_at = None
+            session.commit()
 
-        # Clear cached review when trade intent is updated (to force re-analysis)
-        trade.cached_review = None
-        trade.review_generated_at = None
-
-        session.commit()
+        await asyncio.to_thread(_do_update)
 
         return JSONResponse({"success": True, "message": "Trade details saved"})
     finally:
@@ -278,23 +280,28 @@ async def get_trade_review(trade_id: int, force: bool = False, check_only: bool 
 @router.post("/{trade_id}/review/cancel", dependencies=[require_write_auth])
 async def cancel_trade_review(trade_id: int):
     """Cancel an in-progress review generation."""
-    session = get_session()
-    try:
-        trade = session.query(Trade).filter(Trade.id == trade_id).first()
-        if not trade:
-            return JSONResponse({"success": False, "error": "Trade not found"})
-
-        _cancelled_reviews[trade_id] = True
-
-        if trade.review_in_progress:
-            trade.review_in_progress = False
-            session.commit()
-            return JSONResponse({"success": True, "message": "Review cancelled"})
-        return JSONResponse({"success": True, "message": "No review in progress"})
-    except Exception as e:
-        return JSONResponse({"success": False, "error": str(e)})
-    finally:
-        session.close()
+    
+    def _do_cancel():
+        session = get_session()
+        try:
+            trade = session.query(Trade).filter(Trade.id == trade_id).first()
+            if not trade:
+                return {"success": False, "error": "Trade not found"}
+            
+            _cancelled_reviews[trade_id] = True
+            
+            if trade.review_in_progress:
+                trade.review_in_progress = False
+                session.commit()
+                return {"success": True, "message": "Review cancelled"}
+            return {"success": True, "message": "No review in progress"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+        finally:
+            session.close()
+    
+    result = await asyncio.to_thread(_do_cancel)
+    return JSONResponse(result)
 
 
 @router.get("/{trade_id}/check-data")
@@ -1214,60 +1221,60 @@ async def update_trade(trade_id: int, request: Request):
         if not trade:
             raise HTTPException(status_code=404, detail="Trade not found")
 
-        if data.get("ticker") is not None:
-            trade.ticker = data["ticker"].upper()
-        if data.get("direction") is not None:
-            direction_str = data["direction"].lower()
-            if direction_str == "long":
-                trade.direction = TradeDirection.LONG
-            elif direction_str == "short":
-                trade.direction = TradeDirection.SHORT
-        if data.get("size") is not None:
-            trade.size = float(data["size"])
-        if data.get("entry_price") is not None:
-            trade.entry_price = float(data["entry_price"])
-        if data.get("exit_price") is not None:
-            trade.exit_price = float(data["exit_price"])
+        def _do_update():
+            if data.get("ticker") is not None:
+                trade.ticker = data["ticker"].upper()
+            if data.get("direction") is not None:
+                direction_str = data["direction"].lower()
+                if direction_str == "long":
+                    trade.direction = TradeDirection.LONG
+                elif direction_str == "short":
+                    trade.direction = TradeDirection.SHORT
+            if data.get("size") is not None:
+                trade.size = float(data["size"])
+            if data.get("entry_price") is not None:
+                trade.entry_price = float(data["entry_price"])
+            if data.get("exit_price") is not None:
+                trade.exit_price = float(data["exit_price"])
 
-        # Stop Loss (SL) - can be set to null
-        if "stop_loss" in data:
-            trade.stop_loss = float(data["stop_loss"]) if data["stop_loss"] else None
+            # Stop Loss (SL) - can be set to null
+            if "stop_loss" in data:
+                trade.stop_loss = float(data["stop_loss"]) if data["stop_loss"] else None
 
-        # Take Profit (TP) - can be set to null
-        if "take_profit" in data:
-            trade.take_profit = float(data["take_profit"]) if data["take_profit"] else None
+            # Take Profit (TP) - can be set to null
+            if "take_profit" in data:
+                trade.take_profit = float(data["take_profit"]) if data["take_profit"] else None
 
-        if data.get("currency") is not None:
-            trade.currency = data["currency"]
-        if data.get("currency_rate") is not None:
-            trade.currency_rate = float(data["currency_rate"])
-        if data.get("timeframe") is not None:
-            trade.timeframe = data["timeframe"]
+            if data.get("currency") is not None:
+                trade.currency = data["currency"]
+            if data.get("currency_rate") is not None:
+                trade.currency_rate = float(data["currency_rate"])
+            if data.get("timeframe") is not None:
+                trade.timeframe = data["timeframe"]
 
-        # Update times if provided
-        if data.get("entry_time"):
-            try:
-                trade.entry_time = datetime.fromisoformat(data["entry_time"])
-            except ValueError:
-                pass
-        if data.get("exit_time"):
-            try:
-                trade.exit_time = datetime.fromisoformat(data["exit_time"])
-                # Also update trade_date to match exit date
-                trade.trade_date = trade.exit_time.date()
-            except ValueError:
-                pass
+            # Update times if provided
+            if data.get("entry_time"):
+                try:
+                    trade.entry_time = datetime.fromisoformat(data["entry_time"])
+                except ValueError:
+                    pass
+            if data.get("exit_time"):
+                try:
+                    trade.exit_time = datetime.fromisoformat(data["exit_time"])
+                    # Also update trade_date to match exit date
+                    trade.trade_date = trade.exit_time.date()
+                except ValueError:
+                    pass
 
-        trade.compute_metrics()
-        session.commit()
+            trade.compute_metrics()
+            session.commit()
+            return {"r_multiple": trade.r_multiple, "pnl_dollars": trade.pnl_dollars}
+
+        result = await asyncio.to_thread(_do_update)
 
         return JSONResponse(
             success_response(
-                data={
-                    "trade_id": trade_id,
-                    "r_multiple": trade.r_multiple,
-                    "pnl_dollars": trade.pnl_dollars,
-                },
+                data={"trade_id": trade_id, **result},
                 message="Trade updated",
             )
         )
@@ -1285,23 +1292,28 @@ async def update_trade_strategy(trade_id: int, request: Request):
     try:
         trade, _ = await verify_trade_ownership(trade_id, request, session)
 
-        strategy = session.query(Strategy).filter(Strategy.name == strategy_name).first()
-        if not strategy:
-            strategy = Strategy(
-                name=strategy_name,
-                category=data.get("category", "unknown"),
-                description="Manually created",
-            )
-            session.add(strategy)
-            session.flush()
+        def _do_update():
+            strategy = session.query(Strategy).filter(Strategy.name == strategy_name).first()
+            if not strategy:
+                new_strategy = Strategy(
+                    name=strategy_name,
+                    category=data.get("category", "unknown"),
+                    description="Manually created",
+                )
+                session.add(new_strategy)
+                session.flush()
+                trade.strategy_id = new_strategy.id
+            else:
+                trade.strategy_id = strategy.id
+            session.commit()
+            return trade.ai_setup_classification
 
-        trade.strategy_id = strategy.id
-        session.commit()
+        original_ai = await asyncio.to_thread(_do_update)
 
         return JSONResponse(
             {
                 "message": f"Trade strategy set to '{strategy_name}'",
-                "original_ai": trade.ai_setup_classification,
+                "original_ai": original_ai,
             }
         )
     finally:

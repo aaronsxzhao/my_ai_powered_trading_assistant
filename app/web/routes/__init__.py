@@ -1,5 +1,5 @@
 """
-Route modules for Brooks Trading Coach API.
+Route modules for AI Trading Coach API.
 
 This package contains modular route definitions split by functionality.
 """

@@ -1,5 +1,5 @@
 """
-FastAPI Web Server for Brooks Trading Coach.
+FastAPI Web Server for AI Trading Coach.
 
 Provides a browser-based interface for:
 - Dashboard with stats
@@ -9,6 +9,7 @@ Provides a browser-based interface for:
 - Report generation
 """
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import Optional
@@ -72,8 +73,8 @@ tags_metadata = [
 ]
 
 app = FastAPI(
-    title="Brooks Trading Coach",
-    description="Advisory system for discretionary day traders using Al Brooks methodology",
+    title="AI Trading Coach",
+    description="Advisory system for discretionary day traders using price action methodology",
     version="0.1.0",
     openapi_tags=tags_metadata,
 )
@@ -171,55 +172,50 @@ async def favicon():
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request, user=Depends(require_login)):
     """Main dashboard page."""
-    analytics = TradeAnalytics()
     base_context = await get_template_context_with_user(request, user)
+    user_id = user.id
 
-    session = get_session()
-    try:
-        # Get recent trades for this user (limit 10) - newest by trade_number first
-        recent_trades = (
-            session.query(Trade)
-            .filter(Trade.user_id == user.id)
-            .order_by(Trade.trade_number.desc())
-            .limit(10)
-            .all()
-        )
+    def _get_dashboard_data():
+        analytics = TradeAnalytics()
+        session = get_session()
+        try:
+            from sqlalchemy import func
+            
+            # Get recent trades for this user (limit 10) - newest by trade_number first
+            recent_trades = (
+                session.query(Trade)
+                .filter(Trade.user_id == user_id)
+                .order_by(Trade.trade_number.desc())
+                .limit(10)
+                .all()
+            )
 
-        # Use efficient COUNT queries for this user's trades only
-        from sqlalchemy import func
+            # Use efficient COUNT queries for this user's trades only
+            total_trades = (
+                session.query(func.count(Trade.id)).filter(Trade.user_id == user_id).scalar() or 0
+            )
+            winners = (
+                session.query(func.count(Trade.id))
+                .filter(Trade.user_id == user_id, Trade.outcome == TradeOutcome.WIN)
+                .scalar()
+                or 0
+            )
+            total_r = (
+                session.query(func.sum(Trade.r_multiple)).filter(Trade.user_id == user_id).scalar() or 0
+            )
+            win_rate = winners / total_trades if total_trades > 0 else 0
 
-        total_trades = (
-            session.query(func.count(Trade.id)).filter(Trade.user_id == user.id).scalar() or 0
-        )
-        winners = (
-            session.query(func.count(Trade.id))
-            .filter(Trade.user_id == user.id, Trade.outcome == TradeOutcome.WIN)
-            .scalar()
-            or 0
-        )
-        total_r = (
-            session.query(func.sum(Trade.r_multiple)).filter(Trade.user_id == user.id).scalar() or 0
-        )
-        win_rate = winners / total_trades if total_trades > 0 else 0
+            # Calculate total P&L in USD (converting from original currency if needed)
+            all_trades = session.query(Trade).filter(Trade.user_id == user_id).all()
+            total_pnl = sum(t.pnl_usd for t in all_trades if t.pnl_usd is not None)
 
-        # Calculate total P&L in USD (converting from original currency if needed)
-        all_trades = session.query(Trade).filter(Trade.user_id == user.id).all()
-        total_pnl = sum(t.pnl_usd for t in all_trades if t.pnl_usd is not None)
+            # Get strategy stats for this user
+            strategy_stats = analytics.get_all_strategy_stats(user_id=user_id)[:5]
 
-        # Get strategy stats for this user
-        strategy_stats = analytics.get_all_strategy_stats(user_id=user.id)[:5]
+            # Get portfolio stats with drawdown and advanced metrics
+            portfolio_stats = analytics.get_portfolio_stats(user_id=user_id)
 
-        # Get portfolio stats with drawdown and advanced metrics
-        portfolio_stats = analytics.get_portfolio_stats(user_id=user.id)
-
-        # Check data provider
-        polygon_available = get_polygon_api_key() is not None
-
-        return templates.TemplateResponse(
-            request,
-            "dashboard.html",
-            {
-                **base_context,
+            return {
                 "recent_trades": recent_trades,
                 "total_trades": total_trades,
                 "total_r": total_r,
@@ -228,12 +224,23 @@ async def dashboard(request: Request, user=Depends(require_login)):
                 "winners": winners,
                 "strategy_stats": strategy_stats,
                 "portfolio_stats": portfolio_stats,
-                "tickers": load_tickers_from_file(),
-                "polygon_available": polygon_available,
-            },
-        )
-    finally:
-        session.close()
+            }
+        finally:
+            session.close()
+
+    data = await asyncio.to_thread(_get_dashboard_data)
+    polygon_available = get_polygon_api_key() is not None
+
+    return templates.TemplateResponse(
+        request,
+        "dashboard.html",
+        {
+            **base_context,
+            **data,
+            "tickers": load_tickers_from_file(),
+            "polygon_available": polygon_available,
+        },
+    )
 
 
 @app.get("/trades", response_class=HTMLResponse)
@@ -257,61 +264,67 @@ async def trades_page(
     from math import ceil
 
     base_context = await get_template_context_with_user(request, user)
+    user_id = user.id
 
     # Validate pagination params
-    page = max(1, page)
-    per_page = min(max(10, per_page), 200)  # Between 10 and 200
+    page_num = max(1, page)
+    per_page_num = min(max(10, per_page), 200)  # Between 10 and 200
 
-    session = get_session()
-    try:
-        # Build query with user filter and optional filters
-        query = session.query(Trade).filter(Trade.user_id == user.id)
+    def _get_trades_data():
+        session = get_session()
+        try:
+            # Build query with user filter and optional filters
+            query = session.query(Trade).filter(Trade.user_id == user_id)
 
-        if ticker:
-            query = query.filter(Trade.ticker.ilike(f"%{ticker}%"))
-        if outcome:
-            outcome_lower = outcome.lower()
-            if outcome_lower == "win":
-                query = query.filter(Trade.outcome == TradeOutcome.WIN)
-            elif outcome_lower == "loss":
-                query = query.filter(Trade.outcome == TradeOutcome.LOSS)
-            elif outcome_lower == "breakeven":
-                query = query.filter(Trade.outcome == TradeOutcome.BREAKEVEN)
+            if ticker:
+                query = query.filter(Trade.ticker.ilike(f"%{ticker}%"))
+            if outcome:
+                outcome_lower = outcome.lower()
+                if outcome_lower == "win":
+                    query = query.filter(Trade.outcome == TradeOutcome.WIN)
+                elif outcome_lower == "loss":
+                    query = query.filter(Trade.outcome == TradeOutcome.LOSS)
+                elif outcome_lower == "breakeven":
+                    query = query.filter(Trade.outcome == TradeOutcome.BREAKEVEN)
 
-        # Get total count for pagination
-        total_trades = query.count()
-        total_pages = ceil(total_trades / per_page) if total_trades > 0 else 1
+            # Get total count for pagination
+            total_trades = query.count()
+            total_pages = ceil(total_trades / per_page_num) if total_trades > 0 else 1
 
-        # Ensure page is within bounds
-        page = min(page, total_pages)
+            # Ensure page is within bounds
+            actual_page = min(page_num, total_pages)
 
-        # Get paginated trades
-        offset = (page - 1) * per_page
-        trades = query.order_by(Trade.trade_number.desc()).offset(offset).limit(per_page).all()
+            # Get paginated trades
+            offset = (actual_page - 1) * per_page_num
+            trades = query.order_by(Trade.trade_number.desc()).offset(offset).limit(per_page_num).all()
 
-        strategies = get_active_strategies_cached(session)
+            strategies = get_active_strategies_cached(session)
 
-        return templates.TemplateResponse(
-            request,
-            "trades.html",
-            {
-                **base_context,
+            return {
                 "trades": trades,
                 "strategies": strategies,
-                # Pagination info
-                "page": page,
-                "per_page": per_page,
+                "page": actual_page,
+                "per_page": per_page_num,
                 "total_trades": total_trades,
                 "total_pages": total_pages,
-                "has_next": page < total_pages,
-                "has_prev": page > 1,
-                # Filters
-                "filter_ticker": ticker or "",
-                "filter_outcome": outcome or "",
-            },
-        )
-    finally:
-        session.close()
+                "has_next": actual_page < total_pages,
+                "has_prev": actual_page > 1,
+            }
+        finally:
+            session.close()
+
+    data = await asyncio.to_thread(_get_trades_data)
+
+    return templates.TemplateResponse(
+        request,
+        "trades.html",
+        {
+            **base_context,
+            **data,
+            "filter_ticker": ticker or "",
+            "filter_outcome": outcome or "",
+        },
+    )
 
 
 @app.get("/trades/{trade_id}", response_class=HTMLResponse)
@@ -628,7 +641,7 @@ def run_server(host: str = "127.0.0.1", port: int = 8000, reload: bool = True):
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    print("\n🚀 Brooks Trading Coach Web UI")
+    print("\n🚀 AI Trading Coach Web UI")
     print(f"   Open http://{host}:{port} in your browser")
     if reload:
         print("   🔄 Auto-reload enabled - changes will apply automatically")

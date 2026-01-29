@@ -1,5 +1,5 @@
 /**
- * Common JavaScript utilities for Brooks Trading Coach
+ * Common JavaScript utilities for AI Trading Coach
  * 
  * Contains shared functionality used across multiple pages:
  * - Toast notifications

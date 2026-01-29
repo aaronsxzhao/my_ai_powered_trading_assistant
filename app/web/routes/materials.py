@@ -5,6 +5,7 @@ Supports both local storage (development) and Supabase Storage (production).
 Materials are per-user when using Supabase.
 """
 
+import asyncio
 import logging
 from fastapi import APIRouter, HTTPException, UploadFile, File, Request, Depends
 from fastapi.responses import JSONResponse
@@ -187,41 +188,47 @@ async def list_materials(request: Request, user = Depends(get_current_user)):
     user_id = get_user_id(user)
     
     if _is_supabase_enabled():
-        from app.db.supabase_client import get_service_client
+        def _do_list():
+            from app.db.supabase_client import get_service_client
+            
+            client = get_service_client()
+            result = client.table("user_materials").select("*").eq(
+                "user_id", user_id
+            ).order("created_at", desc=True).execute()
+            
+            materials = []
+            for m in result.data or []:
+                materials.append({
+                    "id": m["id"],
+                    "filename": m["filename"],
+                    "file_size": m["file_size"],
+                    "mime_type": m["mime_type"],
+                    "indexed_at": m["indexed_at"],
+                    "chunk_count": m["chunk_count"],
+                    "created_at": m["created_at"],
+                })
+            return materials
         
-        client = get_service_client()
-        result = client.table("user_materials").select("*").eq(
-            "user_id", user_id
-        ).order("created_at", desc=True).execute()
-        
-        materials = []
-        for m in result.data or []:
-            materials.append({
-                "id": m["id"],
-                "filename": m["filename"],
-                "file_size": m["file_size"],
-                "mime_type": m["mime_type"],
-                "indexed_at": m["indexed_at"],
-                "chunk_count": m["chunk_count"],
-                "created_at": m["created_at"],
-            })
-        
+        materials = await asyncio.to_thread(_do_list)
         return JSONResponse({"materials": materials})
     else:
         # Local storage - list files in materials directory
-        materials = []
-        if MATERIALS_DIR.exists():
-            for f in sorted(MATERIALS_DIR.iterdir()):
-                if f.is_file() and not f.name.startswith("."):
-                    ext = f.suffix.lower()
-                    if ext in ALLOWED_MATERIAL_EXTENSIONS:
-                        stat = f.stat()
-                        materials.append({
-                            "filename": f.name,
-                            "file_size": stat.st_size,
-                            "mime_type": _get_mime_type(ext),
-                        })
+        def _do_list_local():
+            materials = []
+            if MATERIALS_DIR.exists():
+                for f in sorted(MATERIALS_DIR.iterdir()):
+                    if f.is_file() and not f.name.startswith("."):
+                        ext = f.suffix.lower()
+                        if ext in ALLOWED_MATERIAL_EXTENSIONS:
+                            stat = f.stat()
+                            materials.append({
+                                "filename": f.name,
+                                "file_size": stat.st_size,
+                                "mime_type": _get_mime_type(ext),
+                            })
+            return materials
         
+        materials = await asyncio.to_thread(_do_list_local)
         return JSONResponse({"materials": materials})
 
 
@@ -231,47 +238,53 @@ async def get_rag_status(request: Request, user = Depends(get_current_user)):
     user_id = get_user_id(user)
     
     if _is_supabase_enabled():
-        try:
-            from app.db.supabase_client import get_service_client
-            
-            client = get_service_client()
-            
-            # Count embeddings
-            embed_result = client.table("embeddings").select(
-                "id", count="exact"
-            ).eq("user_id", user_id).execute()
-            
-            # Count materials
-            mat_result = client.table("user_materials").select(
-                "id", count="exact"
-            ).eq("user_id", user_id).execute()
-            
-            return JSONResponse({
-                "available": True,
-                "indexed": (embed_result.count or 0) > 0,
-                "total_chunks": embed_result.count or 0,
-                "total_files": mat_result.count or 0,
-                "storage": "supabase",
-            })
-        except Exception as e:
-            return JSONResponse({"available": False, "error": str(e)})
+        def _do_get_status():
+            try:
+                from app.db.supabase_client import get_service_client
+                
+                client = get_service_client()
+                
+                # Count embeddings
+                embed_result = client.table("embeddings").select(
+                    "id", count="exact"
+                ).eq("user_id", user_id).execute()
+                
+                # Count materials
+                mat_result = client.table("user_materials").select(
+                    "id", count="exact"
+                ).eq("user_id", user_id).execute()
+                
+                return {
+                    "available": True,
+                    "indexed": (embed_result.count or 0) > 0,
+                    "total_chunks": embed_result.count or 0,
+                    "total_files": mat_result.count or 0,
+                    "storage": "supabase",
+                }
+            except Exception as e:
+                return {"available": False, "error": str(e)}
+        
+        status = await asyncio.to_thread(_do_get_status)
+        return JSONResponse(status)
     else:
-        try:
-            from app.materials_rag import get_materials_rag
+        def _do_get_local_status():
+            try:
+                from app.materials_rag import get_materials_rag
 
-            rag = get_materials_rag()
-            status = rag.get_status()
-            status["storage"] = "local"
-            return JSONResponse(status)
-        except ImportError:
-            return JSONResponse(
-                {
+                rag = get_materials_rag()
+                status = rag.get_status()
+                status["storage"] = "local"
+                return status
+            except ImportError:
+                return {
                     "available": False,
                     "error": "RAG dependencies not installed. Run: pip install chromadb sentence-transformers",
                 }
-            )
-        except Exception as e:
-            return JSONResponse({"available": False, "error": str(e)})
+            except Exception as e:
+                return {"available": False, "error": str(e)}
+        
+        status = await asyncio.to_thread(_do_get_local_status)
+        return JSONResponse(status)
 
 
 @router.post("/index")
@@ -328,82 +341,101 @@ async def delete_material(
     material_id = urllib.parse.unquote(material_id)
 
     if _is_supabase_enabled():
-        from app.db.supabase_client import get_service_client, SupabaseStorage
+        def _do_delete():
+            from app.db.supabase_client import get_service_client, SupabaseStorage
 
-        client = get_service_client()
+            client = get_service_client()
+            
+            # Get material record
+            result = client.table("user_materials").select("*").eq(
+                "id", material_id
+            ).eq("user_id", user_id).single().execute()
+            
+            if not result.data:
+                return None
+            
+            material = result.data
+            
+            # Delete from storage
+            storage = SupabaseStorage(client, "materials")
+            storage.delete_file(material["storage_path"])
+            
+            # Delete embeddings
+            client.table("embeddings").delete().eq(
+                "material_id", material_id
+            ).execute()
+            
+            # Delete record
+            client.table("user_materials").delete().eq(
+                "id", material_id
+            ).execute()
+            
+            return material["filename"]
         
-        # Get material record
-        result = client.table("user_materials").select("*").eq(
-            "id", material_id
-        ).eq("user_id", user_id).single().execute()
-        
-        if not result.data:
+        filename = await asyncio.to_thread(_do_delete)
+        if filename is None:
             raise HTTPException(status_code=404, detail="Material not found")
-        
-        material = result.data
-        
-        # Delete from storage
-        storage = SupabaseStorage(client, "materials")
-        storage.delete_file(material["storage_path"])
-        
-        # Delete embeddings
-        client.table("embeddings").delete().eq(
-            "material_id", material_id
-        ).execute()
-        
-        # Delete record
-        client.table("user_materials").delete().eq(
-            "id", material_id
-        ).execute()
-        
-        return JSONResponse({"message": f"Deleted {material['filename']}"})
+        return JSONResponse({"message": f"Deleted {filename}"})
     else:
         # Local storage - material_id is the filename
-        file_path = MATERIALS_DIR / material_id
-
-        if file_path.exists() and file_path.is_file():
-            file_path.unlink()
-            return JSONResponse({"message": f"Deleted {material_id}"})
-
-        raise HTTPException(status_code=404, detail="File not found")
+        def _do_delete_local():
+            file_path = MATERIALS_DIR / material_id
+            if file_path.exists() and file_path.is_file():
+                file_path.unlink()
+                return True
+            return False
+        
+        deleted = await asyncio.to_thread(_do_delete_local)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="File not found")
+        return JSONResponse({"message": f"Deleted {material_id}"})
 
 
 @router.delete("")
 async def delete_all_materials(request: Request, user = Depends(get_current_user)):
     """Delete all training materials for current user."""
     user_id = get_user_id(user)
-    deleted = 0
 
     if _is_supabase_enabled():
-        from app.db.supabase_client import get_service_client, SupabaseStorage
+        def _do_delete_all():
+            from app.db.supabase_client import get_service_client, SupabaseStorage
 
-        client = get_service_client()
-        
-        # Get all materials
-        result = client.table("user_materials").select("*").eq(
-            "user_id", user_id
-        ).execute()
-        
-        storage = SupabaseStorage(client, "materials")
-        
-        for material in result.data or []:
-            try:
-                storage.delete_file(material["storage_path"])
-                deleted += 1
-            except Exception as e:
-                logger.warning(f"Failed to delete {material['filename']}: {e}")
-        
-        # Delete all embeddings
-        client.table("embeddings").delete().eq("user_id", user_id).execute()
-        
-        # Delete all material records
-        client.table("user_materials").delete().eq("user_id", user_id).execute()
-    else:
-        if MATERIALS_DIR.exists():
-            for f in MATERIALS_DIR.iterdir():
-                if f.is_file() and not f.name.startswith("."):
-                    f.unlink()
+            client = get_service_client()
+            deleted = 0
+            
+            # Get all materials
+            result = client.table("user_materials").select("*").eq(
+                "user_id", user_id
+            ).execute()
+            
+            storage = SupabaseStorage(client, "materials")
+            
+            for material in result.data or []:
+                try:
+                    storage.delete_file(material["storage_path"])
                     deleted += 1
+                except Exception as e:
+                    logger.warning(f"Failed to delete {material['filename']}: {e}")
+            
+            # Delete all embeddings
+            client.table("embeddings").delete().eq("user_id", user_id).execute()
+            
+            # Delete all material records
+            client.table("user_materials").delete().eq("user_id", user_id).execute()
+            return deleted
+        
+        deleted = await asyncio.to_thread(_do_delete_all)
+    else:
+        def _do_delete_all_local():
+            deleted = 0
+            if MATERIALS_DIR.exists():
+                for f in MATERIALS_DIR.iterdir():
+                    if f.is_file() and not f.name.startswith("."):
+                        f.unlink()
+                        deleted += 1
+            return deleted
+        
+        deleted = await asyncio.to_thread(_do_delete_all_local)
 
     return JSONResponse({"deleted": deleted, "message": f"Deleted {deleted} files"})
 

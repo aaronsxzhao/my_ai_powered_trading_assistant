@@ -301,7 +301,7 @@ async def bulk_analysis(request):
                 summary += f" Notes: {t.notes[:100]}"
             trade_summaries.append(summary)
 
-        system_prompt = """You are an expert Al Brooks price action trading coach analyzing a trader's recent performance.
+        system_prompt = """You are an expert price action trading coach analyzing a trader's recent performance.
 
 Analyze the provided trades and identify:
 1. PATTERNS: Recurring patterns in wins and losses
@@ -310,7 +310,7 @@ Analyze the provided trades and identify:
 4. RECOMMENDATIONS: Specific, actionable advice
 5. STRATEGY ANALYSIS: Which strategies are working and which aren't
 
-Be specific, use Brooks terminology, and provide actionable insights.
+Be specific, use trading terminology, and provide actionable insights.
 
 Respond in JSON format:
 {

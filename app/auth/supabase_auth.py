@@ -9,6 +9,7 @@ Handles user authentication via Supabase Auth, including:
 - Session management
 """
 
+import asyncio
 import logging
 import os
 from dataclasses import dataclass
@@ -68,7 +69,7 @@ async def sign_up(
     Raises:
         HTTPException if registration fails
     """
-    try:
+    def _do_sign_up():
         supabase = _get_supabase()
         
         # Sign up with metadata
@@ -76,11 +77,14 @@ async def sign_up(
         if name:
             options["data"] = {"name": name}
         
-        result = supabase.auth.sign_up({
+        return supabase.auth.sign_up({
             "email": email,
             "password": password,
             "options": options
         })
+    
+    try:
+        result = await asyncio.to_thread(_do_sign_up)
         
         if result.user is None:
             raise HTTPException(
@@ -150,13 +154,24 @@ async def sign_in(email: str, password: str) -> dict:
     Raises:
         HTTPException if login fails
     """
-    try:
+    def _do_sign_in():
         supabase = _get_supabase()
-        
-        result = supabase.auth.sign_in_with_password({
+        return supabase.auth.sign_in_with_password({
             "email": email,
             "password": password
         })
+    
+    def _update_last_login(user_id: str):
+        try:
+            service = _get_service_client()
+            service.table("profiles").update({
+                "last_login": datetime.utcnow().isoformat()
+            }).eq("id", user_id).execute()
+        except Exception as e:
+            logger.warning(f"Failed to update last_login: {e}")
+    
+    try:
+        result = await asyncio.to_thread(_do_sign_in)
         
         if result.user is None or result.session is None:
             raise HTTPException(
@@ -164,14 +179,10 @@ async def sign_in(email: str, password: str) -> dict:
                 detail="Invalid email or password."
             )
         
-        # Update last login in profiles table
-        try:
-            service = _get_service_client()
-            service.table("profiles").update({
-                "last_login": datetime.utcnow().isoformat()
-            }).eq("id", str(result.user.id)).execute()
-        except Exception as e:
-            logger.warning(f"Failed to update last_login: {e}")
+        # Update last login in profiles table (non-blocking)
+        asyncio.get_event_loop().run_in_executor(
+            None, _update_last_login, str(result.user.id)
+        )
         
         # Safely extract expires_at (handle both int and string formats)
         expires_at = result.session.expires_at
@@ -221,13 +232,16 @@ async def sign_out(access_token: str) -> bool:
     Returns:
         True if successful
     """
-    try:
-        supabase = _get_supabase()
-        supabase.auth.sign_out()
-        return True
-    except Exception as e:
-        logger.warning(f"Sign out error: {e}")
-        return True  # Still return True - user is effectively signed out
+    def _do_sign_out():
+        try:
+            supabase = _get_supabase()
+            supabase.auth.sign_out()
+            return True
+        except Exception as e:
+            logger.warning(f"Sign out error: {e}")
+            return True  # Still return True - user is effectively signed out
+    
+    return await asyncio.to_thread(_do_sign_out)
 
 
 async def get_user_from_token(access_token: str) -> Optional[SupabaseUser]:
@@ -240,18 +254,21 @@ async def get_user_from_token(access_token: str) -> Optional[SupabaseUser]:
     if not access_token:
         return None
     
-    try:
-        supabase = _get_supabase()
-        result = supabase.auth.get_user(access_token)
-        
-        if result.user is None:
+    def _do_get_user():
+        try:
+            supabase = _get_supabase()
+            result = supabase.auth.get_user(access_token)
+            
+            if result.user is None:
+                return None
+            
+            return _parse_user(result.user)
+            
+        except Exception as e:
+            logger.debug(f"Token validation failed: {e}")
             return None
-        
-        return _parse_user(result.user)
-        
-    except Exception as e:
-        logger.debug(f"Token validation failed: {e}")
-        return None
+    
+    return await asyncio.to_thread(_do_get_user)
 
 
 async def get_user_by_id(user_id: str) -> Optional[SupabaseUser]:
@@ -261,18 +278,21 @@ async def get_user_by_id(user_id: str) -> Optional[SupabaseUser]:
     Returns:
         SupabaseUser if found, None otherwise
     """
-    try:
-        service = _get_service_client()
-        result = service.auth.admin.get_user_by_id(user_id)
-        
-        if result.user is None:
+    def _do_get_user():
+        try:
+            service = _get_service_client()
+            result = service.auth.admin.get_user_by_id(user_id)
+            
+            if result.user is None:
+                return None
+            
+            return _parse_user(result.user)
+            
+        except Exception as e:
+            logger.error(f"Failed to get user by ID: {e}")
             return None
-        
-        return _parse_user(result.user)
-        
-    except Exception as e:
-        logger.error(f"Failed to get user by ID: {e}")
-        return None
+    
+    return await asyncio.to_thread(_do_get_user)
 
 
 async def reset_password_request(email: str) -> bool:
@@ -282,25 +302,28 @@ async def reset_password_request(email: str) -> bool:
     Returns:
         True if email was sent (or would be sent)
     """
-    try:
-        supabase = _get_supabase()
-        
-        # Get redirect URL from environment
-        app_url = os.getenv("APP_URL", "http://localhost:8000")
-        redirect_url = f"{app_url}/auth/reset-password"
-        
-        supabase.auth.reset_password_email(
-            email,
-            options={"redirect_to": redirect_url}
-        )
-        
-        logger.info(f"Password reset email requested for: {email}")
-        return True
-        
-    except Exception as e:
-        logger.warning(f"Password reset request failed: {e}")
-        # Don't reveal if email exists
-        return True
+    def _do_reset():
+        try:
+            supabase = _get_supabase()
+            
+            # Get redirect URL from environment
+            app_url = os.getenv("APP_URL", "http://localhost:8000")
+            redirect_url = f"{app_url}/auth/reset-password"
+            
+            supabase.auth.reset_password_email(
+                email,
+                options={"redirect_to": redirect_url}
+            )
+            
+            logger.info(f"Password reset email requested for: {email}")
+            return True
+            
+        except Exception as e:
+            logger.warning(f"Password reset request failed: {e}")
+            # Don't reveal if email exists
+            return True
+    
+    return await asyncio.to_thread(_do_reset)
 
 
 async def update_password(access_token: str, new_password: str) -> bool:
@@ -310,7 +333,7 @@ async def update_password(access_token: str, new_password: str) -> bool:
     Returns:
         True if password was updated
     """
-    try:
+    def _do_update():
         supabase = _get_supabase()
         
         # Set session first
@@ -325,7 +348,9 @@ async def update_password(access_token: str, new_password: str) -> bool:
             logger.info(f"Password updated for user: {result.user.email}")
             return True
         return False
-        
+    
+    try:
+        return await asyncio.to_thread(_do_update)
     except Exception as e:
         logger.error(f"Password update failed: {e}")
         raise HTTPException(
@@ -341,30 +366,32 @@ async def refresh_session(refresh_token: str) -> Optional[dict]:
     Returns:
         New session dict or None if refresh failed
     """
-    try:
-        supabase = _get_supabase()
-        result = supabase.auth.refresh_session(refresh_token)
-        
-        if result.session is None:
+    def _do_refresh():
+        try:
+            supabase = _get_supabase()
+            result = supabase.auth.refresh_session(refresh_token)
+            
+            if result.session is None:
+                return None
+            
+            # Safely extract expires_at (handle both int and string formats)
+            expires_at = result.session.expires_at
+            if isinstance(expires_at, str):
+                try:
+                    expires_at = int(expires_at)
+                except (ValueError, TypeError):
+                    expires_at = None
+            
+            return {
+                "access_token": result.session.access_token,
+                "refresh_token": result.session.refresh_token,
+                "expires_at": expires_at
+            }
+        except Exception as e:
+            logger.debug(f"Session refresh failed: {e}")
             return None
-        
-        # Safely extract expires_at (handle both int and string formats)
-        expires_at = result.session.expires_at
-        if isinstance(expires_at, str):
-            try:
-                expires_at = int(expires_at)
-            except (ValueError, TypeError):
-                expires_at = None
-        
-        return {
-            "access_token": result.session.access_token,
-            "refresh_token": result.session.refresh_token,
-            "expires_at": expires_at
-        }
-        
-    except Exception as e:
-        logger.debug(f"Session refresh failed: {e}")
-        return None
+    
+    return await asyncio.to_thread(_do_refresh)
 
 
 async def get_current_user(request: Request) -> SupabaseUser:
