@@ -354,3 +354,22 @@ def get_app_api_key() -> str | None:
 def is_auth_enabled() -> bool:
     """Check if API key authentication is enabled."""
     return get_app_api_key() is not None
+
+
+def is_production() -> bool:
+    """
+    Check if running in production (on Render).
+    
+    Render automatically sets RENDER=true in the environment.
+    You can also manually set ENVIRONMENT=production.
+    """
+    if os.getenv("RENDER", "").lower() == "true":
+        return True
+    if os.getenv("ENVIRONMENT", "").lower() == "production":
+        return True
+    return False
+
+
+def is_local_development() -> bool:
+    """Check if running in local development mode."""
+    return not is_production()

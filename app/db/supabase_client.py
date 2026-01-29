@@ -38,8 +38,26 @@ def get_supabase_service_key() -> Optional[str]:
 
 
 def is_supabase_configured() -> bool:
-    """Check if Supabase is properly configured."""
+    """
+    Check if Supabase is properly configured.
+    
+    Returns True only if:
+    - Running on Render (production), OR
+    - FORCE_SUPABASE=true is set (for local testing with Supabase)
+    
+    AND the required environment variables are set.
+    """
     try:
+        # Check if we should use Supabase
+        is_render = os.getenv("RENDER", "").lower() == "true"
+        is_production = os.getenv("ENVIRONMENT", "").lower() == "production"
+        force_supabase = os.getenv("FORCE_SUPABASE", "").lower() == "true"
+        
+        # Only use Supabase in production or when explicitly forced
+        if not (is_render or is_production or force_supabase):
+            return False
+        
+        # Check if credentials are available
         url = os.getenv("SUPABASE_URL", "").strip()
         key = os.getenv("SUPABASE_ANON_KEY", "").strip()
         return bool(url and key)
