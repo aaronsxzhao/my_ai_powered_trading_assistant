@@ -159,7 +159,13 @@ class LLMAnalyzer:
                 max_tokens=max_tokens,
                 temperature=temperature,
             )
-            return response.choices[0].message.content
+            # Safely access response content
+            if response and response.choices and len(response.choices) > 0:
+                choice = response.choices[0]
+                if choice and choice.message:
+                    return choice.message.content
+            logger.error("LLM returned empty or malformed response")
+            return None
         except Exception as e:
             error_str = str(e)
             if "401" in error_str or "Unauthorized" in error_str or "token" in error_str.lower():

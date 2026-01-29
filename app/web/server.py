@@ -28,6 +28,7 @@ from app.config import (
 )
 from app.config_prompts import get_cache_settings
 from app.journal.analytics import TradeAnalytics
+from sqlalchemy.orm import joinedload
 from app.journal.models import Strategy, Trade, TradeOutcome, get_session, init_db
 from app.logging_utils import install_log_safety
 from app.web.dependencies import require_login
@@ -294,9 +295,9 @@ async def trades_page(
             # Ensure page is within bounds
             actual_page = min(page_num, total_pages)
 
-            # Get paginated trades
+            # Get paginated trades with eager loading of strategy relationship
             offset = (actual_page - 1) * per_page_num
-            trades = query.order_by(Trade.trade_number.desc()).offset(offset).limit(per_page_num).all()
+            trades = query.options(joinedload(Trade.strategy)).order_by(Trade.trade_number.desc()).offset(offset).limit(per_page_num).all()
 
             strategies = get_active_strategies_cached(session)
 
