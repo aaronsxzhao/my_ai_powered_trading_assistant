@@ -101,6 +101,81 @@ async function deleteTrade(id) {
 }
 
 
+// ==================== FILLS TOGGLE ====================
+
+/**
+ * Track which fills rows are expanded
+ */
+const expandedFills = new Set();
+
+/**
+ * Toggle the visibility of fills for a trade (desktop view)
+ * @param {number} tradeId - The trade ID
+ * @param {number} fillCount - Number of fills (for display)
+ */
+function toggleFills(tradeId, fillCount) {
+    const fillsRow = document.getElementById(`fills-row-${tradeId}`);
+    const toggleBtn = document.getElementById(`fills-toggle-${tradeId}`);
+    
+    if (!fillsRow) {
+        console.warn(`Fills row not found for trade ${tradeId}`);
+        return;
+    }
+    
+    const isExpanded = !fillsRow.classList.contains('hidden');
+    
+    if (isExpanded) {
+        // Collapse
+        fillsRow.classList.add('hidden');
+        expandedFills.delete(tradeId);
+        if (toggleBtn) {
+            const chevron = toggleBtn.querySelector('.fills-chevron');
+            if (chevron) chevron.style.transform = 'rotate(0deg)';
+        }
+    } else {
+        // Expand
+        fillsRow.classList.remove('hidden');
+        expandedFills.add(tradeId);
+        if (toggleBtn) {
+            const chevron = toggleBtn.querySelector('.fills-chevron');
+            if (chevron) chevron.style.transform = 'rotate(90deg)';
+        }
+    }
+}
+
+/**
+ * Toggle the visibility of fills for a trade (mobile view)
+ * @param {number} tradeId - The trade ID
+ */
+function toggleMobileFills(tradeId) {
+    const fillsSection = document.getElementById(`mobile-fills-${tradeId}`);
+    const toggleBtn = document.getElementById(`mobile-fills-toggle-${tradeId}`);
+    
+    if (!fillsSection) {
+        console.warn(`Mobile fills section not found for trade ${tradeId}`);
+        return;
+    }
+    
+    const isExpanded = !fillsSection.classList.contains('hidden');
+    
+    if (isExpanded) {
+        // Collapse
+        fillsSection.classList.add('hidden');
+        if (toggleBtn) {
+            const chevron = toggleBtn.querySelector('.mobile-fills-chevron');
+            if (chevron) chevron.style.transform = 'rotate(0deg)';
+        }
+    } else {
+        // Expand
+        fillsSection.classList.remove('hidden');
+        if (toggleBtn) {
+            const chevron = toggleBtn.querySelector('.mobile-fills-chevron');
+            if (chevron) chevron.style.transform = 'rotate(90deg)';
+        }
+    }
+}
+
+
 // ==================== BULK OPERATIONS ====================
 
 /**

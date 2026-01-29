@@ -50,6 +50,8 @@ class IBKRTradeFill:
     currency: str = "USD"
     commission: float | None = None
     asset_category: str | None = None
+    exchange: str | None = None
+    execution_id: str | None = None  # IBKR IBExecID for deduplication
 
 
 def get_ibkr_flex_token() -> str | None:
@@ -324,7 +326,7 @@ def extract_trade_fills_from_statement(
     return fills
 
 
-def aggregate_fills_to_round_trips(fills: list[IBKRTradeFill]) -> list[dict]:
+def aggregate_fills_to_round_trips(fills: list[IBKRTradeFill], *, include_fills: bool = False) -> list[dict]:
     """
     Convert fills into round-trip trades.
 
@@ -332,6 +334,14 @@ def aggregate_fills_to_round_trips(fills: list[IBKRTradeFill]) -> list[dict]:
     - Track position per symbol.
     - When a position returns to 0, emit one aggregated trade record.
     - If a fill *crosses* through 0 (reversal), split it into close + new-open.
+    
+    Args:
+        fills: List of execution fills
+        include_fills: If True, include the fills list in each trade dict under "fills" key
+    
+    Returns:
+        List of trade dicts. If include_fills=True, each trade includes a "fills" key
+        with the list of IBKRTradeFill objects that make up the trade.
     """
 
     def vwap(fs: list[IBKRTradeFill]) -> float:
@@ -384,19 +394,23 @@ def aggregate_fills_to_round_trips(fills: list[IBKRTradeFill]) -> list[dict]:
                     has_fee = True
                     fees += abs(float(f.commission))
 
-            trades.append(
-                {
-                    "ticker": symbol,
-                    "direction": direction,
-                    "entry_price": entry_price,
-                    "exit_price": exit_price,
-                    "size": entry_qty,
-                    "entry_time": min(f.time for f in entry_fills),
-                    "exit_time": max(f.time for f in exit_fills),
-                    "currency": opening.currency or "USD",
-                    "fees": fees if has_fee else None,
-                }
-            )
+            trade_dict = {
+                "ticker": symbol,
+                "direction": direction,
+                "entry_price": entry_price,
+                "exit_price": exit_price,
+                "size": entry_qty,
+                "entry_time": min(f.time for f in entry_fills),
+                "exit_time": max(f.time for f in exit_fills),
+                "currency": opening.currency or "USD",
+                "fees": fees if has_fee else None,
+            }
+            
+            # Include fills if requested
+            if include_fills:
+                trade_dict["fills"] = list(pending_fills)
+            
+            trades.append(trade_dict)
 
         for fill in fs_sorted:
             signed = fill.quantity if fill.side == "buy" else -fill.quantity
@@ -417,6 +431,8 @@ def aggregate_fills_to_round_trips(fills: list[IBKRTradeFill]) -> list[dict]:
                         currency=fill.currency,
                         commission=fill.commission,
                         asset_category=fill.asset_category,
+                        exchange=fill.exchange,
+                        execution_id=fill.execution_id,
                     )
                     pending.append(close_fill)
                     position = 0.0
@@ -433,6 +449,8 @@ def aggregate_fills_to_round_trips(fills: list[IBKRTradeFill]) -> list[dict]:
                         currency=fill.currency,
                         commission=fill.commission,
                         asset_category=fill.asset_category,
+                        exchange=fill.exchange,
+                        execution_id=fill.execution_id,
                     )
                     pending.append(open_fill)
                     position = open_fill.quantity if open_fill.side == "buy" else -open_fill.quantity

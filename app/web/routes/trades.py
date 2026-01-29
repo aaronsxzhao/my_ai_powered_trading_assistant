@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from app.config_prompts import get_cache_settings
 from app.journal.coach import TradeCoach
 from app.journal.ingest import TradeIngester
-from app.journal.models import Strategy, Trade, TradeDirection, TradeOutcome, get_session
+from app.journal.models import Strategy, Trade, TradeFill, TradeDirection, TradeOutcome, get_session
 from app.web.dependencies import (
     get_user_from_request,
     require_auth,
@@ -1265,6 +1265,53 @@ def _normalize_ticker_with_exchange(ticker: str) -> str:
 
     # US stocks and others - no prefix needed
     return ticker
+
+
+@router.get("/{trade_id}/fills")
+async def get_trade_fills(trade_id: int, request: Request):
+    """
+    Get individual fills/executions for a trade.
+    
+    Returns list of fills that make up this round-trip trade.
+    Each fill represents one execution from the broker.
+    """
+    session = get_session()
+    try:
+        # Verify trade exists and user has access
+        trade, _ = await verify_trade_ownership(trade_id, request, session)
+        
+        # Get fills for this trade
+        fills = session.query(TradeFill).filter(
+            TradeFill.trade_id == trade_id
+        ).order_by(TradeFill.fill_time).all()
+        
+        fills_data = []
+        for fill in fills:
+            fills_data.append({
+                "id": fill.id,
+                "symbol": fill.symbol,
+                "fill_time": fill.fill_time.isoformat() if fill.fill_time else None,
+                "side": fill.side,
+                "quantity": fill.quantity,
+                "price": fill.price,
+                "commission": fill.commission,
+                "exchange": fill.exchange,
+                "execution_id": fill.execution_id,
+            })
+        
+        return JSONResponse({
+            "success": True,
+            "trade_id": trade_id,
+            "fill_count": len(fills_data),
+            "fills": fills_data,
+        })
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching trade fills: {e}")
+        return JSONResponse({"success": False, "error": str(e)})
+    finally:
+        session.close()
 
 
 @router.delete("/{trade_id}", dependencies=[require_auth])

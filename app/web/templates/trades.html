@@ -61,11 +61,13 @@
         <!-- Legend -->
         <div class="flex items-center justify-between px-4 py-2 border-b border-dark-700/50 text-sm">
             <div class="flex items-center gap-4 text-dark-400">
-                <span class="flex items-center gap-1">
-                    <span class="text-accent-400">🤖</span> AI Reviewed
+                <span class="flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-accent-400 shadow-[0_0_6px_rgba(99,102,241,0.5)]"></span>
+                    <span>AI Reviewed</span>
                 </span>
-                <span class="flex items-center gap-1">
-                    <span class="text-dark-600">○</span> Pending Review
+                <span class="flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-dark-600 border border-dark-500"></span>
+                    <span>Pending</span>
                 </span>
             </div>
             <span class="text-dark-500">
@@ -76,40 +78,85 @@
         <!-- Mobile Card View (visible on small screens) -->
         <div class="md:hidden space-y-3 p-4">
             {% for trade in trades %}
-            <a href="/trades/{{ trade.id }}" 
-               class="block bg-dark-700/30 rounded-xl p-4 hover:bg-dark-700/50 transition-all border border-dark-600/30">
-                <div class="flex justify-between items-start mb-2">
-                    <div class="flex items-center gap-2">
-                        <span class="text-lg font-bold {% if trade.direction.value == 'long' %}text-success-400{% else %}text-danger-400{% endif %}">
-                            {% if trade.direction.value == 'long' %}▲{% else %}▼{% endif %}
-                            {{ trade.ticker | ticker_display }}
-                        </span>
-                        {% if trade.cached_review %}
-                        <span class="text-accent-400 text-sm">🤖</span>
-                        {% endif %}
-                    </div>
-                    <div class="text-right">
-                        <div class="text-lg font-bold {% if trade.r_multiple and trade.r_multiple >= 0 %}positive{% else %}negative{% endif %}">
-                            {% if trade.r_multiple %}{{ "%.2f"|format(trade.r_multiple) }}R{% else %}--{% endif %}
-                        </div>
-                        <div class="text-xs text-dark-500">
-                            {% if trade.pnl_usd %}${{ "%.0f"|format(trade.pnl_usd) }}{% endif %}
-                        </div>
-                    </div>
-                </div>
-                <div class="flex justify-between text-sm text-dark-400">
-                    <span>{{ trade.exit_time.strftime('%m/%d %H:%M') if trade.exit_time else trade.trade_date }}</span>
-                    <span class="px-2 py-0.5 rounded text-xs
-                        {% if trade.outcome and trade.outcome.value == 'win' %}bg-success-500/20 text-success-400
-                        {% elif trade.outcome and trade.outcome.value == 'loss' %}bg-danger-500/20 text-danger-400
-                        {% else %}bg-dark-600 text-dark-300{% endif %}">
-                        {{ trade.outcome.value | upper if trade.outcome else 'BE' }}
-                    </span>
-                </div>
-                {% if trade.strategy %}
-                <div class="mt-2 text-xs text-dark-500">{{ trade.strategy.name }}</div>
+            <div class="bg-dark-700/30 rounded-xl border border-dark-600/30 overflow-hidden relative">
+                <!-- AI Review indicator dot -->
+                {% if trade.cached_review %}
+                <div class="absolute top-3 right-3 w-2 h-2 rounded-full bg-accent-400 shadow-[0_0_6px_rgba(99,102,241,0.5)]" 
+                     title="AI Reviewed on {{ trade.review_generated_at.strftime('%Y-%m-%d') if trade.review_generated_at else 'reviewed' }}"></div>
                 {% endif %}
-            </a>
+                
+                <a href="/trades/{{ trade.id }}" 
+                   class="block p-4 hover:bg-dark-700/50 transition-all">
+                    <div class="flex justify-between items-start mb-2">
+                        <div class="flex items-center gap-2">
+                            <!-- Trade ID badge -->
+                            <span class="text-[10px] font-mono text-dark-500 bg-dark-800/80 px-1.5 py-0.5 rounded">#{{ trade.trade_number or trade.id }}</span>
+                            <span class="text-lg font-bold {% if trade.direction.value == 'long' %}text-success-400{% else %}text-danger-400{% endif %}">
+                                {% if trade.direction.value == 'long' %}▲{% else %}▼{% endif %}
+                                {{ trade.ticker | ticker_display }}
+                            </span>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-lg font-bold {% if trade.r_multiple and trade.r_multiple >= 0 %}positive{% else %}negative{% endif %}">
+                                {% if trade.r_multiple %}{{ "%.2f"|format(trade.r_multiple) }}R{% else %}--{% endif %}
+                            </div>
+                            <div class="text-xs text-dark-500">
+                                {% if trade.pnl_usd %}${{ "%.0f"|format(trade.pnl_usd) }}{% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex justify-between text-sm text-dark-400">
+                        <span>{{ trade.exit_time.strftime('%m/%d %H:%M') if trade.exit_time else trade.trade_date }}</span>
+                        <span class="px-2 py-0.5 rounded text-xs
+                            {% if trade.outcome and trade.outcome.value == 'win' %}bg-success-500/20 text-success-400
+                            {% elif trade.outcome and trade.outcome.value == 'loss' %}bg-danger-500/20 text-danger-400
+                            {% else %}bg-dark-600 text-dark-300{% endif %}">
+                            {{ trade.outcome.value | upper if trade.outcome else 'BE' }}
+                        </span>
+                    </div>
+                    {% if trade.strategy %}
+                    <div class="mt-2 text-xs text-dark-500">{{ trade.strategy.name }}</div>
+                    {% endif %}
+                </a>
+                
+                <!-- Mobile fills section -->
+                {% if trade.fills and trade.fills|length > 0 %}
+                <div class="border-t border-dark-600/30">
+                    <button type="button"
+                            onclick="event.stopPropagation(); toggleMobileFills({{ trade.id }})" 
+                            class="w-full px-4 py-2.5 flex items-center text-sm hover:bg-dark-700/50 transition-colors"
+                            id="mobile-fills-toggle-{{ trade.id }}">
+                        <span class="flex items-center gap-2">
+                            <svg class="w-4 h-4 text-accent-400 transition-transform duration-200 mobile-fills-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                <path d="M9 5l7 7-7 7"/>
+                            </svg>
+                            <span class="text-dark-300">View fills</span>
+                        </span>
+                    </button>
+                    <div id="mobile-fills-{{ trade.id }}" class="hidden px-4 pb-3">
+                        <div class="space-y-2">
+                            {% for fill in trade.fills %}
+                            <div class="flex justify-between items-center text-xs bg-dark-800/50 rounded-lg p-2.5">
+                                <div class="flex items-center gap-2">
+                                    {% if fill.side == 'buy' %}
+                                    <span class="w-11 text-center text-success-400 font-semibold bg-success-500/10 px-1.5 py-0.5 rounded">BUY</span>
+                                    {% else %}
+                                    <span class="w-11 text-center text-danger-400 font-semibold bg-danger-500/10 px-1.5 py-0.5 rounded">SELL</span>
+                                    {% endif %}
+                                    <span class="text-white font-mono">{{ "%.0f"|format(fill.quantity) }}</span>
+                                    <span class="text-dark-500">@</span>
+                                    <span class="text-white font-mono">${{ "%.2f"|format(fill.price) }}</span>
+                                </div>
+                                <div class="text-dark-500 font-mono text-[11px]">
+                                    {{ fill.fill_time.strftime('%H:%M:%S') if fill.fill_time else '' }}
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
             {% endfor %}
         </div>
 
@@ -118,7 +165,8 @@
             <table class="table-modern">
                 <thead>
                     <tr>
-                        <th class="rounded-tl-xl">ID</th>
+                        <th class="rounded-tl-xl w-8"></th>
+                        <th>ID</th>
                         <th>Exit Time</th>
                         <th>Ticker</th>
                         <th>Dir</th>
@@ -135,16 +183,33 @@
                 </thead>
                 <tbody>
                     {% for trade in trades %}
-                    <tr class="group {% if not trade.cached_review %}bg-dark-800/30{% endif %}">
-                        <td class="text-dark-500 text-sm">
-                            <span class="flex items-center gap-1">
-                                #{{ trade.trade_number or trade.id }}
+                    <tr class="group {% if not trade.cached_review %}bg-dark-800/30{% endif %}" id="trade-row-{{ trade.id }}">
+                        <!-- Expand button column -->
+                        <td class="!pr-0 !pl-2">
+                            {% if trade.fills and trade.fills|length > 0 %}
+                            <button type="button" 
+                                    onclick="event.stopPropagation(); toggleFills({{ trade.id }}, {{ trade.fills|length }})" 
+                                    class="text-accent-400 hover:text-accent-300 transition-all" 
+                                    title="View fills"
+                                    id="fills-toggle-{{ trade.id }}">
+                                <svg class="w-4 h-4 transition-transform duration-200 fills-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                    <path d="M9 5l7 7-7 7"/>
+                                </svg>
+                            </button>
+                            {% endif %}
+                        </td>
+                        <!-- Trade ID with AI review indicator -->
+                        <td class="!pl-1">
+                            <div class="flex items-center gap-2">
+                                <span class="text-dark-400 text-sm font-mono">#{{ trade.trade_number or trade.id }}</span>
                                 {% if trade.cached_review and trade.review_generated_at %}
-                                <span class="text-accent-400 text-xs" title="AI Reviewed on {{ trade.review_generated_at.strftime('%Y-%m-%d %H:%M') }}">🤖</span>
+                                <span class="w-2 h-2 rounded-full bg-accent-400 shadow-[0_0_6px_rgba(99,102,241,0.5)]" 
+                                      title="AI Reviewed on {{ trade.review_generated_at.strftime('%Y-%m-%d %H:%M') }}"></span>
                                 {% else %}
-                                <span class="text-dark-600 text-xs" title="Not yet reviewed">○</span>
+                                <span class="w-2 h-2 rounded-full bg-dark-600 border border-dark-500 opacity-50" 
+                                      title="Not yet reviewed"></span>
                                 {% endif %}
-                            </span>
+                            </div>
                         </td>
                         <td class="text-sm font-mono text-dark-400">
                             {% if trade.exit_time %}
@@ -237,6 +302,50 @@
                             </div>
                         </td>
                     </tr>
+                    <!-- Fills row (hidden by default, shown when expanded) -->
+                    {% if trade.fills and trade.fills|length > 0 %}
+                    <tr id="fills-row-{{ trade.id }}" class="hidden bg-dark-800/50">
+                        <td colspan="14" class="p-0">
+                            <div class="px-6 py-3 border-l-4 border-accent-500/50">
+                                <div class="text-xs text-dark-400 mb-2 font-semibold">Individual Fills/Executions</div>
+                                <table class="w-full text-sm">
+                                    <thead>
+                                        <tr class="text-dark-400 text-xs">
+                                            <th class="text-left py-1 px-2">Time</th>
+                                            <th class="text-left py-1 px-2">Side</th>
+                                            <th class="text-right py-1 px-2">Qty</th>
+                                            <th class="text-right py-1 px-2">Price</th>
+                                            <th class="text-right py-1 px-2">Commission</th>
+                                            <th class="text-left py-1 px-2">Exchange</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for fill in trade.fills %}
+                                        <tr class="border-t border-dark-700/50 hover:bg-dark-700/30">
+                                            <td class="py-1 px-2 font-mono text-dark-300">
+                                                {{ fill.fill_time.strftime('%m/%d %H:%M:%S') if fill.fill_time else '-' }}
+                                            </td>
+                                            <td class="py-1 px-2">
+                                                {% if fill.side == 'buy' %}
+                                                <span class="text-success-400 font-semibold">BUY</span>
+                                                {% else %}
+                                                <span class="text-danger-400 font-semibold">SELL</span>
+                                                {% endif %}
+                                            </td>
+                                            <td class="py-1 px-2 text-right font-mono text-white">{{ "%.0f"|format(fill.quantity) }}</td>
+                                            <td class="py-1 px-2 text-right font-mono text-white">${{ "%.4f"|format(fill.price) }}</td>
+                                            <td class="py-1 px-2 text-right font-mono text-dark-400">
+                                                {% if fill.commission %}${{ "%.2f"|format(fill.commission|abs) }}{% else %}-{% endif %}
+                                            </td>
+                                            <td class="py-1 px-2 text-dark-500">{{ fill.exchange or '-' }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endif %}
                     {% endfor %}
                 </tbody>
             </table>
@@ -431,5 +540,5 @@
 
 {% block scripts %}
 <!-- Trades page JavaScript -->
-<script src="/static/js/trades.js"></script>
+<script src="/static/js/trades.js?v=6"></script>
 {% endblock %}

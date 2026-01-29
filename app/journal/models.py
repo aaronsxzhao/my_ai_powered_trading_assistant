@@ -156,6 +156,41 @@ class Tag(Base):
         return f"<Tag(name='{self.name}')>"
 
 
+class TradeFill(Base):
+    """
+    Individual trade fill/execution record.
+    
+    Multiple fills can make up a single round-trip trade. For example:
+    - Buy 100 @ $50, Buy 50 @ $51, Sell 150 @ $55 = 3 fills → 1 trade
+    """
+
+    __tablename__ = "trade_fills"
+
+    id = Column(Integer, primary_key=True)
+    trade_id = Column(Integer, ForeignKey("trades.id", ondelete="CASCADE"), index=True)
+    
+    # Fill details
+    symbol = Column(String(50))
+    fill_time = Column(DateTime)
+    side = Column(String(10))  # "buy" or "sell"
+    quantity = Column(Float)
+    price = Column(Float)
+    commission = Column(Float, nullable=True)
+    
+    # Optional metadata from broker
+    exchange = Column(String(50), nullable=True)
+    execution_id = Column(String(100), nullable=True, index=True)  # IBKR IBExecID for deduplication
+    
+    # Timestamps
+    created_at = Column(DateTime, default=utc_now)
+
+    # Relationship to parent trade
+    trade = relationship("Trade", back_populates="fills")
+
+    def __repr__(self):
+        return f"<TradeFill(symbol='{self.symbol}', side='{self.side}', qty={self.quantity}, price={self.price})>"
+
+
 class Trade(Base):
     """Individual trade record."""
 
@@ -296,6 +331,9 @@ class Trade(Base):
 
     # Tags relationship
     tags = relationship("Tag", secondary=trade_tags, back_populates="trades")
+    
+    # Fills relationship - individual executions that make up this trade
+    fills = relationship("TradeFill", back_populates="trade", cascade="all, delete-orphan", order_by="TradeFill.fill_time")
 
     def __repr__(self):
         return f"<Trade(ticker='{self.ticker}', date='{self.trade_date}', direction='{self.direction.value}')>"
@@ -771,6 +809,32 @@ def init_db() -> None:
         except Exception:
             try:
                 conn.execute(text("ALTER TABLE trades ADD COLUMN user_id INTEGER"))
+                conn.commit()
+            except Exception:
+                pass
+
+        # Trade fills table for storing individual executions
+        try:
+            conn.execute(text("SELECT id FROM trade_fills LIMIT 1"))
+        except Exception:
+            try:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS trade_fills (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        trade_id INTEGER REFERENCES trades(id) ON DELETE CASCADE,
+                        symbol VARCHAR(50),
+                        fill_time DATETIME,
+                        side VARCHAR(10),
+                        quantity FLOAT,
+                        price FLOAT,
+                        commission FLOAT,
+                        exchange VARCHAR(50),
+                        execution_id VARCHAR(100),
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_trade_fills_trade_id ON trade_fills(trade_id)"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_trade_fills_execution_id ON trade_fills(execution_id)"))
                 conn.commit()
             except Exception:
                 pass

@@ -876,6 +876,8 @@ class TradeIngester:
                         "exit_time": exit_time,
                         "currency": currency,
                         "currency_rate": currency_rate,
+                        # Store individual orders as fills for the drawer UI
+                        "fills": list(pending_orders),
                     }
 
                     # Cross-validate against balance history if available
@@ -920,8 +922,11 @@ class TradeIngester:
         trades_data.sort(key=lambda x: x.get("entry_time") or x.get("exit_time") or datetime.min)
 
         # Import the matched trades
+        from app.journal.models import TradeFill, get_session as get_db_session
+        
         imported = 0
         duplicates_skipped = 0
+        fills_created = 0
         errors = 0
         error_messages = []
 
@@ -962,11 +967,73 @@ class TradeIngester:
                     market_timezone=market_tz,
                     input_timezone=input_timezone if input_timezone != market_tz else None,
                     user_id=user_id,
+                    skip_duplicates=True,
                 )
+                
+                # Get fills from trade data
+                trade_fills = trade_data.get("fills", [])
+                target_trade_id = None
+                
                 if trade:
                     imported += 1
+                    target_trade_id = trade.id
                 else:
+                    # Trade was duplicate - try to find it and add fills if missing
                     duplicates_skipped += 1
+                    if trade_fills:
+                        session = get_db_session()
+                        try:
+                            from app.journal.models import Trade as TradeModel, TradeDirection as TD
+                            direction_enum = TD.LONG if trade_data["direction"] == "long" else TD.SHORT
+                            existing_trade = session.query(TradeModel).filter(
+                                TradeModel.ticker == ticker.upper(),
+                                TradeModel.entry_time == entry_time,
+                                TradeModel.direction == direction_enum,
+                            ).first()
+                            
+                            if existing_trade:
+                                # Check if it already has fills
+                                existing_fill_count = session.query(TradeFill).filter(
+                                    TradeFill.trade_id == existing_trade.id
+                                ).count()
+                                
+                                if existing_fill_count == 0:
+                                    target_trade_id = existing_trade.id
+                        finally:
+                            session.close()
+                
+                # Create TradeFill records for this trade
+                if target_trade_id and trade_fills:
+                    session = get_db_session()
+                    try:
+                        for fill in trade_fills:
+                            # Convert fill time to market timezone
+                            fill_time = fill.get("time")
+                            if fill_time and input_timezone != market_tz:
+                                fill_time = convert_timezone(fill_time, input_timezone, market_tz)
+                            
+                            # Extract ticker without exchange prefix for fill symbol
+                            fill_symbol = ticker.split(":")[-1] if ":" in ticker else ticker
+                            
+                            trade_fill = TradeFill(
+                                trade_id=target_trade_id,
+                                symbol=fill_symbol,
+                                fill_time=fill_time,
+                                side=fill.get("side"),
+                                quantity=fill.get("qty"),
+                                price=fill.get("price"),
+                                commission=None,  # TradingView doesn't provide commission
+                                exchange=ticker.split(":")[0] if ":" in ticker else None,
+                                execution_id=None,  # TradingView doesn't provide execution IDs
+                            )
+                            session.add(trade_fill)
+                            fills_created += 1
+                        session.commit()
+                    except Exception as fill_err:
+                        session.rollback()
+                        error_messages.append(f"Fill error for {ticker}: {fill_err}")
+                    finally:
+                        session.close()
 
             except Exception as e:
                 errors += 1
@@ -976,11 +1043,14 @@ class TradeIngester:
                     raise
 
         logger.info(
-            f"TradingView import: {imported} trades created, {duplicates_skipped} duplicates skipped, {errors} errors, {unmatched_count} unmatched positions discarded"
+            f"TradingView import: {imported} trades created, {duplicates_skipped} duplicates skipped, {fills_created} fills, {errors} errors, {unmatched_count} unmatched positions discarded"
         )
 
         # Add summary message
-        summary = f"Processed {filled_count} filled orders → {imported} trades."
+        summary = f"Processed {filled_count} filled orders → {imported} trades"
+        if fills_created > 0:
+            summary += f" ({fills_created} fill records)"
+        summary += "."
         if duplicates_skipped:
             summary += f" {duplicates_skipped} duplicate(s) skipped."
         if rejected_count or cancelled_count:
@@ -1006,15 +1076,45 @@ class TradeIngester:
         user_id: Optional[int] = None,
     ) -> tuple[int, int, list[str]]:
         """
-        Import executions from an Interactive Brokers CSV export (Flex Query → Trades/Confirmations).
+        Import executions from an Interactive Brokers CSV export.
 
-        The CSV varies by Flex query fields, so this parser is best-effort:
-        - Requires at least Symbol, Quantity, and Trade Price (or equivalents)
+        Supports two formats:
+        1. Flex Query XML-to-CSV export (has LevelOfDetail column)
+        2. Activity Statement CSV download (direct trades export)
+
+        The parser:
+        - Detects and skips "MSG" rows at the top
+        - Filters for EXECUTION or ORDER level rows (ignores summaries)
+        - Parses DateTime in format "YYYYMMDD;HHMMSS" or other common formats
         - Uses a flat-to-flat accumulator to create "round-trip" trades
         """
         from app.data.ibkr_flex import IBKRTradeFill, aggregate_fills_to_round_trips
 
-        df = pd.read_csv(file_path)
+        # Read CSV, handling potential message rows at the top
+        # IBKR CSV often has MSG rows like: "MSG","Some message here"
+        with open(file_path, "r", encoding="utf-8-sig") as f:
+            lines = f.readlines()
+
+        # Find the header row (skip MSG rows)
+        header_idx = 0
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            # Check if this is a MSG row or other metadata row
+            if stripped.startswith('"MSG"') or stripped.startswith("MSG,"):
+                header_idx = i + 1
+                continue
+            # This should be the header row
+            header_idx = i
+            break
+
+        # Parse CSV from the header row onwards
+        from io import StringIO
+
+        csv_content = "".join(lines[header_idx:])
+        df = pd.read_csv(StringIO(csv_content))
+
         if df.empty:
             return 0, 0, ["No rows found in IBKR CSV"]
 
@@ -1029,16 +1129,20 @@ class TradeIngester:
                     return cols[c]
             return None
 
+        # Column detection
         symbol_col = pick("symbol", "ticker", "underlying", "contract")
         qty_col = pick("quantity", "qty", "trade_quantity", "shares")
-        price_col = pick("trade_price", "tradeprice", "price", "execution_price", "fill_price")
+        price_col = pick("tradeprice", "trade_price", "price", "execution_price", "fill_price")
         side_col = pick("buy_sell", "buysell", "side", "action")
-        dt_col = pick("date_time", "datetime", "trade_datetime", "trade_date_time", "date_time_et")
-        date_col = pick("trade_date", "date")
-        time_col = pick("trade_time", "time")
-        asset_col = pick("asset_category", "assetcategory", "asset_class", "assetclass")
-        currency_col = pick("currency",)
-        commission_col = pick("ib_commission", "ibcommission", "commission", "commissions")
+        dt_col = pick("datetime", "date_time", "trade_datetime", "trade_date_time", "date_time_et")
+        date_col = pick("tradedate", "trade_date", "date", "reportdate")
+        time_col = pick("tradetime", "trade_time", "time")
+        asset_col = pick("assetclass", "asset_class", "asset_category", "assetcategory")
+        currency_col = pick("currencyprimary", "currency")
+        commission_col = pick("ibcommission", "ib_commission", "commission", "commissions")
+        level_col = pick("levelofdetail", "level_of_detail", "level")
+        exchange_col = pick("exchange", "listing_exchange", "listingexchange")
+        exec_id_col = pick("ibexecid", "ib_exec_id", "execution_id", "execid", "exec_id")
 
         missing = [n for n, v in [("symbol", symbol_col), ("quantity", qty_col), ("price", price_col)] if not v]
         if missing:
@@ -1047,16 +1151,30 @@ class TradeIngester:
         fills: list[IBKRTradeFill] = []
         errors = 0
         messages: list[str] = []
+        skipped_summary = 0
+        skipped_other = 0
 
         for idx, row in df.iterrows():
             try:
+                # Filter by LevelOfDetail if column exists
+                # We only want EXECUTION level rows (actual fills), not summaries or order-level aggregates
+                if level_col:
+                    level = str(row.get(level_col, "")).strip().upper()
+                    if level != "EXECUTION":
+                        if level in {"ASSET_SUMMARY", "SYMBOL_SUMMARY"}:
+                            skipped_summary += 1
+                        else:
+                            skipped_other += 1
+                        continue
+
                 symbol = str(row.get(symbol_col, "")).strip()
                 if not symbol:
                     continue
 
+                # Filter by asset class (stocks only)
                 if asset_col:
                     asset = str(row.get(asset_col, "")).strip().upper()
-                    if asset and asset not in {"STK", "STOCK"}:
+                    if asset and asset not in {"STK", "STOCK", ""}:
                         # Skip non-stocks by default
                         continue
                 else:
@@ -1067,11 +1185,16 @@ class TradeIngester:
                 if pd.isna(qty_raw) or pd.isna(price_raw):
                     continue
 
-                qty_val = float(qty_raw)
-                price_val = float(price_raw)
+                try:
+                    qty_val = float(qty_raw)
+                    price_val = float(price_raw)
+                except (ValueError, TypeError):
+                    continue
+
                 if price_val <= 0 or qty_val == 0:
                     continue
 
+                # Determine buy/sell side
                 side = None
                 if side_col:
                     side_raw = str(row.get(side_col, "")).strip().lower()
@@ -1085,24 +1208,25 @@ class TradeIngester:
 
                 qty = abs(qty_val)
 
-                # Parse datetime
+                # Parse datetime - handle IBKR format "YYYYMMDD;HHMMSS"
                 dt = None
-                if dt_col and pd.notna(row.get(dt_col)):
-                    dt = pd.to_datetime(row.get(dt_col), errors="coerce")
-                elif date_col and pd.notna(row.get(date_col)):
-                    if time_col and pd.notna(row.get(time_col)):
-                        dt = pd.to_datetime(
-                            f"{row.get(date_col)} {row.get(time_col)}", errors="coerce"
-                        )
-                    else:
-                        dt = pd.to_datetime(row.get(date_col), errors="coerce")
 
-                if dt is None or pd.isna(dt):
-                    # No timestamp: skip row
+                # Try DateTime column first
+                if dt_col and pd.notna(row.get(dt_col)):
+                    dt_raw = str(row.get(dt_col)).strip()
+                    dt = self._parse_ibkr_datetime(dt_raw)
+
+                # Fallback to separate date + time columns
+                if dt is None and date_col and pd.notna(row.get(date_col)):
+                    date_raw = str(row.get(date_col)).strip()
+                    time_raw = str(row.get(time_col)).strip() if time_col and pd.notna(row.get(time_col)) else None
+                    dt = self._parse_ibkr_datetime(date_raw, time_raw)
+
+                if dt is None:
+                    # No valid timestamp: skip row
                     continue
 
-                dt_py = dt.to_pydatetime()
-                dt_py = dt_py.replace(tzinfo=None)
+                dt_py = dt.replace(tzinfo=None) if hasattr(dt, "replace") else dt
 
                 currency = (
                     str(row.get(currency_col)).strip().upper()
@@ -1114,8 +1238,18 @@ class TradeIngester:
                 if commission_col and pd.notna(row.get(commission_col)):
                     try:
                         commission = float(row.get(commission_col))
-                    except Exception:
+                    except (ValueError, TypeError):
                         commission = None
+
+                # Parse exchange
+                exchange = None
+                if exchange_col and pd.notna(row.get(exchange_col)):
+                    exchange = str(row.get(exchange_col)).strip() or None
+
+                # Parse execution ID for deduplication
+                execution_id = None
+                if exec_id_col and pd.notna(row.get(exec_id_col)):
+                    execution_id = str(row.get(exec_id_col)).strip() or None
 
                 fills.append(
                     IBKRTradeFill(
@@ -1127,6 +1261,8 @@ class TradeIngester:
                         currency=currency,
                         commission=commission,
                         asset_category=asset,
+                        exchange=exchange,
+                        execution_id=execution_id,
                     )
                 )
 
@@ -1137,14 +1273,23 @@ class TradeIngester:
                 if len(messages) < 25:
                     messages.append(f"Row {idx + 1}: {e}")
 
-        if not fills:
-            return 0, errors, ["No usable fills found in IBKR CSV"] + messages
+        if skipped_summary > 0:
+            messages.append(f"Skipped {skipped_summary} summary rows (ASSET_SUMMARY/SYMBOL_SUMMARY)")
 
-        trades_data = aggregate_fills_to_round_trips(fills)
+        if not fills:
+            return 0, errors, ["No usable execution fills found in IBKR CSV"] + messages
+
+        # Aggregate fills to round-trip trades, including fills for persistence
+        trades_data = aggregate_fills_to_round_trips(fills, include_fills=True)
         if not trades_data:
             return 0, errors, [f"Found {len(fills)} fills but no flat-to-flat trades detected"] + messages
 
+        from app.journal.models import TradeFill, get_session as get_db_session
+
         imported = 0
+        duplicates = 0
+        fills_created = 0
+        
         for t in trades_data:
             try:
                 ticker = str(t["ticker"]).strip()
@@ -1181,8 +1326,78 @@ class TradeIngester:
                     user_id=user_id,
                     skip_duplicates=True,
                 )
+                
+                # Get trade_fills from the aggregated data
+                trade_fills = t.get("fills", [])
+                target_trade_id = None
+                
                 if trade:
                     imported += 1
+                    target_trade_id = trade.id
+                else:
+                    # Trade was duplicate - try to find it and add fills if missing
+                    duplicates += 1
+                    if trade_fills:
+                        session = get_db_session()
+                        try:
+                            # Find the existing trade
+                            from app.journal.models import Trade as TradeModel, TradeDirection as TD
+                            direction_enum = TD.LONG if t["direction"] == "long" else TD.SHORT
+                            existing_trade = session.query(TradeModel).filter(
+                                TradeModel.ticker == ticker.upper(),
+                                TradeModel.entry_time == entry_time,
+                                TradeModel.direction == direction_enum,
+                            ).first()
+                            
+                            if existing_trade:
+                                # Check if it already has fills
+                                existing_fill_count = session.query(TradeFill).filter(
+                                    TradeFill.trade_id == existing_trade.id
+                                ).count()
+                                
+                                if existing_fill_count == 0:
+                                    target_trade_id = existing_trade.id
+                        finally:
+                            session.close()
+                
+                # Create TradeFill records for this trade (new or existing without fills)
+                if target_trade_id and trade_fills:
+                    session = get_db_session()
+                    try:
+                        for fill in trade_fills:
+                            # Check for duplicate execution_id
+                            if fill.execution_id:
+                                existing = session.query(TradeFill).filter(
+                                    TradeFill.execution_id == fill.execution_id
+                                ).first()
+                                if existing:
+                                    continue  # Skip duplicate fill
+                            
+                            # Convert fill time if needed
+                            fill_time = fill.time
+                            if fill_time and input_timezone and input_timezone != market_tz:
+                                fill_time = convert_timezone(fill_time, input_timezone, market_tz)
+                            
+                            trade_fill = TradeFill(
+                                trade_id=target_trade_id,
+                                symbol=fill.symbol,
+                                fill_time=fill_time,
+                                side=fill.side,
+                                quantity=fill.quantity,
+                                price=fill.price,
+                                commission=fill.commission,
+                                exchange=fill.exchange,
+                                execution_id=fill.execution_id,
+                            )
+                            session.add(trade_fill)
+                            fills_created += 1
+                        session.commit()
+                    except Exception as fill_err:
+                        session.rollback()
+                        if len(messages) < 50:
+                            messages.append(f"Fill error for {ticker}: {fill_err}")
+                    finally:
+                        session.close()
             except Exception as e:
                 errors += 1
                 if not skip_errors:
@@ -1190,8 +1405,82 @@ class TradeIngester:
                 if len(messages) < 50:
                     messages.append(f"Trade {t.get('ticker')}: {e}")
 
-        summary = f"IBKR CSV: {len(fills)} fills → {len(trades_data)} trades; imported {imported}, errors {errors}"
+        summary = f"IBKR CSV: {len(fills)} fills → {len(trades_data)} round-trip trades; imported {imported}"
+        if fills_created > 0:
+            summary += f" ({fills_created} fill records)"
+        if duplicates > 0:
+            summary += f", {duplicates} duplicates skipped"
+        if errors > 0:
+            summary += f", {errors} errors"
         return imported, errors, [summary] + messages
+
+    def _parse_ibkr_datetime(self, date_str: str, time_str: Optional[str] = None) -> Optional[datetime]:
+        """
+        Parse IBKR datetime formats.
+
+        Supports:
+        - "YYYYMMDD;HHMMSS" (e.g., "20260106;100229")
+        - "YYYYMMDD" alone
+        - "YYYY-MM-DD" with optional time
+        - ISO format
+        """
+        if not date_str:
+            return None
+
+        raw = date_str.strip()
+
+        # Handle combined format "YYYYMMDD;HHMMSS"
+        if ";" in raw and time_str is None:
+            parts = raw.split(";")
+            if len(parts) == 2:
+                raw, time_str = parts[0].strip(), parts[1].strip()
+
+        # Try ISO format first
+        if "T" in raw:
+            try:
+                return datetime.fromisoformat(raw.replace("Z", "+00:00")).replace(tzinfo=None)
+            except ValueError:
+                pass
+
+        # Normalize date: remove dashes
+        date_only = raw.replace("-", "")
+
+        # Handle date-only case (8 digits)
+        if len(date_only) == 8 and date_only.isdigit():
+            try:
+                d = datetime.strptime(date_only, "%Y%m%d")
+
+                # Add time if provided
+                if time_str:
+                    ts = time_str.strip()
+                    # Try HHMMSS (6 digits, no colons)
+                    if len(ts) == 6 and ts.isdigit():
+                        try:
+                            t = datetime.strptime(ts, "%H%M%S").time()
+                            return datetime.combine(d.date(), t)
+                        except ValueError:
+                            pass
+                    # Try HH:MM:SS
+                    for fmt in ("%H:%M:%S", "%H:%M"):
+                        try:
+                            t = datetime.strptime(ts, fmt).time()
+                            return datetime.combine(d.date(), t)
+                        except ValueError:
+                            continue
+
+                return d
+            except ValueError:
+                pass
+
+        # Try pandas as fallback
+        try:
+            result = pd.to_datetime(raw, errors="coerce")
+            if pd.notna(result):
+                return result.to_pydatetime().replace(tzinfo=None)
+        except Exception:
+            pass
+
+        return None
 
     def import_from_robinhood(
         self,

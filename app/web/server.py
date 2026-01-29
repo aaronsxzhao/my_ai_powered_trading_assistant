@@ -295,11 +295,20 @@ async def trades_page(
             # Ensure page is within bounds
             actual_page = min(page_num, total_pages)
 
-            # Get paginated trades with eager loading of strategy relationship
+            # Get paginated trades with eager loading of strategy and fills relationships
             offset = (actual_page - 1) * per_page_num
-            trades = query.options(joinedload(Trade.strategy)).order_by(Trade.trade_number.desc()).offset(offset).limit(per_page_num).all()
+            trades = query.options(
+                joinedload(Trade.strategy),
+                joinedload(Trade.fills)
+            ).order_by(Trade.trade_number.desc()).offset(offset).limit(per_page_num).all()
 
             strategies = get_active_strategies_cached(session)
+            
+            # Expunge trades so they remain usable after session closes
+            # This is needed because the template renders after the session is closed
+            # Note: strategies come from cache and aren't in this session
+            for trade in trades:
+                session.expunge(trade)
 
             return {
                 "trades": trades,
