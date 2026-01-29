@@ -730,7 +730,10 @@ def _fetch_chart_data_sync(
         # If intraday data is empty for old trades, try falling back to daily data
         if df.empty and timeframe != "1d":
             # Check if trade is older than 30 days (Yahoo only keeps ~30 days of intraday)
-            days_old = (datetime.now().date() - trade.trade_date).days
+            trade_date = trade.trade_date if hasattr(trade.trade_date, 'year') else trade.trade_date
+            if hasattr(trade_date, 'date'):
+                trade_date = trade_date.date()
+            days_old = (datetime.now().date() - trade_date).days
             if days_old > 30:
                 logger.info(
                     f"Trade is {days_old} days old, falling back to daily data for {trade.ticker}"
@@ -745,7 +748,8 @@ def _fetch_chart_data_sync(
 
         if df.empty:
             # Provide more helpful error message
-            days_old = (datetime.now().date() - trade.trade_date).days
+            trade_date_for_msg = trade.trade_date if not hasattr(trade.trade_date, 'date') else trade.trade_date.date()
+            days_old = (datetime.now().date() - trade_date_for_msg).days
             if days_old > 30:
                 error_msg = (
                     f"No data available for {trade.ticker}. "
@@ -935,7 +939,8 @@ def _fetch_chart_data_sync(
 
         timeframe_note = None
         if timeframe != original_timeframe:
-            days_old = (datetime.now().date() - trade.trade_date).days
+            trade_date_for_note = trade.trade_date if not hasattr(trade.trade_date, 'date') else trade.trade_date.date()
+            days_old = (datetime.now().date() - trade_date_for_note).days
             timeframe_note = (
                 f"Intraday data not available (trade is {days_old} days old). Showing daily chart."
             )
@@ -1126,12 +1131,20 @@ async def create_trade(
     strategy: str | None = Form(None),
     notes: str | None = Form(None),
     entry_reason: str | None = Form(None),
+    input_timezone: str | None = Form(None),  # User's timezone for time conversion
+    currency: str = Form("USD"),  # Currency of prices
+    currency_rate: float = Form(1.0),  # Exchange rate: 1 USD = X currency
 ):
     """Create a new trade."""
+    from app.journal.ingest import convert_timezone, get_market_timezone
+
     user = await get_user_from_request(request)
     user_id = user.id if user else None
 
     ingester = TradeIngester()
+
+    # Normalize ticker with exchange prefix if not already present
+    normalized_ticker = _normalize_ticker_with_exchange(ticker)
 
     parsed_entry_time = None
     parsed_exit_time = None
@@ -1164,7 +1177,19 @@ async def create_trade(
                 except ValueError:
                     parsed_exit_time = None
 
-    # Derive trade_date from exit_time, entry_time, or today
+    # Get market timezone based on ticker
+    market_tz = get_market_timezone(normalized_ticker)
+
+    # Convert times from user's input timezone to market timezone if different
+    if input_timezone and input_timezone != market_tz:
+        if parsed_entry_time:
+            parsed_entry_time = convert_timezone(parsed_entry_time, input_timezone, market_tz)
+            logger.debug(f"Converted entry time: {input_timezone} → {market_tz}")
+        if parsed_exit_time:
+            parsed_exit_time = convert_timezone(parsed_exit_time, input_timezone, market_tz)
+            logger.debug(f"Converted exit time: {input_timezone} → {market_tz}")
+
+    # Derive trade_date from exit_time (in market timezone), entry_time, or today
     if parsed_exit_time:
         parsed_date = parsed_exit_time.date()
     elif parsed_entry_time:
@@ -1173,7 +1198,7 @@ async def create_trade(
         parsed_date = date.today()
 
     trade = ingester.add_trade_manual(
-        ticker=ticker,
+        ticker=normalized_ticker,
         trade_date=parsed_date,
         direction=direction,
         entry_price=entry_price,
@@ -1187,10 +1212,59 @@ async def create_trade(
         strategy_name=strategy if strategy else None,
         notes=notes,
         entry_reason=entry_reason,
+        market_timezone=market_tz,
+        input_timezone=input_timezone if input_timezone and input_timezone != market_tz else None,
+        currency=currency,
+        currency_rate=currency_rate,
         user_id=user_id,
     )
 
     return RedirectResponse(url=f"/trades/{trade.id}", status_code=303)
+
+
+def _normalize_ticker_with_exchange(ticker: str) -> str:
+    """
+    Add exchange prefix to ticker if not already present.
+
+    Examples:
+        '0981' -> 'HKEX:0981' (4-5 digit HK stock)
+        '0700.HK' -> 'HKEX:0700'
+        'SPY' -> 'SPY' (US stocks don't need prefix)
+        'HKEX:0700' -> 'HKEX:0700' (already has prefix)
+    """
+    ticker = ticker.upper().strip()
+
+    # Already has exchange prefix
+    if ":" in ticker:
+        return ticker
+
+    # HK stocks: 0700.HK or pure 4-5 digit numbers
+    if ticker.endswith(".HK"):
+        clean = ticker.replace(".HK", "")
+        return f"HKEX:{clean}"
+    if len(ticker) >= 4 and len(ticker) <= 5 and ticker.isdigit():
+        return f"HKEX:{ticker}"
+
+    # China stocks
+    if ticker.endswith(".SS"):
+        clean = ticker.replace(".SS", "")
+        return f"SSE:{clean}"
+    if ticker.endswith(".SZ"):
+        clean = ticker.replace(".SZ", "")
+        return f"SZSE:{clean}"
+
+    # Japan stocks
+    if ticker.endswith(".T"):
+        clean = ticker.replace(".T", "")
+        return f"TSE:{clean}"
+
+    # UK stocks
+    if ticker.endswith(".L"):
+        clean = ticker.replace(".L", "")
+        return f"LSE:{clean}"
+
+    # US stocks and others - no prefix needed
+    return ticker
 
 
 @router.delete("/{trade_id}", dependencies=[require_auth])

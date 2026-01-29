@@ -109,7 +109,36 @@
                         </div>
                     </div>
                 </div>
-                <p class="text-xs text-dark-500 -mt-2">Times are in your local timezone</p>
+                
+                <!-- Your Timezone -->
+                <div>
+                    <label class="label">
+                        Your Timezone (times above are in)
+                        <span class="text-xs text-dark-500 ml-1">🌏</span>
+                    </label>
+                    <select name="input_timezone" id="input_timezone" class="select">
+                        <optgroup label="Americas">
+                            <option value="America/New_York" selected>Eastern Time (New York)</option>
+                            <option value="America/Chicago">Central Time (Chicago)</option>
+                            <option value="America/Denver">Mountain Time (Denver)</option>
+                            <option value="America/Los_Angeles">Pacific Time (Los Angeles)</option>
+                        </optgroup>
+                        <optgroup label="Asia">
+                            <option value="Asia/Shanghai">Beijing/Shanghai Time</option>
+                            <option value="Asia/Hong_Kong">Hong Kong Time</option>
+                            <option value="Asia/Tokyo">Tokyo Time</option>
+                            <option value="Asia/Singapore">Singapore Time</option>
+                        </optgroup>
+                        <optgroup label="Europe">
+                            <option value="Europe/London">London Time</option>
+                            <option value="Europe/Paris">Central European Time</option>
+                        </optgroup>
+                        <option value="UTC">UTC</option>
+                    </select>
+                    <p class="text-xs text-dark-500 mt-1">
+                        Times will be converted to market timezone based on ticker (e.g., SPY → Eastern, 0700.HK → HK)
+                    </p>
+                </div>
 
                 <div class="grid grid-cols-3 gap-4">
                     <!-- Direction -->
@@ -143,29 +172,57 @@
                     <!-- Entry -->
                     <div>
                         <label class="label">Entry Price *</label>
-                        <input type="number" name="entry_price" required 
-                            class="input" placeholder="100.00" step="0.01">
+                        <input type="number" name="entry_price" id="entry_price_input" required 
+                            class="input" placeholder="100.00" step="0.0001">
                     </div>
 
                     <!-- Exit -->
                     <div>
                         <label class="label">Exit Price *</label>
-                        <input type="number" name="exit_price" required 
-                            class="input" placeholder="102.00" step="0.01">
+                        <input type="number" name="exit_price" id="exit_price_input" required 
+                            class="input" placeholder="102.00" step="0.0001">
                     </div>
 
                     <!-- Stop -->
                     <div>
                         <label class="label">Stop Loss (SL)</label>
-                        <input type="number" name="stop_loss" 
-                            class="input" placeholder="98.00" step="0.01">
+                        <input type="number" name="stop_loss" id="stop_loss_input"
+                            class="input" placeholder="98.00" step="0.0001">
                     </div>
 
                     <!-- Take Profit -->
                     <div>
                         <label class="label">Take Profit (TP)</label>
-                        <input type="number" name="take_profit" 
-                            class="input" placeholder="105.00" step="0.01">
+                        <input type="number" name="take_profit" id="take_profit_input"
+                            class="input" placeholder="105.00" step="0.0001">
+                    </div>
+                </div>
+
+                <!-- Currency & Exchange Rate -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="label">Currency (prices are in)</label>
+                        <select name="currency" id="currency_select" class="select" onchange="onCurrencyChange()">
+                            <option value="USD">USD ($) - US Dollar</option>
+                            <option value="HKD">HKD (HK$) - Hong Kong Dollar</option>
+                            <option value="CNY">CNY (¥) - Chinese Yuan</option>
+                            <option value="JPY">JPY (¥) - Japanese Yen</option>
+                            <option value="GBP">GBP (£) - British Pound</option>
+                            <option value="EUR">EUR (€) - Euro</option>
+                            <option value="CAD">CAD (C$) - Canadian Dollar</option>
+                            <option value="AUD">AUD (A$) - Australian Dollar</option>
+                        </select>
+                        <p class="text-xs text-dark-500 mt-1">Auto-detected from ticker</p>
+                    </div>
+                    <div>
+                        <label class="label">Exchange Rate (1 USD = ? currency)</label>
+                        <div class="flex gap-2">
+                            <input type="number" name="currency_rate" id="currency_rate_input"
+                                class="input flex-1" placeholder="1.0" step="0.0001" value="1.0">
+                            <button type="button" onclick="fetchExchangeRate()" id="fetch-rate-btn"
+                                class="btn btn-secondary text-xs px-3" title="Fetch rate for entry date">🔄 Fetch</button>
+                        </div>
+                        <p class="text-xs text-dark-500 mt-1" id="rate-hint">Rate = 1.0 for USD trades</p>
                     </div>
                 </div>
 
@@ -598,6 +655,165 @@ function setNow(fieldId) {
     const seconds = String(now.getSeconds()).padStart(2, '0');
     const formatted = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
     document.getElementById(fieldId).value = formatted;
+}
+
+// Auto-suggest timezone, currency, and exchange based on ticker
+const tickerInput = document.querySelector('input[name="ticker"]');
+const timezoneSelect = document.getElementById('input_timezone');
+const currencySelect = document.getElementById('currency_select');
+const currencyRateInput = document.getElementById('currency_rate_input');
+const rateHint = document.getElementById('rate-hint');
+
+// Ticker pattern detection for exchange, timezone, and currency
+function detectTickerInfo(ticker) {
+    ticker = ticker.toUpperCase().trim();
+    
+    // HK stocks: 0700.HK, HKEX:0700, or pure 4-5 digit numbers
+    if (ticker.includes('.HK') || ticker.startsWith('HKEX:')) {
+        return { exchange: 'HKEX', timezone: 'Asia/Hong_Kong', currency: 'HKD' };
+    }
+    // Pure 4-5 digit number (likely HK stock)
+    if (/^\d{4,5}$/.test(ticker)) {
+        return { exchange: 'HKEX', timezone: 'Asia/Hong_Kong', currency: 'HKD' };
+    }
+    
+    // China stocks: 600xxx.SS, 000xxx.SZ
+    if (ticker.includes('.SS') || ticker.startsWith('SSE:')) {
+        return { exchange: 'SSE', timezone: 'Asia/Shanghai', currency: 'CNY' };
+    }
+    if (ticker.includes('.SZ') || ticker.startsWith('SZSE:')) {
+        return { exchange: 'SZSE', timezone: 'Asia/Shanghai', currency: 'CNY' };
+    }
+    
+    // Japan stocks: 7203.T
+    if (ticker.includes('.T') || ticker.startsWith('TSE:')) {
+        return { exchange: 'TSE', timezone: 'Asia/Tokyo', currency: 'JPY' };
+    }
+    
+    // UK stocks: VOD.L
+    if (ticker.includes('.L') || ticker.startsWith('LSE:')) {
+        return { exchange: 'LSE', timezone: 'Europe/London', currency: 'GBP' };
+    }
+    
+    // US stocks with exchange prefix
+    if (ticker.startsWith('AMEX:') || ticker.startsWith('NYSE:') || ticker.startsWith('NASDAQ:')) {
+        return { exchange: ticker.split(':')[0], timezone: 'America/New_York', currency: 'USD' };
+    }
+    
+    // US futures
+    if (ticker.includes('=F') || ticker.startsWith('CME:') || ticker.startsWith('CME_MINI:')) {
+        return { exchange: 'CME', timezone: 'America/New_York', currency: 'USD' };
+    }
+    
+    // Default to US
+    return { exchange: '', timezone: 'America/New_York', currency: 'USD' };
+}
+
+// Normalize ticker with exchange prefix for storage
+function normalizeTickerWithExchange(ticker) {
+    ticker = ticker.toUpperCase().trim();
+    
+    // Already has exchange prefix
+    if (ticker.includes(':')) {
+        return ticker;
+    }
+    
+    // Detect exchange and add prefix
+    const info = detectTickerInfo(ticker);
+    if (info.exchange && info.exchange !== 'CME') {
+        // Remove .HK, .SS, .SZ, .T, .L suffixes if present (we use prefix instead)
+        let cleanTicker = ticker.replace(/\.(HK|SS|SZ|T|L)$/i, '');
+        return `${info.exchange}:${cleanTicker}`;
+    }
+    
+    return ticker;
+}
+
+// Update form fields when ticker changes
+function onTickerChange() {
+    const ticker = tickerInput.value;
+    if (!ticker) return;
+    
+    const info = detectTickerInfo(ticker);
+    
+    // Auto-suggest timezone (only if still on default)
+    if (timezoneSelect && timezoneSelect.value === 'America/New_York') {
+        timezoneSelect.value = info.timezone;
+    }
+    
+    // Auto-suggest currency (only if still on default)
+    if (currencySelect && currencySelect.value === 'USD') {
+        currencySelect.value = info.currency;
+        onCurrencyChange();
+    }
+}
+
+// Handle currency change
+function onCurrencyChange() {
+    const currency = currencySelect.value;
+    const fetchBtn = document.getElementById('fetch-rate-btn');
+    
+    if (currency === 'USD') {
+        currencyRateInput.value = '1.0';
+        rateHint.textContent = 'Rate = 1.0 for USD trades';
+        fetchBtn.disabled = true;
+        fetchBtn.classList.add('opacity-50');
+    } else {
+        rateHint.textContent = `Enter rate: 1 USD = ? ${currency}`;
+        fetchBtn.disabled = false;
+        fetchBtn.classList.remove('opacity-50');
+        // Auto-fetch rate if entry time is set
+        const entryTime = document.getElementById('entry_time').value;
+        if (entryTime) {
+            fetchExchangeRate();
+        }
+    }
+}
+
+// Fetch exchange rate from API
+async function fetchExchangeRate() {
+    const currency = currencySelect.value;
+    if (currency === 'USD') {
+        currencyRateInput.value = '1.0';
+        return;
+    }
+    
+    const entryTime = document.getElementById('entry_time').value;
+    const date = entryTime ? entryTime.split('T')[0] : new Date().toISOString().split('T')[0];
+    
+    const fetchBtn = document.getElementById('fetch-rate-btn');
+    fetchBtn.textContent = '⏳';
+    fetchBtn.disabled = true;
+    
+    try {
+        const response = await fetch(`/api/exchange-rate?currency=${currency}&date=${date}`);
+        const data = await response.json();
+        
+        if (data.rate) {
+            currencyRateInput.value = data.rate.toFixed(4);
+            rateHint.textContent = `Fetched: 1 USD = ${data.rate.toFixed(4)} ${currency} (${date})`;
+            showToast(`Rate: 1 USD = ${data.rate.toFixed(4)} ${currency}`, 'success');
+        } else {
+            showToast('Could not fetch rate. Enter manually.', 'warning');
+            rateHint.textContent = `Could not fetch rate for ${date}. Enter manually.`;
+        }
+    } catch (err) {
+        showToast('Error fetching rate', 'error');
+        rateHint.textContent = 'Error fetching rate. Enter manually.';
+    } finally {
+        fetchBtn.textContent = '🔄 Fetch';
+        fetchBtn.disabled = false;
+    }
+}
+
+// Attach event listeners
+if (tickerInput) {
+    tickerInput.addEventListener('blur', onTickerChange);
+}
+
+// Initialize currency UI state
+if (currencySelect) {
+    onCurrencyChange();
 }
 
 // Validate trade form before submission

@@ -451,24 +451,29 @@ def _parse_user(supabase_user) -> SupabaseUser:
     """Parse Supabase user object to SupabaseUser dataclass."""
     user_metadata = getattr(supabase_user, "user_metadata", {}) or {}
     
+    def _parse_datetime(value) -> Optional[datetime]:
+        """Parse a datetime value that could be string or datetime object."""
+        if value is None:
+            return None
+        # Already a datetime object
+        if isinstance(value, datetime):
+            return value
+        # String - parse it
+        if isinstance(value, str):
+            try:
+                return datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except (ValueError, AttributeError):
+                pass
+        return None
+    
     # Parse dates
     created_at = None
-    if hasattr(supabase_user, "created_at") and supabase_user.created_at:
-        try:
-            created_at = datetime.fromisoformat(
-                supabase_user.created_at.replace("Z", "+00:00")
-            )
-        except (ValueError, AttributeError):
-            pass
+    if hasattr(supabase_user, "created_at"):
+        created_at = _parse_datetime(supabase_user.created_at)
     
     last_sign_in_at = None
-    if hasattr(supabase_user, "last_sign_in_at") and supabase_user.last_sign_in_at:
-        try:
-            last_sign_in_at = datetime.fromisoformat(
-                supabase_user.last_sign_in_at.replace("Z", "+00:00")
-            )
-        except (ValueError, AttributeError):
-            pass
+    if hasattr(supabase_user, "last_sign_in_at"):
+        last_sign_in_at = _parse_datetime(supabase_user.last_sign_in_at)
     
     return SupabaseUser(
         id=supabase_user.id,

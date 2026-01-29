@@ -3,10 +3,11 @@ Market data providers for OHLCV data.
 
 Provider Strategy:
 - US stocks: Polygon (primary), YFinance (fallback)
-- HK stocks: YFinance (primary), AllTick (if configured)
+- HK stocks: Tencent (primary for daily), YFinance (fallback/intraday)
+- Futures: Databento (primary), YFinance (fallback)
 - Other international: YFinance
 
-Supports: Polygon, YFinance, AllTick, Alpaca (placeholder)
+Supports: Polygon, YFinance, AllTick, Alpaca (placeholder), Tencent HK, Databento
 """
 
 from abc import ABC, abstractmethod
@@ -773,6 +774,582 @@ class AlpacaProvider(DataProvider):
         except Exception as e:
             logger.error(f"Error fetching {ticker} from Alpaca: {e}")
             return pd.DataFrame(columns=OHLCV_COLUMNS)
+
+
+class TencentHKProvider(DataProvider):
+    """
+    Tencent/East Money data provider for Hong Kong stocks.
+
+    Uses free APIs for HK stock data:
+    - Daily K-line: Tencent API (reliable, no rate limits)
+    - Intraday K-line: East Money API (reliable, supports 1m/5m/15m/30m/1h)
+
+    API Reference:
+    - Tencent: http://web.ifzq.gtimg.cn/appstock/app/kline/kline
+    - East Money: http://push2his.eastmoney.com/api/qt/stock/kline/get
+    """
+
+    # Map our timeframes to East Money klt parameter
+    # klt: 1=1m, 5=5m, 15=15m, 30=30m, 60=1h, 101=daily
+    EASTMONEY_KLT_MAP = {
+        "1m": 1,
+        "5m": 5,
+        "15m": 15,
+        "30m": 30,
+        "1h": 60,
+        "2h": 60,  # Use 1h and aggregate
+    }
+
+    def __init__(self):
+        """Initialize Tencent/Sina HK provider."""
+        self.rate_limiter = RateLimiter(calls_per_second=2.0)  # 2 calls per second (generous)
+        self.max_retries = 3
+        self.base_delay = 1.0
+
+    @property
+    def name(self) -> str:
+        return "tencent_hk"
+
+    def _normalize_hk_code(self, ticker: str) -> str:
+        """
+        Normalize ticker to 5-digit HK format.
+
+        Examples:
+            '0700.HK' -> '00700'
+            'HKEX:0700' -> '00700'
+            '700' -> '00700'
+            '9988.HK' -> '09988'
+        """
+        normalized, exchange = normalize_ticker(ticker)
+        if exchange != "HK":
+            return None
+
+        # Extract numeric part
+        code = normalized.replace(".HK", "").lstrip("0") or "0"
+        # Pad to 5 digits
+        return code.zfill(5)
+
+    def _fetch_daily_kline(self, hk_code: str, bars: int = 500) -> pd.DataFrame:
+        """
+        Fetch daily K-line data from Tencent API.
+
+        Tries multiple endpoints:
+        1. hkfqkline (easyquotation style): http://web.ifzq.gtimg.cn/appstock/app/hkfqkline/get
+        2. fqkline (go-stock style): https://web.ifzq.gtimg.cn/appstock/app/fqkline/get
+
+        References:
+        - https://github.com/shidenggui/easyquotation
+        - https://github.com/ArvinLovegood/go-stock
+        """
+        import requests
+        import re
+        import json
+
+        # Strategy 1: Try hkfqkline endpoint first (easyquotation style)
+        df = self._fetch_daily_via_hkfqkline(hk_code, bars)
+        if not df.empty:
+            return df
+
+        # Strategy 2: Try fqkline endpoint (go-stock style)
+        df = self._fetch_daily_via_fqkline(hk_code, bars)
+        if not df.empty:
+            return df
+
+        logger.warning(f"All Tencent daily endpoints failed for HK{hk_code}")
+        return pd.DataFrame()
+
+    def _fetch_daily_via_hkfqkline(self, hk_code: str, bars: int) -> pd.DataFrame:
+        """Fetch from hkfqkline endpoint (easyquotation style)."""
+        import requests
+        import re
+        import json
+
+        url = "http://web.ifzq.gtimg.cn/appstock/app/hkfqkline/get"
+        params = {
+            "_var": "kline_dayqfq",
+            "param": f"hk{hk_code},day,,,{bars},qfq",
+        }
+
+        try:
+            response = requests.get(url, params=params, timeout=15)
+            response.raise_for_status()
+
+            raw_text = response.text
+            json_match = re.search(r"=(.*)$", raw_text)
+            if not json_match:
+                return pd.DataFrame()
+
+            data = json.loads(json_match.group(1))
+            if data.get("code") != 0:
+                return pd.DataFrame()
+
+            return self._parse_tencent_kline_response(data, f"hk{hk_code}", "hkfqkline")
+
+        except Exception as e:
+            logger.debug(f"hkfqkline failed for HK{hk_code}: {e}")
+            return pd.DataFrame()
+
+    def _fetch_daily_via_fqkline(self, hk_code: str, bars: int) -> pd.DataFrame:
+        """Fetch from fqkline endpoint (go-stock style)."""
+        import requests
+        import json
+
+        # go-stock uses: https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk{code},day,,,{days},qfq
+        url = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
+        params = {"param": f"hk{hk_code},day,,,{bars},qfq"}
+
+        try:
+            response = requests.get(url, params=params, timeout=15)
+            response.raise_for_status()
+
+            data = response.json()
+            if data.get("code") != 0:
+                return pd.DataFrame()
+
+            return self._parse_tencent_kline_response(data, f"hk{hk_code}", "fqkline")
+
+        except Exception as e:
+            logger.debug(f"fqkline failed for HK{hk_code}: {e}")
+            return pd.DataFrame()
+
+    def _parse_tencent_kline_response(self, data: dict, stock_key: str, source: str) -> pd.DataFrame:
+        """Parse Tencent K-line API response into DataFrame."""
+        stock_data = data.get("data", {})
+
+        if stock_key not in stock_data:
+            return pd.DataFrame()
+
+        # Try qfqday first (forward-adjusted), then day
+        kline_data = stock_data[stock_key].get("qfqday", [])
+        if not kline_data:
+            kline_data = stock_data[stock_key].get("day", [])
+
+        if not kline_data:
+            return pd.DataFrame()
+
+        # Build DataFrame: [date, open, close, high, low, volume, ...]
+        records = []
+        for k in kline_data:
+            try:
+                if len(k) >= 6:
+                    records.append({
+                        "datetime": pd.to_datetime(k[0]),
+                        "open": float(k[1]),
+                        "close": float(k[2]),
+                        "high": float(k[3]),
+                        "low": float(k[4]),
+                        "volume": int(float(k[5])) if k[5] else 0,
+                    })
+            except (ValueError, TypeError, IndexError) as e:
+                continue
+
+        if not records:
+            return pd.DataFrame()
+
+        df = pd.DataFrame(records)
+        logger.info(f"✅ Tencent {source}: got {len(df)} daily bars for {stock_key.upper()}")
+        return df
+
+    def _fetch_intraday_kline(self, hk_code: str, klt: int, bars: int = 500) -> pd.DataFrame:
+        """
+        Fetch intraday K-line data with multiple API fallbacks.
+
+        Strategy:
+        1. East Money API (primary)
+        2. Tencent fqkline API (fallback, from go-stock)
+
+        Args:
+            hk_code: 5-digit HK stock code (e.g., '00700')
+            klt: K-line type (1=1m, 5=5m, 15=15m, 30=30m, 60=1h)
+            bars: Number of bars to fetch
+        """
+        # Try East Money first
+        df = self._fetch_intraday_eastmoney(hk_code, klt, bars)
+        if not df.empty:
+            return df
+
+        # Try Tencent fqkline for intraday (go-stock style)
+        tencent_klt_map = {1: "m1", 5: "m5", 15: "m15", 30: "m30", 60: "m60"}
+        tencent_klt = tencent_klt_map.get(klt, "m5")
+        df = self._fetch_intraday_tencent(hk_code, tencent_klt, bars)
+        if not df.empty:
+            return df
+
+        logger.warning(f"All intraday APIs failed for HK{hk_code}")
+        return pd.DataFrame()
+
+    def _fetch_intraday_eastmoney(self, hk_code: str, klt: int, bars: int) -> pd.DataFrame:
+        """
+        Fetch intraday data from East Money API with fallback endpoints.
+
+        Tries both HTTP and HTTPS endpoints with proper headers for reliability.
+        Reference: https://github.com/ArvinLovegood/go-stock
+        """
+        import requests
+
+        # Headers from go-stock for better reliability
+        headers = {
+            "Host": "push2his.eastmoney.com",
+            "Referer": "https://quote.eastmoney.com/",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+        }
+
+        params = {
+            "secid": f"116.{hk_code}",  # 116 = HK market
+            "fields1": "f1,f2,f3,f4,f5,f6",
+            "fields2": "f51,f52,f53,f54,f55,f56,f57",
+            "klt": klt,
+            "fqt": 1,  # Forward adjustment
+            "end": "20500101",  # Far future to get latest data
+            "lmt": bars,
+        }
+
+        # Try multiple endpoints for reliability
+        endpoints = [
+            "https://push2his.eastmoney.com/api/qt/stock/kline/get",
+            "http://push2his.eastmoney.com/api/qt/stock/kline/get",
+            "https://push2.eastmoney.com/api/qt/stock/kline/get",
+        ]
+
+        for url in endpoints:
+            try:
+                # Update Host header based on URL
+                if "push2." in url:
+                    headers["Host"] = "push2.eastmoney.com"
+                else:
+                    headers["Host"] = "push2his.eastmoney.com"
+
+                response = requests.get(url, params=params, headers=headers, timeout=15)
+                response.raise_for_status()
+                data = response.json()
+
+                klines = data.get("data", {}).get("klines", [])
+                if not klines:
+                    continue  # Try next endpoint
+
+                # Parse K-lines: "2026-01-29 14:40,open,close,high,low,volume,amount"
+                records = []
+                for kline_str in klines:
+                    try:
+                        parts = kline_str.split(",")
+                        if len(parts) >= 6:
+                            records.append({
+                                "datetime": pd.to_datetime(parts[0]),
+                                "open": float(parts[1]),
+                                "close": float(parts[2]),
+                                "high": float(parts[3]),
+                                "low": float(parts[4]),
+                                "volume": int(float(parts[5])) if parts[5] else 0,
+                            })
+                    except (ValueError, TypeError, IndexError):
+                        continue
+
+                if records:
+                    df = pd.DataFrame(records)
+                    logger.info(f"✅ East Money: got {len(df)} intraday bars for HK{hk_code}")
+                    return df
+
+            except Exception as e:
+                logger.debug(f"East Money endpoint {url} failed for HK{hk_code}: {e}")
+                continue
+
+        logger.warning(f"All East Money endpoints failed for HK{hk_code} (klt={klt})")
+        return pd.DataFrame()
+
+    def _fetch_intraday_tencent(self, hk_code: str, klt: str, bars: int) -> pd.DataFrame:
+        """
+        Fetch intraday data from Tencent fqkline API (go-stock style).
+
+        API: https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk{code},{klt},,,{bars},qfq
+        """
+        import requests
+
+        url = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
+        params = {"param": f"hk{hk_code},{klt},,,{bars},qfq"}
+
+        try:
+            response = requests.get(url, params=params, timeout=15)
+            response.raise_for_status()
+            data = response.json()
+
+            if data.get("code") != 0:
+                return pd.DataFrame()
+
+            stock_key = f"hk{hk_code}"
+            stock_data = data.get("data", {})
+
+            if stock_key not in stock_data:
+                return pd.DataFrame()
+
+            # Try qfq{klt} first, then {klt}
+            kline_data = stock_data[stock_key].get(f"qfq{klt}", [])
+            if not kline_data:
+                kline_data = stock_data[stock_key].get(klt, [])
+
+            if not kline_data:
+                return pd.DataFrame()
+
+            records = []
+            for k in kline_data:
+                try:
+                    if len(k) >= 6:
+                        records.append({
+                            "datetime": pd.to_datetime(k[0]),
+                            "open": float(k[1]),
+                            "close": float(k[2]),
+                            "high": float(k[3]),
+                            "low": float(k[4]),
+                            "volume": int(float(k[5])) if k[5] else 0,
+                        })
+                except (ValueError, TypeError, IndexError):
+                    continue
+
+            if not records:
+                return pd.DataFrame()
+
+            df = pd.DataFrame(records)
+            logger.info(f"✅ Tencent fqkline: got {len(df)} intraday ({klt}) bars for HK{hk_code}")
+            return df
+
+        except Exception as e:
+            logger.debug(f"Tencent intraday failed for HK{hk_code}: {e}")
+            return pd.DataFrame()
+
+    def _fetch_intraday_kline_legacy(self, hk_code: str, klt: int, bars: int = 500) -> pd.DataFrame:
+        """Legacy East Money intraday fetch (kept for reference)."""
+        import requests
+
+        url = "http://push2his.eastmoney.com/api/qt/stock/kline/get"
+        params = {
+            "secid": f"116.{hk_code}",
+            "fields1": "f1,f2,f3,f4,f5,f6",
+            "fields2": "f51,f52,f53,f54,f55,f56,f57",
+            "klt": klt,
+            "fqt": 1,
+            "end": "20500101",
+            "lmt": bars,
+        }
+
+        try:
+            response = requests.get(url, params=params, timeout=15)
+            response.raise_for_status()
+            data = response.json()
+
+            klines = data.get("data", {}).get("klines", [])
+            if not klines:
+                logger.warning(f"East Money returned no intraday data for HK{hk_code}")
+                return pd.DataFrame()
+
+            records = []
+            for kline_str in klines:
+                try:
+                    parts = kline_str.split(",")
+                    if len(parts) >= 6:
+                        records.append({
+                            "datetime": pd.to_datetime(parts[0]),
+                            "open": float(parts[1]),
+                            "close": float(parts[2]),
+                            "high": float(parts[3]),
+                            "low": float(parts[4]),
+                            "volume": int(float(parts[5])),
+                        })
+                except (ValueError, TypeError, IndexError) as e:
+                    logger.debug(f"Skipping invalid kline: {e}")
+                    continue
+
+            if not records:
+                return pd.DataFrame()
+
+            df = pd.DataFrame(records)
+            logger.info(f"✅ East Money: got {len(df)} {klt}m bars for HK{hk_code}")
+            return df
+
+        except Exception as e:
+            logger.warning(f"East Money API error for HK{hk_code} (klt={klt}): {e}")
+            return pd.DataFrame()
+
+    def _fetch_realtime_quote(self, hk_code: str) -> dict | None:
+        """
+        Fetch real-time quote from Tencent API.
+
+        API: http://qt.gtimg.cn/q=r_hk{code}
+
+        Returns:
+            Dict with price info or None if failed
+        """
+        import requests
+
+        url = f"http://qt.gtimg.cn/q=r_hk{hk_code}"
+
+        try:
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+
+            # Parse response: v_r_hk00700="100~腾讯控股~00700~413.200~419.200~422.200~21351010~...";
+            text = response.text.strip()
+            if "=" not in text:
+                return None
+
+            # Extract the quoted part
+            data_part = text.split("=")[1].strip('"').strip(";").strip('"')
+            fields = data_part.split("~")
+
+            if len(fields) < 10:
+                return None
+
+            return {
+                "code": hk_code,
+                "name": fields[1],
+                "price": float(fields[3]) if fields[3] else 0,
+                "last_close": float(fields[4]) if fields[4] else 0,
+                "open": float(fields[5]) if fields[5] else 0,
+                "volume": int(float(fields[6])) if fields[6] else 0,
+                "high": float(fields[33]) if len(fields) > 33 and fields[33] else 0,
+                "low": float(fields[34]) if len(fields) > 34 and fields[34] else 0,
+            }
+
+        except Exception as e:
+            logger.debug(f"Tencent realtime quote error for HK{hk_code}: {e}")
+            return None
+
+    def get_ohlcv(
+        self,
+        ticker: str,
+        timeframe: Timeframe,
+        start: datetime,
+        end: datetime,
+        cancellation_check: callable = None,
+    ) -> pd.DataFrame:
+        """
+        Fetch OHLCV data for HK stocks.
+
+        Uses:
+        - Tencent API for daily data (reliable, no rate limits)
+        - Sina API for intraday data (1m, 5m, 15m, 30m, 1h)
+        - Falls back to Yahoo Finance only if both fail
+        """
+        # Check for cancellation
+        if cancellation_check and cancellation_check():
+            logger.info(f"⏹️ Cancelled fetching {ticker}")
+            return pd.DataFrame(columns=OHLCV_COLUMNS)
+
+        hk_code = self._normalize_hk_code(ticker)
+        if hk_code is None:
+            logger.warning(f"Ticker {ticker} is not an HK stock")
+            return pd.DataFrame(columns=OHLCV_COLUMNS)
+
+        # Rate limit
+        self.rate_limiter.wait()
+
+        if cancellation_check and cancellation_check():
+            return pd.DataFrame(columns=OHLCV_COLUMNS)
+
+        # Calculate how old the requested data is
+        try:
+            if start.tzinfo is not None:
+                from zoneinfo import ZoneInfo
+                now = datetime.now(ZoneInfo("UTC"))
+            else:
+                now = datetime.now()
+            days_ago = (now - start).days
+        except Exception:
+            days_ago = 100  # Fallback: assume historical
+
+        # OPTIMIZATION: For old trades (>60 days), skip intraday entirely
+        # Free APIs only keep 30-60 days of intraday data
+        if timeframe != "1d" and days_ago > 60:
+            logger.info(
+                f"⏭️ Skipping intraday fetch for {ticker} - trade is {days_ago} days old "
+                f"(intraday data not available). Use daily timeframe."
+            )
+            return pd.DataFrame(columns=OHLCV_COLUMNS)
+
+        # Calculate bars needed
+        # IMPORTANT: Tencent API returns the LATEST N bars, not bars around a date range.
+        # For historical daily data, we MUST request max bars (500) to ensure coverage.
+        if timeframe == "1d":
+            if days_ago > 30:
+                bars_needed = 500  # Historical - need max bars
+            else:
+                bars_needed = (end - start).days + 60  # Recent data
+        elif timeframe in ["1h", "2h"]:
+            hours_needed = int((end - start).total_seconds() / 3600) + 48
+            bars_needed = hours_needed
+        else:
+            # Minute data - estimate bars needed
+            minutes_map = {"1m": 1, "5m": 5, "15m": 15, "30m": 30}
+            minutes_per_bar = minutes_map.get(timeframe, 5)
+            total_minutes = int((end - start).total_seconds() / 60)
+            bars_needed = (total_minutes // minutes_per_bar) + 100  # Buffer
+
+        for attempt in range(self.max_retries):
+            if cancellation_check and cancellation_check():
+                return pd.DataFrame(columns=OHLCV_COLUMNS)
+
+            # Use appropriate API based on timeframe
+            if timeframe == "1d":
+                df_raw = self._fetch_daily_kline(hk_code, min(bars_needed, 500))
+            else:
+                # Intraday - use East Money API
+                klt = self.EASTMONEY_KLT_MAP.get(timeframe, 5)
+                df_raw = self._fetch_intraday_kline(hk_code, klt, min(bars_needed, 500))
+
+            if not df_raw.empty:
+                # Filter to requested date range
+                # Convert start/end to pandas Timestamps and ensure timezone compatibility
+                try:
+                    start_ts = pd.Timestamp(start)
+                    end_ts = pd.Timestamp(end)
+
+                    # Check if df datetime column has timezone
+                    df_has_tz = df_raw["datetime"].dt.tz is not None
+
+                    if df_has_tz:
+                        # If df has timezone, make start/end timezone-aware
+                        if start_ts.tzinfo is None:
+                            start_ts = start_ts.tz_localize(df_raw["datetime"].dt.tz)
+                        else:
+                            start_ts = start_ts.tz_convert(df_raw["datetime"].dt.tz)
+                        if end_ts.tzinfo is None:
+                            end_ts = end_ts.tz_localize(df_raw["datetime"].dt.tz)
+                        else:
+                            end_ts = end_ts.tz_convert(df_raw["datetime"].dt.tz)
+                    else:
+                        # If df is timezone-naive, make start/end naive too
+                        if start_ts.tzinfo is not None:
+                            start_ts = start_ts.tz_convert("UTC").tz_localize(None)
+                        if end_ts.tzinfo is not None:
+                            end_ts = end_ts.tz_convert("UTC").tz_localize(None)
+
+                    df_filtered = df_raw[(df_raw["datetime"] >= start_ts) & (df_raw["datetime"] <= end_ts)]
+
+                    if not df_filtered.empty:
+                        return self._normalize_dataframe(df_filtered)
+
+                    # API returned data but it doesn't overlap with requested range
+                    # This means the trade is too old for this API - don't retry, go to Yahoo
+                    api_start = df_raw["datetime"].min()
+                    api_end = df_raw["datetime"].max()
+                    logger.info(
+                        f"East Money returned {len(df_raw)} bars ({api_start} to {api_end}) "
+                        f"but requested range ({start_ts} to {end_ts}) has no overlap. "
+                        f"Trade is too old for intraday data, falling back to Yahoo."
+                    )
+                    break  # Exit retry loop - no point retrying for old data
+
+                except Exception as e:
+                    logger.warning(f"Date filtering error: {e}, returning unfiltered data")
+                    return self._normalize_dataframe(df_raw)
+
+            # Only retry if API returned empty (actual failure)
+            if attempt < self.max_retries - 1:
+                delay = self.base_delay * (2**attempt)
+                logger.debug(f"Retry {attempt + 1} for {ticker}, waiting {delay:.1f}s")
+                time.sleep(delay)
+
+        # Fall back to Yahoo Finance
+        logger.info(f"Falling back to Yahoo Finance for {ticker} ({timeframe})")
+        return YFinanceProvider().get_ohlcv(ticker, timeframe, start, end, cancellation_check)
 
 
 class AllTickProvider(DataProvider):
@@ -1657,6 +2234,7 @@ def get_provider(name: str | None = None) -> DataProvider:
         "alpaca": AlpacaProvider,
         "alltick": AllTickProvider,
         "databento": DatabentoProvider,
+        "tencent_hk": TencentHKProvider,
     }
 
     if provider_name not in providers:
@@ -1675,7 +2253,7 @@ def get_provider_for_ticker(ticker: str) -> DataProvider:
     Provider routing:
     - Futures (ES, MES, NQ, etc.): Databento (primary), YFinance fallback
     - US stocks: Polygon (primary), with YFinance fallback on error
-    - HK stocks: YFinance (primary), AllTick if ALLTICK_TOKEN configured
+    - HK stocks: Tencent (primary), AllTick if configured, YFinance fallback
     - Other international (CN, JP, UK): YFinance
 
     Args:
@@ -1694,12 +2272,11 @@ def get_provider_for_ticker(ticker: str) -> DataProvider:
         logger.info(f"No DATABENTO_API_KEY configured, using YFinance for {ticker}")
         return get_provider("yfinance")
 
-    # For HK stocks, prefer AllTick if available, otherwise YFinance
+    # For HK stocks: Tencent (primary) > AllTick > YFinance (fallback)
     if exchange == "HK":
-        alltick_token = get_alltick_token()
-        if alltick_token:
-            return get_provider("alltick")
-        return get_provider("yfinance")
+        # Primary: Tencent HK (free, no rate limits, reliable for daily data)
+        # Note: Tencent internally falls back to Yahoo for intraday data
+        return get_provider("tencent_hk")
 
     # For other international stocks, use YFinance
     if exchange in ["CN", "JP", "UK"]:

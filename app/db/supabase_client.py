@@ -41,26 +41,25 @@ def is_supabase_configured() -> bool:
     """
     Check if Supabase is properly configured.
     
-    Returns True only if:
-    - Running on Render (production), OR
-    - FORCE_SUPABASE=true is set (for local testing with Supabase)
+    Auto-detects Supabase when credentials are present.
+    Returns True if SUPABASE_URL and SUPABASE_ANON_KEY are set.
     
-    AND the required environment variables are set.
+    Set USE_LOCAL_AUTH=true to force local SQLite auth even when Supabase is configured.
     """
     try:
-        # Check if we should use Supabase
-        is_render = os.getenv("RENDER", "").lower() == "true"
-        is_production = os.getenv("ENVIRONMENT", "").lower() == "production"
-        force_supabase = os.getenv("FORCE_SUPABASE", "").lower() == "true"
-        
-        # Only use Supabase in production or when explicitly forced
-        if not (is_render or is_production or force_supabase):
+        # Allow forcing local auth for testing
+        if os.getenv("USE_LOCAL_AUTH", "").lower() == "true":
             return False
         
-        # Check if credentials are available
+        # Auto-detect: use Supabase if credentials are present
         url = os.getenv("SUPABASE_URL", "").strip()
         key = os.getenv("SUPABASE_ANON_KEY", "").strip()
-        return bool(url and key)
+        
+        if url and key:
+            logger.debug(f"Supabase configured with URL: {url[:30]}...")
+            return True
+        
+        return False
     except Exception:
         return False
 
