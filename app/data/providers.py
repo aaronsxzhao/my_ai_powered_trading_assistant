@@ -1058,12 +1058,23 @@ class TencentHKProvider(DataProvider):
 
     def _fetch_intraday_tencent(self, hk_code: str, klt: str, bars: int) -> pd.DataFrame:
         """
-        Fetch intraday data from Tencent fqkline API (go-stock style).
+        Fetch intraday data from Tencent APIs (go-stock style).
 
-        API: https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk{code},{klt},,,{bars},qfq
+        Tries:
+        1. Tencent minute API (TODAY's 1-minute data) - from go-stock GetStockMinutePriceData
+        2. Tencent fqkline API (limited intraday)
+
+        Reference: https://github.com/ArvinLovegood/go-stock
         """
         import requests
+        from datetime import datetime
 
+        # Strategy 1: Try Tencent minute API for TODAY's data (go-stock style)
+        df = self._fetch_today_minute_data(hk_code)
+        if not df.empty:
+            return df
+
+        # Strategy 2: Try Tencent fqkline (limited to current day summary)
         url = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
         params = {"param": f"hk{hk_code},{klt},,,{bars},qfq"}
 
@@ -1113,6 +1124,80 @@ class TencentHKProvider(DataProvider):
 
         except Exception as e:
             logger.debug(f"Tencent intraday failed for HK{hk_code}: {e}")
+            return pd.DataFrame()
+
+    def _fetch_today_minute_data(self, hk_code: str) -> pd.DataFrame:
+        """
+        Fetch TODAY's 1-minute data from Tencent minute API.
+
+        API (from go-stock): https://web.ifzq.gtimg.cn/appstock/app/minute/query?code=hk{code}
+
+        Reference: https://github.com/ArvinLovegood/go-stock - GetStockMinutePriceData
+        """
+        import requests
+        from datetime import datetime
+
+        url = f"https://web.ifzq.gtimg.cn/appstock/app/minute/query?code=hk{hk_code}"
+        headers = {
+            "Host": "web.ifzq.gtimg.cn",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        }
+
+        try:
+            response = requests.get(url, headers=headers, timeout=15)
+            response.raise_for_status()
+            data = response.json()
+
+            if data.get("code") != 0:
+                return pd.DataFrame()
+
+            stock_key = f"hk{hk_code}"
+            stock_data = data.get("data", {}).get(stock_key, {})
+            minute_info = stock_data.get("data", {})
+
+            if not minute_info:
+                return pd.DataFrame()
+
+            date_str = minute_info.get("date", "")
+            minute_data = minute_info.get("data", [])
+
+            if not minute_data or not date_str:
+                return pd.DataFrame()
+
+            # Parse minute data: "0930 614.500 1152994 709518524.740"
+            # Format: HHMM price volume amount
+            records = []
+            for item in minute_data:
+                try:
+                    parts = item.split()
+                    if len(parts) >= 3:
+                        time_str = parts[0]
+                        hour = int(time_str[:2])
+                        minute = int(time_str[2:4])
+
+                        dt = datetime.strptime(date_str, "%Y%m%d").replace(
+                            hour=hour, minute=minute
+                        )
+                        records.append({
+                            "datetime": pd.to_datetime(dt),
+                            "open": float(parts[1]),
+                            "high": float(parts[1]),
+                            "low": float(parts[1]),
+                            "close": float(parts[1]),
+                            "volume": int(float(parts[2])) if len(parts) > 2 else 0,
+                        })
+                except (ValueError, TypeError, IndexError):
+                    continue
+
+            if not records:
+                return pd.DataFrame()
+
+            df = pd.DataFrame(records)
+            logger.info(f"✅ Tencent minute: got {len(df)} today's 1m bars for HK{hk_code}")
+            return df
+
+        except Exception as e:
+            logger.debug(f"Tencent minute API failed for HK{hk_code}: {e}")
             return pd.DataFrame()
 
     def _fetch_intraday_kline_legacy(self, hk_code: str, klt: int, bars: int = 500) -> pd.DataFrame:
@@ -1331,7 +1416,7 @@ class TencentHKProvider(DataProvider):
                     api_start = df_raw["datetime"].min()
                     api_end = df_raw["datetime"].max()
                     logger.info(
-                        f"East Money returned {len(df_raw)} bars ({api_start} to {api_end}) "
+                        f"Intraday API returned {len(df_raw)} bars ({api_start} to {api_end}) "
                         f"but requested range ({start_ts} to {end_ts}) has no overlap. "
                         f"Trade is too old for intraday data, falling back to Yahoo."
                     )

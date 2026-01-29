@@ -192,8 +192,11 @@
 
 <!-- Edit Modal -->
 <div id="edit-modal" class="fixed inset-0 bg-dark-950/80 backdrop-blur-sm flex items-center justify-center z-50 hidden">
-    <div class="bg-gradient-to-br from-dark-800 to-dark-900 rounded-2xl p-6 max-w-md w-full mx-4 border border-dark-600 shadow-2xl">
-        <h3 class="text-xl font-bold text-white mb-6">Edit Strategy</h3>
+    <div class="bg-dark-800 rounded-2xl p-6 max-w-md w-full mx-4 border border-dark-600 shadow-xl">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-xl font-bold text-white">Edit Strategy</h3>
+            <button onclick="closeEditModal()" class="text-dark-400 hover:text-white text-2xl leading-none">&times;</button>
+        </div>
         <input type="hidden" id="edit-strategy-id">
         <div class="space-y-4">
             <div>
@@ -205,7 +208,7 @@
                 <textarea id="edit-strategy-description" class="input w-full" rows="3"></textarea>
             </div>
         </div>
-        <div class="flex justify-end gap-3 mt-6">
+        <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-dark-700">
             <button onclick="closeEditModal()" class="btn btn-secondary">Cancel</button>
             <button onclick="saveStrategy()" class="btn btn-primary">Save</button>
         </div>

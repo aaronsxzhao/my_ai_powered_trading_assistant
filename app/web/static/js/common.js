@@ -27,6 +27,7 @@ function showToast(message, type = 'success', duration = 3000) {
         'success': '✓',
         'error': '✕',
         'info': 'ℹ',
+        'warning': '⚠️',
         'start': '🚀',
         'finish': '✅',
         'loading': '⏳'

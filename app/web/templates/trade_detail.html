@@ -62,39 +62,57 @@
 
     <!-- TradingView Chart -->
     <div id="chart" class="card">
-        <div class="flex items-center justify-between mb-4">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
             <h2 class="text-xl font-bold text-white flex items-center gap-2">
                 📈 Price Chart
+                <span id="chart-status" class="text-xs font-normal text-dark-400 hidden"></span>
             </h2>
-            <div class="flex items-center gap-2 flex-wrap">
-                <select id="chart-timeframe" class="select text-sm py-1.5 px-3" onchange="loadChartData()">
-                    <option value="5m" {% if trade.timeframe == '5m' or not trade.timeframe %}selected{% endif %}>5 min</option>
-                    <option value="15m">15 min</option>
-                    <option value="1h">1 hour</option>
-                    <option value="2h" {% if trade.timeframe == '2h' %}selected{% endif %}>2 hour</option>
-                    <option value="1d" {% if trade.timeframe == '1d' %}selected{% endif %}>Daily</option>
-                </select>
+            
+            <!-- Chart Controls - Redesigned -->
+            <div class="flex flex-wrap items-center gap-3">
+                <!-- Timeframe Select -->
+                <div class="flex items-center gap-2">
+                    <span class="text-xs text-dark-500 hidden sm:inline">Timeframe</span>
+                    <select id="chart-timeframe" class="select text-sm py-1.5 px-3 min-w-[100px]" onchange="loadChartData()">
+                        <option value="5m" {% if trade.timeframe == '5m' or not trade.timeframe %}selected{% endif %}>5 min</option>
+                        <option value="15m">15 min</option>
+                        <option value="1h">1 hour</option>
+                        <option value="2h" {% if trade.timeframe == '2h' %}selected{% endif %}>2 hour</option>
+                        <option value="1d" {% if trade.timeframe == '1d' %}selected{% endif %}>Daily</option>
+                    </select>
+                </div>
                 
                 <!-- RTH/ETH Toggle -->
-                <div class="flex items-center gap-1 px-2 py-1 bg-dark-700 rounded-lg">
-                    <button id="btn-rth" onclick="setRthMode(true)" class="text-xs px-2 py-1 rounded bg-accent-600 text-white" title="Regular Trading Hours (9:30 AM - 4:00 PM)">
-                        RTH
-                    </button>
-                    <button id="btn-eth" onclick="setRthMode(false)" class="text-xs px-2 py-1 rounded text-dark-400 hover:text-white" title="Electronic Trading Hours (includes overnight)">
-                        ETH
-                    </button>
+                <div class="flex items-center">
+                    <span class="text-xs text-dark-500 mr-2 hidden sm:inline">Session</span>
+                    <div class="flex items-center bg-dark-700 rounded-lg p-0.5">
+                        <button id="btn-rth" onclick="setRthMode(true)" class="text-xs px-3 py-1.5 rounded-md bg-accent-600 text-white transition-all" title="Regular Trading Hours (9:30 AM - 4:00 PM)">
+                            RTH
+                        </button>
+                        <button id="btn-eth" onclick="setRthMode(false)" class="text-xs px-3 py-1.5 rounded-md text-dark-400 hover:text-white transition-all" title="Electronic Trading Hours (includes overnight)">
+                            ETH
+                        </button>
+                    </div>
                 </div>
                 
                 <!-- Show After Entry Toggle -->
-                <label class="flex items-center gap-1 text-xs text-dark-400 cursor-pointer">
-                    <input type="checkbox" id="show-after-entry" onchange="loadChartData()" class="rounded">
+                <label class="flex items-center gap-2 text-xs text-dark-400 cursor-pointer hover:text-dark-300 transition-colors px-2 py-1.5 rounded-lg hover:bg-dark-700/50">
+                    <input type="checkbox" id="show-after-entry" onchange="loadChartData()" class="rounded border-dark-500 text-accent-500 focus:ring-accent-500/20">
                     <span title="Show bars after entry (see outcome)">After Entry</span>
                 </label>
                 
-                <button onclick="loadChartData()" class="btn btn-secondary text-sm py-1.5 px-3">
-                    🔄
+                <!-- Refresh Button with loading state -->
+                <button id="chart-refresh-btn" onclick="loadChartData()" class="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1.5 min-w-[70px] justify-center" title="Refresh chart data">
+                    <span id="refresh-icon" class="transition-transform">🔄</span>
+                    <span class="hidden sm:inline text-xs">Refresh</span>
                 </button>
             </div>
+        </div>
+        
+        <!-- Timeframe Fallback Notice (shown when intraday not available) -->
+        <div id="timeframe-notice" class="hidden mb-3 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 text-sm flex items-center gap-2">
+            <span>⚠️</span>
+            <span id="timeframe-notice-text"></span>
         </div>
         <div id="chart-container" class="w-full h-96 bg-dark-900 rounded-lg relative">
             <div id="chart-loading" class="absolute inset-0 flex items-center justify-center">
@@ -611,6 +629,12 @@
 {% endblock %}
 
 {% block scripts %}
+<style>
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+</style>
 <script>
 const TRADE_ID = {{ trade.id }};
 
@@ -720,9 +744,24 @@ async function loadChartData() {
     const showAfterEntry = document.getElementById('show-after-entry')?.checked || false;
     const chartLoading = document.getElementById('chart-loading');
     const chartContainer = document.getElementById('tradingview-chart');
+    const refreshBtn = document.getElementById('chart-refresh-btn');
+    const refreshIcon = document.getElementById('refresh-icon');
+    const timeframeNotice = document.getElementById('timeframe-notice');
+    const timeframeNoticeText = document.getElementById('timeframe-notice-text');
+    const chartStatus = document.getElementById('chart-status');
     
-    // Show loading
+    // Show loading states
     chartLoading.classList.remove('hidden');
+    timeframeNotice.classList.add('hidden');
+    
+    // Animate refresh button
+    if (refreshBtn) {
+        refreshBtn.disabled = true;
+        refreshBtn.classList.add('opacity-70');
+    }
+    if (refreshIcon) {
+        refreshIcon.style.animation = 'spin 1s linear infinite';
+    }
     
     try {
         const params = new URLSearchParams({
@@ -739,11 +778,44 @@ async function loadChartData() {
             console.log('Debug info:', data.debug);
         }
         
+        // Reset refresh button
+        if (refreshBtn) {
+            refreshBtn.disabled = false;
+            refreshBtn.classList.remove('opacity-70');
+        }
+        if (refreshIcon) {
+            refreshIcon.style.animation = '';
+        }
+        
         if (!data.success) {
             console.error('Chart error:', data.error, data.traceback);
             chartLoading.innerHTML = `<div class="text-dark-400 text-center"><span class="text-3xl block mb-2">📊</span>${data.error || 'No chart data available'}</div>`;
+            showToast(data.error || 'Failed to load chart', 'error');
             return;
         }
+        
+        // Handle timeframe fallback notification
+        if (data.timeframe_note) {
+            // Show inline notice
+            timeframeNotice.classList.remove('hidden');
+            timeframeNoticeText.textContent = data.timeframe_note;
+            
+            // Show toast notification
+            showToast(data.timeframe_note, 'warning', 5000);
+            
+            // Update the select to show actual timeframe being displayed
+            const select = document.getElementById('chart-timeframe');
+            if (data.timeframe && data.timeframe !== data.requested_timeframe) {
+                // Add a visual indicator that we're showing different data
+                chartStatus.textContent = `(showing ${data.timeframe})`;
+                chartStatus.classList.remove('hidden');
+            }
+        } else {
+            chartStatus.classList.add('hidden');
+        }
+        
+        // Show success feedback
+        showToast(`Chart loaded: ${data.candles?.length || 0} bars`, 'success', 2000);
         
         // Hide loading
         chartLoading.classList.add('hidden');
@@ -998,6 +1070,18 @@ async function loadChartData() {
     } catch (err) {
         console.error('Chart error:', err);
         chartLoading.innerHTML = `<div class="text-dark-400 text-center"><span class="text-3xl block mb-2">⚠️</span>Failed to load chart: ${err.message}</div>`;
+        showToast('Failed to load chart: ' + err.message, 'error');
+        
+        // Reset refresh button on error
+        const refreshBtn = document.getElementById('chart-refresh-btn');
+        const refreshIcon = document.getElementById('refresh-icon');
+        if (refreshBtn) {
+            refreshBtn.disabled = false;
+            refreshBtn.classList.remove('opacity-70');
+        }
+        if (refreshIcon) {
+            refreshIcon.style.animation = '';
+        }
     }
 }
 
@@ -1848,8 +1932,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
 <!-- Strategy Edit Modal -->
 <div id="strategy-modal" class="fixed inset-0 bg-dark-950/80 backdrop-blur-sm flex items-center justify-center z-50 hidden">
-    <div class="bg-dark-800 rounded-2xl p-6 max-w-md w-full mx-4 border border-dark-600">
-        <h3 class="text-xl font-bold text-white mb-4">Edit Strategy</h3>
+    <div class="bg-dark-800 rounded-2xl p-6 max-w-md w-full mx-4 border border-dark-600 shadow-xl">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-xl font-bold text-white">Edit Strategy</h3>
+            <button onclick="closeStrategyModal()" class="text-dark-400 hover:text-white text-2xl leading-none">&times;</button>
+        </div>
         <div class="space-y-4">
             <div>
                 <label class="label">Strategy Name</label>
@@ -1866,7 +1953,7 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
             {% endif %}
         </div>
-        <div class="flex justify-end gap-3 mt-6">
+        <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-dark-700">
             <button onclick="closeStrategyModal()" class="btn btn-secondary">Cancel</button>
             <button onclick="saveTradeStrategy()" class="btn btn-primary">Save</button>
         </div>
